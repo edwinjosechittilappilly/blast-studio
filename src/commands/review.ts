@@ -1,8 +1,9 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseArgs } from 'node:util';
 import { parse } from 'yaml';
-import { loadConfig, projectDir } from '../config.ts';
+import { loadConfig, campaignDir } from '../config.ts';
 import { readBrief } from '../brief.ts';
 import { loadPack } from '../packs.ts';
 import { readPlan } from '../plan.ts';
@@ -34,13 +35,20 @@ async function calibrate(config: StudioConfig, io: IO): Promise<void> {
 }
 
 export const run: Command = async (args, io) => {
-  const config = loadConfig(io);
-  if (args.length === 1 && args[0] === '--calibrate' || args.length === 2 && args[1] === '--calibrate') { await calibrate(config, io); return 0; }
-  const filter = args.find(a => a.startsWith('--platforms='));
-  const positionals = args.filter(a => a !== filter);
-  if (positionals.length !== 1) throw new UserError('usage: bstudio review <slug> [--calibrate]');
-  const selected = filter ? new Set(filter.slice(12).split(',').filter(Boolean)) : undefined;
-  const dir = projectDir(config, positionals[0]), posts = loadPosts(dir), brief = readBrief(dir), plan = readPlan(dir);
+  const usage = 'usage: bstudio review <project>/<campaign> [--platforms ids] | bstudio review --calibrate';
+  let parsed;
+  try { parsed = parseArgs({ args, allowPositionals: true, options: { platforms: { type: 'string' }, calibrate: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } }); }
+  catch { throw new UserError(usage); }
+  if (parsed.values.help) { io.out(`${usage}\nExample: bstudio review acme/launch --platforms bluesky`); return 0; }
+  const { positionals } = parsed;
+  if (parsed.values.calibrate) {
+    if (positionals.length > 1 || parsed.values.platforms !== undefined) throw new UserError(usage);
+    if (positionals.length) campaignDir(loadConfig(io), positionals[0]);
+    await calibrate(loadConfig(io), io); return 0;
+  }
+  if (positionals.length !== 1 || positionals[0].startsWith('-')) throw new UserError(usage);
+  const selected = parsed.values.platforms === undefined ? undefined : new Set(parsed.values.platforms.split(',').filter(Boolean));
+  const config = loadConfig(io), dir = campaignDir(config, positionals[0]), posts = loadPosts(dir), brief = readBrief(dir), plan = readPlan(dir);
   for (const id of selected ?? []) if (![...posts.keys()].some(platform => platform === id)) throw new UserError(`Unknown platform: ${id}. Valid platforms: ${[...posts.keys()].join(', ') || '(none)'}`);
   if (!posts.size) throw new UserError('No posts to review');
   const assetsDir = join(dir, 'assets');

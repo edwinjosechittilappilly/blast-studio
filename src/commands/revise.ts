@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse } from 'yaml';
-import { loadConfig, projectDir } from '../config.ts';
+import { loadConfig, campaignDir } from '../config.ts';
 import { runAgentInWorkspace } from '../workspace.ts';
 import type { Command, IO } from '../io.ts';
 import { UserError, type AssetMeta, type Review, type StudioConfig } from '../types.ts';
@@ -94,14 +94,15 @@ async function applyFeedback(dir: string, slug: string, pending: FeedbackEntry[]
 
 
 export const run: Command = async (args, io) => {
-  const usage = 'usage: bstudio revise <slug> [--note <text>] [--asset <id>] [--platform <id>] [--feedback-only]';
+  const usage = 'usage: bstudio revise <project>/<campaign> [--note <text>] [--asset <id>] [--platform <id>] [--feedback-only]';
   const parsed = (() => {
-    try { return parseArgs({ args, allowPositionals: true, options: { note: { type: 'string' }, asset: { type: 'string' }, platform: { type: 'string' }, 'feedback-only': { type: 'boolean' } } }); }
+    try { return parseArgs({ args, allowPositionals: true, options: { note: { type: 'string' }, asset: { type: 'string' }, platform: { type: 'string' }, 'feedback-only': { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } }); }
     catch { throw new UserError(usage); }
   })();
+  if (parsed.values.help) { io.out(`${usage}\nExample: bstudio revise acme/launch --note "Improve the headline" --platform bluesky`); return 0; }
   const [slug] = parsed.positionals, { note, asset, platform } = parsed.values;
   if (parsed.positionals.length !== 1 || !slug || slug.startsWith('-') || (note === undefined && (asset !== undefined || platform !== undefined)) || note === '') throw new UserError(usage);
-  const config = loadConfig(io), dir = projectDir(config, slug), reviewDir = join(dir, 'reviews');
+  const config = loadConfig(io), dir = campaignDir(config, slug), reviewDir = join(dir, 'reviews');
   const releaseLock = acquireRevisionLock(dir, slug);
   try {
   if (note !== undefined) addFeedback(dir, { ...(asset !== undefined ? { asset } : {}), ...(platform !== undefined ? { platform } : {}) }, note);
