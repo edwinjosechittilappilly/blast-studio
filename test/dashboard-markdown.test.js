@@ -82,6 +82,7 @@ function dashboardHarness() {
     displayName: name => ({ linkedin: 'LinkedIn' }[name] || name),
     el: (tag, text) => Object.assign(new Node(tag), { textContent: text || '' }),
     button: text => Object.assign(new Node('button'), { textContent: text }),
+    renderFeedbackHistory: () => {},
     $: selector => nodes[selector], headers: {}, activeProject: 'a', activeTab: 'overview', feedbackDrafts: new Map(),
     api: (...args) => context.request(...args), feedbackJobStatus: (...args) => context.statusRequest(...args),
     message: text => { nodes['#message'].textContent = text; },
