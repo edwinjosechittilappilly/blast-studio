@@ -8,6 +8,8 @@ Projects live at `projects/<project>/`, with `project.yml` metadata, shared `evi
 
 On startup, a legacy `projects/<slug>/brief.md` project is migrated to `projects/<slug>/campaigns/<slug>/`, including unknown files. Back up the studio before upgrading. Migration records its progress in `.bstudio-migration.json` and resumes on the next run after an interruption. If a destination or metadata conflict is reported, preserve both copies, resolve the indicated paths manually, and retry; do not remove the journal while recovery is pending.
 
+Historical ledger entries remain attributed to the migrated `<slug>/<slug>` campaign for spending limits; newly recorded costs use the full campaign address.
+
 | Key | Default | Purpose |
 | --- | --- | --- |
 | `studio.root` | `~/BlastStudio` | Private studio directory. |
