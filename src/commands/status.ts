@@ -18,6 +18,11 @@ export const run: Command = async (args, io) => {
       const review = project.reviews.find(r => r.platform === platform);
       io.out(`  ${platform}: ${review?.verdict ?? 'unreviewed'}${review?.total == null ? '' : ` (${review.total}/100)`}`);
     }
+    const rights = project.reviews.flatMap(review => (review.gates ?? []).filter(gate => gate.id === 'rights' && !gate.pass)).map(gate => gate.message.match(/bstudio confirm [^;]+/)?.[0]).find(Boolean);
+    const unreviewed = project.posts.some(post => !project.reviews.some(review => review.platform === post.platform));
+    const needsRevision = project.reviews.some(review => review.verdict !== 'pass' && review.verdict !== 'accepted');
+    const next = rights ? `confirm rights: ${rights}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : `export: bstudio export ${project.slug}`;
+    io.out(`  next: ${next}`);
   }
   io.out(`Month to date: $${monthToDate(config.root).toFixed(2)} / $${config.budget.monthlyUsd.toFixed(2)}`);
   const sources = latestSources(config);

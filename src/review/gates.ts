@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import { readPlan } from '../plan.ts';
 
 import type { AssetMeta, BriefSection, GateResult, PlatformPack, Post, StudioConfig } from '../types.ts';
 
@@ -30,6 +31,14 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
   post.media.forEach(m => visit(m.asset));
   const selected = assets.filter(a => used.has(a.id));
   const add = (id: GateResult['id'], message: string) => failures[id].push(message);
+  const blockers = (value: unknown, label: string) => {
+    if (Array.isArray(value)) {
+      for (const text of value) if (typeof text === 'string' && text.trim()) add('specs', `Blocker in ${label}: ${text}`);
+    } else if (typeof value === 'string' && value.trim()) add('specs', `Blocker in ${label}: ${value}`);
+  };
+  blockers((post as Post & { blockers?: unknown }).blockers, post.path);
+  const planned = projectDir && existsSync(join(projectDir, 'plan.yml')) ? readPlan(projectDir).find(entry => entry.platform === post.platform)?.assets.map(asset => asset.id) ?? [] : [];
+  for (const asset of assets) if (used.has(asset.id) || planned.includes(asset.id)) blockers((asset as AssetMeta & { blockers?: unknown }).blockers, `asset ${asset.id}`);
   // Post prose gets every marker, with Markdown code exempt (snippets legitimately hold `${{ secrets.X }}`, TODO
   // comments or `xxx` values). Rendered text and captions carry no backticks to mark code, so they only get the
   // markers no real snippet contains.
@@ -115,8 +124,8 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
     if (media.kind === 'video' && !byId.get(media.asset)?.outputs.some(o => /\.vtt$/i.test(o.file))) add('accessibility', `Missing captions for ${media.asset}`);
   }
   for (const asset of selected) {
-    if (['gemini', 'openai', 'omp'].includes(asset.provider) && !asset.license?.trim()) add('rights', `Missing license for ${asset.id}`);
-    if (asset.kind === 'logo' && !asset.trademarkChecked) add('rights', `Trademark search not checked for ${asset.id}`);
+    if (['gemini', 'openai', 'omp'].includes(asset.provider) && !asset.license?.trim()) add('rights', `Missing license for ${asset.id}; confirm rights: bstudio confirm ${projectDir ? basename(projectDir) : '<slug>'} ${asset.id} --license <license>`);
+    if (asset.kind === 'logo' && !asset.trademarkChecked) add('rights', `Trademark search not checked for ${asset.id}; confirm rights: bstudio confirm ${projectDir ? basename(projectDir) : '<slug>'} ${asset.id} --trademark-checked`);
     for (const metric of asset.metrics ?? []) {
       for (const text of metric.texts ?? []) checkPlaceholder(`assets/${asset.id}/${metric.file} rendered text`, text, false);
       for (const kind of metric.unmeasurable ?? []) warnings.push(`Text cannot be checked in ${kind} in ${metric.file}`);

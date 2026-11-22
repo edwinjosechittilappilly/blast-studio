@@ -37,6 +37,13 @@ export function addFeedback(projectDir: string, target: FeedbackEntry['target'],
   return entry;
 }
 
+export function removeFeedback(projectDir: string, id: string): void {
+  const entries = loadFeedback(projectDir), entry = entries.find(item => item.id === id);
+  if (!entry) throw new UserError(`Unknown feedback: ${id}`);
+  if (entry.status === 'applied') throw new UserError(`Cannot remove applied feedback: ${id}`);
+  writeFeedback(projectDir, entries.filter(item => item.id !== id));
+}
+
 export function markApplied(projectDir: string, ids: string[]): void {
   const entries = loadFeedback(projectDir), selected = new Set(ids), appliedAt = new Date().toISOString();
   for (const entry of entries) if (selected.has(entry.id)) { entry.status = 'applied'; entry.appliedAt = appliedAt; }

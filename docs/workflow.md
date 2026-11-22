@@ -27,11 +27,15 @@ Projects are stored in the studio root and copied into temporary agent workspace
 
 `make` uses the brief, plan, brand settings, platform packs and bundled skills to write `posts/<platform>.md` and the planned asset sources and metadata. Authoring runs in a temporary workspace and only declared output paths are copied back. Inspect and edit the drafts and sources before rendering.
 
+Scope reruns with `--platforms=bluesky` or `--assets=logo` (space forms also work). Unknown IDs fail before the agent runs. Agent-declared blockers appear after make and fail the specs gate; review prints failing gates, suggested fixes and the review file path.
+
 ## Render, review and revise
 
 `render` creates outputs under each asset's `out/` directory and updates `asset.yml`. Paid image and voice generation uses cached results; use `bstudio render release-note --regen` when a new generation is intended. See [formats](formats.md) for source and tool requirements.
 
 `review` writes `reviews/<platform>.json` and `review.md`. Address findings yourself or run `bstudio revise release-note`, which applies pending owner feedback and uses the author agent to address failing reviews, re-render and re-review. Add feedback directly with `bstudio revise release-note --note "Make the headline shorter" --platform bluesky`, or target an asset with `--asset <id>`; omit both targets for the whole project. Dashboard feedback is picked up by plain `revise`; use `--feedback-only` to skip automatic review-finding rounds. Stale feedback targets are rejected with a reason. Owner feedback rounds do not count against `review.maxRounds`, which limits automatic review-finding rounds. A blocked rights finding needs human resolution. See [review](review.md) for gates, scores and acceptance.
+
+Queue a note without applying it with `bstudio feedback release-note add --note "Shorten the headline" --platform bluesky`; use `feedback release-note list` to inspect notes and `feedback release-note rm <id>` to remove pending or rejected notes. Before make, revise and render overwrite artifacts, snapshots preserve posts, asset sources and outputs, and reviews. List them with `bstudio history release-note` and restore with `bstudio restore release-note <n>`; the current state is saved first. The most recent 20 snapshots are retained.
 
 ## Export and publish
 

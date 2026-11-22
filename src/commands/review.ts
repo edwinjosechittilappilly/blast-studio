@@ -41,6 +41,7 @@ export const run: Command = async (args, io) => {
   if (positionals.length !== 1) throw new UserError('usage: bstudio review <slug> [--calibrate]');
   const selected = filter ? new Set(filter.slice(12).split(',').filter(Boolean)) : undefined;
   const dir = projectDir(config, positionals[0]), posts = loadPosts(dir), brief = readBrief(dir), plan = readPlan(dir);
+  for (const id of selected ?? []) if (![...posts.keys()].some(platform => platform === id)) throw new UserError(`Unknown platform: ${id}. Valid platforms: ${[...posts.keys()].join(', ') || '(none)'}`);
   if (!posts.size) throw new UserError('No posts to review');
   const assetsDir = join(dir, 'assets');
   const assets: AssetMeta[] = existsSync(assetsDir) ? readdirSync(assetsDir).flatMap(id => {
@@ -88,6 +89,11 @@ export const run: Command = async (args, io) => {
     summaries.push(`## ${post.platform}: ${review.verdict}${total === null ? '' : ` (${total.toFixed(1)}%)`}`, ...gates.filter(g => !g.pass).map(g => `- ${g.id}: ${g.message}`), ...gates.warnings.map(w => `- Warning: ${w}`), ...scores.map(s => `- ${s.criterion}: ${s.score ?? 'N/A'} — ${s.evidence}; ${s.fix}`), ...(!config.reviewer.command ? rubric.map(c => `- [ ] ${c.question}`) : []), '');
     for (const comparison of scores.hookComparisons ?? []) summaries.push(`- Hook preference: ${comparison.preferred ?? 'N/A'} — ${comparison.evidence}`);
     io.out(`${post.platform}: ${review.verdict}${total === null ? '' : ` (${total.toFixed(1)}% editorial judgment)`}`);
+    if (review.verdict !== 'pass' && review.verdict !== 'accepted') {
+      for (const gate of gates.filter(g => !g.pass)) io.out(`  ${gate.id}: ${gate.message}`);
+      for (const score of scores.filter(s => s.score !== null && s.score < 2 && s.fix?.trim()).sort((a, b) => (a.score ?? 2) - (b.score ?? 2)).slice(0, 3)) io.out(`  fix ${score.criterion}: ${score.fix}`);
+      io.out(`  review: ${join(dir, 'review.md')}`);
+    }
     if (!config.reviewer.command) for (const criterion of rubric) io.out(`[ ] ${criterion.question}`);
   }
   writeFileSync(join(dir, 'review.md'), summaries.join('\n')); return 0;
