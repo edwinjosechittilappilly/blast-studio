@@ -7,6 +7,7 @@ import test from "node:test";
 import { realIO } from "../src/cli.ts";
 import { chromium } from "playwright";
 import { renderVideo } from "../src/render/video.ts";
+import { encodeVideo } from "../src/render/ffmpeg.ts";
 import type { StudioConfig } from "../src/types.ts";
 import { fakeIO, tempStudio } from "./helpers.ts";
 
@@ -36,6 +37,18 @@ test("VHS warns that tapes execute commands and rejects unsafe output paths", as
     writeFileSync(join(dir, "asset.yml"), "kind: terminal-demo\n");
     writeFileSync(join(dir, "source/demo.tape"), 'Output "../outside.gif"\n');
     await assert.rejects(renderVideo(dir, config, fakeIO({ cwd: dir })), /Unsafe/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("voiceover is muxed into a video", { skip: mediaMissing.length ? `missing binaries: ${mediaMissing.join(", ")}` : false }, async () => {
+  const dir = tempStudio(), io = realIO();
+  try {
+    const video = join(dir, "input.mp4"), voice = join(dir, "voice.wav"), output = join(dir, "output.mp4");
+    await io.run("ffmpeg", ["-y", "-f", "lavfi", "-i", "color=c=black:s=64x64:d=1", "-c:v", "libx264", video]);
+    await io.run("ffmpeg", ["-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", voice]);
+    await encodeVideo(video, output, io, { voiceover: voice });
+    const probe = JSON.parse(await io.run("ffprobe", ["-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name", "-of", "json", output]));
+    assert.equal(probe.streams[0].codec_name, "aac");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 

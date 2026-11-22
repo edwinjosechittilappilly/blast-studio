@@ -35,9 +35,15 @@ function filterPath(path: string): string {
 
 export async function encodeVideo(input: string, output: string, io: IO, options: { captions?: string; voiceover?: string } = {}): Promise<void> {
   const args = ["-y", "-i", input];
-  if (options.voiceover) args.push("-i", options.voiceover, "-map", "0:v:0", "-map", "1:a:0", "-af", "apad", "-shortest");
+  if (options.voiceover) {
+    const streams = await runTool(io, "ffprobe", "ffprobe", ["-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "json", input]);
+    const hasAudio = ((JSON.parse(streams) as { streams?: unknown[] }).streams ?? []).length > 0;
+    args.push("-i", options.voiceover, "-map", "0:v:0");
+    if (hasAudio) args.push("-filter_complex", "[1:a]apad[voice];[0:a][voice]amix=inputs=2:duration=first:normalize=0[audio]", "-map", "[audio]");
+    else args.push("-map", "1:a:0", "-af", "apad", "-shortest");
+  }
   if (options.captions) args.push("-vf", `subtitles=filename='${filterPath(options.captions)}'`);
-  args.push("-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-c:a", "aac", output);
+  args.push("-c:v", options.captions ? "libx264" : "copy", ...(options.captions ? ["-pix_fmt", "yuv420p"] : []), "-movflags", "+faststart", "-c:a", "aac", output);
   try {
     await runTool(io, "ffmpeg", "ffmpeg", args);
   } catch (error) {

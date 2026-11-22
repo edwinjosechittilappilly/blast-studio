@@ -40,17 +40,21 @@ test('metrics report low contrast, overflow and unknown image backgrounds', { ti
 
 test('SVG logo renders required sizes', { timeout: 20000 }, () => {
   const input = join(dir, 'logo.svg');
-  writeFileSync(input, '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><circle cx="50" cy="50" r="45" fill="navy"/></svg>');
+  writeFileSync(input, '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="100" height="50" fill="navy"/></svg>');
   const sizes = [32, 180, 512];
   const outputs = sizes.map(size => ({ size, file: join(dir, `logo-${size}.png`) }));
   assert.deepEqual(renderSvg(input, outputs), outputs.map(o => o.file));
-  outputs.forEach(o => assert.deepEqual(dimensions(o.file), [o.size, o.size]));
+  outputs.forEach(o => assert.deepEqual(dimensions(o.file), [o.size, o.size / 2]));
 });
 
 test('Mermaid renders SVG and PNG', { timeout: 20000 }, async () => {
-  const input = join(dir, 'graph.mmd'); writeFileSync(input, 'graph LR\n A --> B\n');
+  const input = join(dir, 'graph.mmd'); writeFileSync(input, 'graph LR\n A[Alpha label] --> B[Beta label]\n');
   const output = await renderDiagram(input, join(dir, 'mermaid.svg'));
-  assert.match(readFileSync(output.svg, 'utf8'), /<svg/);
+  const svg = readFileSync(output.svg, 'utf8');
+  assert.match(svg, /<text[\s>]/);
+  const text = svg.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  assert.match(text, /Alpha\s+label/);
+  assert.match(text, /Beta\s+label/);
   assert.ok(readFileSync(output.png).length > 100);
 });
 

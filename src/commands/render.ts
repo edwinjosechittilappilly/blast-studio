@@ -1,5 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse, stringify } from 'yaml';
 import { loadConfig, projectDir } from '../config.ts';
@@ -22,7 +22,8 @@ export const run: Command = async (args, io) => {
   const selections = new Map<string, Map<string, { image?: string; document?: string; slides?: string[] }>>();
   const rendered = new Set<string>();
   try {
-    for (const entry of plan) for (const asset of entry.assets) {
+    const assets = plan.flatMap(entry => entry.assets).sort((a, b) => Number(b.kind === 'voiceover') - Number(a.kind === 'voiceover'));
+    for (const asset of assets) {
       if (rendered.has(asset.id)) continue;
       rendered.add(asset.id);
       const dir = join(project, 'assets', asset.id), metaPath = join(dir, 'asset.yml');
@@ -44,8 +45,22 @@ export const run: Command = async (args, io) => {
       const variants = [...new Map(dimensions.map(d => [`${d.width}x${d.height}`, d])).values()];
       const { width, height } = variants[0];
       const html = (file: string) => { const text = readFileSync(file, 'utf8'), base = `<base href="${pathToFileURL(`${dirname(file)}/`).href}">`; return /<head(?:\s[^>]*)?>/i.test(text) ? text.replace(/<head(?:\s[^>]*)?>/i, `$&${base}`) : base + text; };
-      const still = async (source: string, dest: string, width: number, height: number) => { const result = await renderHtml({ html: html(source), width, height, out: dest }); add(dest, width, height); metrics.push({ file: `out/${basename(dest)}`, minFontPx: result.metrics.minFontPx ?? 0, minContrast: result.metrics.minContrast, overflow: result.metrics.overflow }); };
-      if (asset.kind === 'video' || asset.kind === 'terminal-demo') outputs.push(...await renderVideo(dir, config, io));
+      const still = async (source: string, dest: string, width: number, height: number) => { const result = await renderHtml({ html: html(source), width, height, out: dest, assetDir: dir, projectDir: project }); add(dest, width, height); metrics.push({ file: `out/${basename(dest)}`, minFontPx: result.metrics.minFontPx, minContrast: result.metrics.minContrast, overflow: result.metrics.overflow, nodes: result.metrics.nodes, texts: result.metrics.nodes.map(n => n.text) }); for (const file of result.loadedFiles) { const parts = relative(join(project, 'assets'), file).split(sep); if (parts.length >= 3 && parts[1] === 'out' && parts[0] !== '..' && parts[0] !== asset.id) raw.embeds = [...new Set([...(raw.embeds ?? []), parts[0]])]; } };
+      if (asset.kind === 'video' || asset.kind === 'terminal-demo') {
+        const voiceId = (raw as AssetMeta & { voiceover?: string }).voiceover;
+        let voice: string | undefined;
+        if (voiceId) {
+          const embedded = metadata.get(voiceId);
+          if (!embedded || embedded.meta.kind !== 'voiceover') throw new UserError(`Unknown voiceover asset: ${voiceId}`);
+          voice = join(embedded.dir, 'out', 'voiceover.wav');
+          raw.embeds = [...new Set([...(raw.embeds ?? []), voiceId])];
+        } else if (config.voice.provider !== 'none' && [join(dir, 'script.txt'), join(dir, 'source', 'script.txt')].some(existsSync)) {
+          const script = [join(dir, 'script.txt'), join(dir, 'source', 'script.txt')].find(existsSync)!;
+          const generated = await generateVoice({ config, io, projectSlug: pos[0], text: readFileSync(script, 'utf8'), out: join(out, 'voiceover.wav'), regen });
+          voice = generated.file; raw.aiGenerated = true;
+        }
+        outputs.push(...await renderVideo(dir, config, io, voice));
+      }
       else if (asset.kind === 'illustration') {
         const promptFile = join(dir, 'source.json'); const data = parse(readFileSync(promptFile, 'utf8')) as { prompt: string; size?: string };
         const chosen = new Map<string, { image?: string }>();
@@ -64,20 +79,22 @@ export const run: Command = async (args, io) => {
         raw.provider = generated.provider; raw.aiGenerated = generated.aiGenerated; raw.costUsd = generated.costUsd; raw.promptHash = generated.promptHash; raw.license = generated.license; add(generated.file);
       } else if (asset.kind === 'logo') {
         const source = join(dir, 'source.svg'), svg = join(out, 'logo.svg'); copyFileSync(source, svg); add(svg);
-        const pngs = [32, 180, 512].map(size => ({ file: join(out, `logo-${size}.png`), size })); renderSvg(source, pngs); for (const p of pngs) add(p.file, p.size, p.size);
+        const pngs = [32, 180, 512].map(size => ({ file: join(out, `logo-${size}.png`), size })); renderSvg(source, pngs); for (const p of pngs) { const png = readFileSync(p.file); add(p.file, png.readUInt32BE(16), png.readUInt32BE(20)); }
         const favicon = join(out, 'favicon.ico'); const png = readFileSync(pngs[0].file); const header = Buffer.alloc(22); header.writeUInt16LE(1, 2); header.writeUInt16LE(1, 4); header[6] = 32; header[7] = 32; header.writeUInt16LE(1, 10); header.writeUInt16LE(32, 12); header.writeUInt32LE(png.length, 14); header.writeUInt32LE(22, 18); writeFileSync(favicon, Buffer.concat([header, png])); add(favicon);
       } else if (asset.kind === 'diagram') {
-        const source = ['source.mmd', 'source.d2'].map(f => join(dir, f)).find(existsSync); if (!source) throw new UserError(`Missing diagram source for ${asset.id}`);
-        const result = await renderDiagram(source, join(out, 'diagram')); add(result.svg); add(result.png); raw.provider = extname(source) === '.mmd' ? 'mermaid' : 'd2';
+        const source = ['source.mmd', 'source.d2', 'source.json'].map(f => join(dir, f)).find(existsSync); if (!source) throw new UserError(`Missing diagram source for ${asset.id}`);
+        const result = await renderDiagram(source, join(out, 'diagram')); add(result.svg); add(result.png); raw.provider = extname(source) === '.mmd' ? 'mermaid' : extname(source) === '.json' ? 'arch-diagram' : 'd2';
       } else if (asset.kind === 'carousel') {
-        const slidesDir = join(dir, 'source'); const slides = readdirSync(slidesDir).filter(f => f.endsWith('.html')).sort(); if (!slides.length) throw new UserError(`No carousel slides in ${slidesDir}`);
-        const bodies = slides.map(slide => { const content = html(join(slidesDir, slide)); const styles = [...content.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/gi)].map(m => m[0]).join(''); const body = content.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? content; return `${styles}<div class="slide">${body}</div>`; }).join('\n');
+        const slidesDir = join(dir, 'source'); const slides = readdirSync(slidesDir).filter(f => f.endsWith('.html')).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })); if (!slides.length) throw new UserError(`No carousel slides in ${slidesDir}`);
         const chosen = new Map<string, { image?: string; document?: string; slides?: string[] }>();
         for (const variant of variants) {
           const suffix = variants.length > 1 ? `-${variant.width}x${variant.height}` : '';
           const files: string[] = [];
           for (const [index, slide] of slides.entries()) { const file = `slide-${index + 1}${suffix}.png`; await still(join(slidesDir, slide), join(out, file), variant.width, variant.height); files.push(`assets/${asset.id}/out/${file}`); }
-          const pdfName = `carousel${suffix}.pdf`, pdf = join(out, pdfName); await renderHtml({ html: `<base href="${pathToFileURL(`${slidesDir}/`).href}">${bodies}`, width: variant.width, height: variant.height, out: pdf, pdf: true }); add(pdf, variant.width, variant.height);
+          const pdfName = `carousel${suffix}.pdf`, pdf = join(out, pdfName);
+          const pages = files.map(file => `<div class="slide"><img src="${pathToFileURL(join(project, file)).href}" width="${variant.width}" height="${variant.height}"></div>`).join('');
+          await renderHtml({ html: `<style>html,body{margin:0;padding:0}.slide{width:${variant.width}px;height:${variant.height}px;break-after:page}.slide:last-child{break-after:auto}img{display:block}</style>${pages}`, width: variant.width, height: variant.height, out: pdf, pdf: true, assetDir: dir, projectDir: project });
+          add(pdf, variant.width, variant.height);
           for (const use of dimensions.filter(d => d.width === variant.width && d.height === variant.height)) chosen.set(use.platform, { image: files[0], slides: files, document: `assets/${asset.id}/out/${pdfName}` });
         }
         selections.set(asset.id, chosen);

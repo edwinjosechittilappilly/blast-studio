@@ -52,7 +52,7 @@ export function renderSvg(svgPath: string, outPngs: { file: string; size: number
 /** Render both SVG and PNG; `out` selects either artifact's basename. */
 export async function renderDiagram(sourcePath: string, out: string): Promise<{ svg: string; png: string }> {
   const ext = extname(sourcePath).toLowerCase();
-  if (ext !== '.mmd' && ext !== '.d2') throw new Error('Diagram source must be .mmd or .d2');
+  if (!['.mmd', '.d2', '.json'].includes(ext)) throw new Error('Diagram source must be .mmd, .d2 or .json');
   const base = /\.(svg|png)$/i.test(out) ? out.slice(0, -4) : out;
   const svg = `${base}.svg`, png = `${base}.png`;
   mkdirSync(dirname(resolve(svg)), { recursive: true });
@@ -62,8 +62,14 @@ export async function renderDiagram(sourcePath: string, out: string): Promise<{ 
       const mmdc = fileURLToPath(new URL('../../node_modules/.bin/mmdc', import.meta.url));
       const config = join(temp, 'puppeteer.json');
       writeFileSync(config, JSON.stringify({ executablePath: chromium.executablePath(), args: ['--no-sandbox'] }));
-      try { await exec(mmdc, ['-i', resolve(sourcePath), '-o', resolve(svg), '-p', config], { timeout: 30000 }); }
+      const mermaidConfig = join(temp, 'mermaid.json');
+      writeFileSync(mermaidConfig, JSON.stringify({ htmlLabels: false, flowchart: { htmlLabels: false } }));
+      try { await exec(mmdc, ['-i', resolve(sourcePath), '-o', resolve(svg), '-p', config, '-c', mermaidConfig, '-b', 'white'], { timeout: 30000 }); }
       catch (error) { throw new Error(`Mermaid rendering failed; install dependencies with npm install and Chromium with npx playwright install chromium: ${String(error)}`); }
+    } else if (ext === '.json') {
+      const script = fileURLToPath(new URL('../../../slipway/skills/arch-diagram/scripts/diagram.py', import.meta.url));
+      try { await exec('python3', [script, resolve(sourcePath), '-o', resolve(base), '--format', 'svg'], { timeout: 30000 }); }
+      catch (error) { throw new Error(`Architecture diagram rendering requires ../slipway/skills/arch-diagram/scripts/diagram.py: ${String(error)}`); }
     } else {
       try { await exec('d2', [resolve(sourcePath), resolve(svg)], { timeout: 30000 }); }
       catch (error) { throw new Error(`D2 rendering failed; install D2 from https://d2lang.com/tour/install: ${String(error)}`); }

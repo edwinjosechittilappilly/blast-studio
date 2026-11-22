@@ -55,12 +55,12 @@ async function hasSubtitleFilter(io: IO): Promise<boolean> {
 }
 
 /** Render editable per-aspect HyperFrames projects or a VHS tape into asset-relative outputs. */
-export async function renderVideo(assetDir: string, config: StudioConfig, io: IO): Promise<AssetMeta["outputs"]> {
+export async function renderVideo(assetDir: string, config: StudioConfig, io: IO, generatedVoice?: string): Promise<AssetMeta["outputs"]> {
   assetDir = resolve(assetDir);
   const meta = parse(readFileSync(join(assetDir, "asset.yml"), "utf8")) as VideoSettings;
   if (!meta || typeof meta !== "object") throw new UserError("Invalid video asset.yml");
   const source = join(assetDir, "source"), out = join(assetDir, "out"), frameDir = join(out, "frames");
-  const caption = join(source, "captions.vtt"), voice = join(source, "voiceover.wav");
+  const caption = join(source, "captions.vtt"), voice = generatedVoice ?? join(source, "voiceover.wav");
   if (meta.captions?.burn && !existsSync(caption)) throw new UserError("Caption burn-in requested but source/captions.vtt is missing");
   mkdirSync(out, { recursive: true });
   const outputs: AssetMeta["outputs"] = [];
@@ -73,6 +73,7 @@ export async function renderVideo(assetDir: string, config: StudioConfig, io: IO
   const tape = existsSync(join(source, "demo.tape")) ? join(source, "demo.tape") : join(assetDir, "demo.tape");
   if (meta.kind === "terminal-demo" || existsSync(tape)) {
     if (!existsSync(tape)) throw new UserError("Terminal demo requires source/demo.tape");
+    if (meta.captions?.burn) throw new UserError("Caption burn-in is not supported for VHS output");
     const tapeText = readFileSync(tape, "utf8");
     const names = [...tapeText.matchAll(/^\s*Output\s+(?:"([^"]+)"|'([^']+)'|(\S+))\s*(?:#.*)?$/gmi)].map(m => m[1] ?? m[2] ?? m[3]);
     if (!names.length) throw new UserError("VHS tape must declare an MP4 or GIF Output");
