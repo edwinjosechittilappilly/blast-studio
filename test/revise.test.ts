@@ -115,3 +115,88 @@ test('passing reviews with no feedback have nothing to revise', async () => {
   await revise(['demo'], f.io);
   assert.ok(f.io.stdout.includes('Nothing to revise'));
 });
+
+test('platform feedback reviews only the edited platform', async () => {
+  const f = fixture(0);
+  writeFileSync(join(f.project, 'plan.yml'), stringify([
+    { platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [] },
+    { platform: 'instagram', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [] },
+  ]));
+  writeFileSync(join(f.project, 'posts/instagram.md'), '---\nplatform: instagram\nevidence: [E1]\nmedia: []\n---\nOriginal\n');
+  const untouched = JSON.stringify({ platform: 'instagram', verdict: 'pass', gates: [] });
+  writeFileSync(join(f.project, 'reviews/instagram.json'), untouched);
+  f.io.run = async (_cmd, _args, opts) => {
+    writeFileSync(join(opts!.cwd!, 'posts/bluesky.md'), '---\nplatform: bluesky\nevidence: [E1]\nmedia: []\n---\nUpdated\n');
+    return '';
+  };
+  await revise(['demo', '--note=New opening', '--platform=bluesky'], f.io);
+  assert.equal(readFileSync(join(f.project, 'reviews/instagram.json'), 'utf8'), untouched);
+  assert.ok(f.io.stdout.some(line => line.startsWith('bluesky:')));
+  assert.ok(!f.io.stdout.some(line => line.startsWith('instagram:')));
+});
+
+test('changed asset rerenders assets embedding it', async () => {
+  const f = fixture(0);
+  const assets = [{ id: 'child', kind: 'illustration', brief: 'Child' }, { id: 'parent', kind: 'illustration', brief: 'Parent' }];
+  writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets }]));
+  for (const id of ['child', 'parent']) {
+    mkdirSync(join(f.project, 'assets', id), { recursive: true });
+    writeFileSync(join(f.project, 'assets', id, 'asset.yml'), stringify({ id, kind: 'illustration', provider: 'none', aiGenerated: false, outputs: [], ...(id === 'parent' ? { embeds: ['child'] } : {}) }));
+    writeFileSync(join(f.project, 'assets', id, 'source.json'), '{"prompt":"original"}');
+  }
+  f.io.run = async (_cmd, _args, opts) => { writeFileSync(join(opts!.cwd!, 'assets/child/source.json'), '{"prompt":"updated"}'); return ''; };
+  await revise(['demo', '--note', 'Change child', '--asset', 'child'], f.io);
+  assert.ok(f.io.stdout.some(line => line.includes('child: illustration needs')));
+  assert.ok(f.io.stdout.some(line => line.includes('parent: illustration needs')));
+});
+
+test('render failure leaves feedback applied so it is not applied twice', async () => {
+  const f = fixture(0);
+  writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'logo', kind: 'logo', brief: 'Logo' }] }]));
+  mkdirSync(join(f.project, 'assets/logo'), { recursive: true });
+  writeFileSync(join(f.project, 'assets/logo/asset.yml'), 'id: logo\nkind: logo\nprovider: template\naiGenerated: false\noutputs: []\n');
+  let calls = 0;
+  f.io.run = async (_cmd, _args, opts) => { calls++; writeFileSync(join(opts!.cwd!, 'assets/logo/source.txt'), 'changed'); return ''; };
+  await assert.rejects(revise(['demo', '--note', 'Change logo', '--asset', 'logo'], f.io), /Feedback is applied in the sources[\s\S]*Re-render:[\s\S]*Re-review:/);
+  assert.equal(loadFeedback(f.project)[0].status, 'applied');
+  await revise(['demo', '--feedback-only'], f.io);
+  assert.equal(calls, 1);
+});
+
+test('stale feedback is rejected without blocking other feedback', async () => {
+  const f = fixture(0);
+  writeFileSync(join(f.project, 'reviews/bluesky.json'), JSON.stringify({ platform: 'bluesky', verdict: 'pass', gates: [] }));
+  writeFileSync(join(f.project, 'feedback.yml'), stringify([{ id: 'old', target: { asset: 'removed' }, note: 'Old', at: new Date().toISOString(), status: 'pending' }]));
+  addFeedback(f.project, { platform: 'bluesky' }, 'Current');
+  let prompt = '';
+  f.io.run = async (_cmd, args) => { prompt = args.join('\n'); return ''; };
+  await revise(['demo', '--feedback-only'], f.io);
+  const entries = loadFeedback(f.project);
+  assert.equal(entries[0].status, 'rejected');
+  assert.match(entries[0].rejectedReason!, /Unknown asset/);
+  assert.equal(entries[1].status, 'applied');
+  assert.match(prompt, /Current/);
+});
+
+test('revision lock prevents concurrent runs', async () => {
+  const f = fixture(0);
+  writeFileSync(join(f.project, '.revise.lock'), '');
+  await assert.rejects(revise(['demo', '--feedback-only'], f.io), /already in progress/);
+});
+
+test('different feedback targets get separate scoped agent runs', async () => {
+  const f = fixture(0);
+  writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'logo', kind: 'logo', brief: 'Logo' }] }]));
+  mkdirSync(join(f.project, 'assets/logo'), { recursive: true });
+  writeFileSync(join(f.project, 'assets/logo/asset.yml'), 'id: logo\nkind: logo\nprovider: template\naiGenerated: false\noutputs: []\n');
+  addFeedback(f.project, { asset: 'logo' }, 'Adjust logo');
+  addFeedback(f.project, { platform: 'bluesky' }, 'Adjust post');
+  const prompts: string[] = [];
+  f.io.run = async (_cmd, args) => { prompts.push(args.join('\n')); return ''; };
+  await revise(['demo', '--feedback-only'], f.io);
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[0], /Adjust logo/);
+  assert.doesNotMatch(prompts[0], /Adjust post/);
+  assert.match(prompts[1], /Adjust post/);
+  assert.doesNotMatch(prompts[1], /Adjust logo/);
+});

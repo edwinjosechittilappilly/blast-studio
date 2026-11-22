@@ -245,8 +245,9 @@ export interface FeedbackEntry {
   target: { platform?: string; asset?: string };
   note: string;
   at: string;
-  status: 'pending' | 'applied';
+  status: 'pending' | 'applied' | 'rejected';
   appliedAt?: string;
+  rejectedReason?: string;
 }
 
 export type Env = Record<string, string | undefined>;
