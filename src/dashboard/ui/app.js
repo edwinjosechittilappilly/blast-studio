@@ -15,9 +15,9 @@ import { el, button, verdictTag as baseVerdictTag, copyButton, scoreMeter, selfR
 import { mediaGallery } from './components/media.js';
 import { api, headers, campaignPath, startFeedbackJob, cancelFeedbackJob, feedbackJobStatus } from './components/api.js';
 const $ = s => document.querySelector(s);
-let timer, searchTimer, activeProject = null, activeTab = 'overview';
+let timer, searchTimer, activeProject = null, activeTab = 'overview', navigation = 0, projectLoad = 0, libraryLoad = 0;
 const feedbackDrafts = new Map(), dismissedJobFailures = new Set();
-window.addEventListener('session-expired', () => { clearTimeout(timer); activeProject = null; show('expired'); document.title = 'Session expired – Blast Studio'; });
+window.addEventListener('session-expired', () => { clearTimeout(timer); navigation++; projectLoad++; libraryLoad++; activeProject = null; show('expired'); document.title = 'Session expired – Blast Studio'; });
 function message(text) { $('#message').textContent = text; }
 function toast(text, kind = 'success') { if (kind === true) kind = 'error'; if (kind === false) kind = 'success'; const notice = el('cds-toast-notification', null, 'job-toast'); notice.setAttribute('kind', kind); if (kind !== 'error') notice.setAttribute('timeout', '5000'); const title = el('span', text); title.slot = 'title'; notice.append(title); notice.addEventListener('cds-notification-closed', () => notice.remove()); document.body.append(notice); if (kind !== 'error') setTimeout(() => notice.remove(), 5000); }
 function show(view) { document.querySelectorAll('.view').forEach(n => { n.hidden = n.id !== view; }); document.querySelectorAll('.shell-nav a').forEach(n => n.classList.toggle('active', n.dataset.view === (['project', 'not-found'].includes(view) ? 'projects' : view))); }
@@ -34,16 +34,16 @@ function tabStatusIcon(verdict) {
 function formatMoney(value) { return `$${Number(value).toFixed(2)}`; }
 const dark = matchMedia('(prefers-color-scheme: dark)'); function theme() { document.body.classList.toggle('cds--g100', dark.matches); document.body.classList.toggle('cds--g10', !dark.matches); } dark.addEventListener('change', theme); theme();
 async function library() {
-  const target = $('#project-list'), query = $('#search').value;
+  const target = $('#project-list'), query = $('#search').value, load = ++libraryLoad;
   target.replaceChildren(el('p', 'Loading projects…', 'empty'));
   let projects;
   try { projects = await api(`/api/library?q=${encodeURIComponent(query)}`); }
   catch (error) {
-    if (error.message === 'Session expired') return;
+    if (error.message === 'Session expired' || load !== libraryLoad || query !== $('#search').value) return;
     const box = el('div', null, 'surface'); box.append(el('h2', 'Unable to load projects'), el('p', 'Check that your studio is available and try again.'));
     const details = el('details'); details.append(el('summary', 'Error details'), el('p', error.message)); const retry = button('Try again', 'secondary'); retry.addEventListener('click', library); box.append(details, retry); target.replaceChildren(box); return;
   }
-  if (query !== $('#search').value) return;
+  if (load !== libraryLoad || query !== $('#search').value) return;
   target.replaceChildren(); $('#project-count').textContent = `${projects.length} campaigns`;
   if (!projects.length) {
     const empty = el('div', null, 'surface empty'); empty.append(el('h2', query ? `No projects match “${query}”` : 'No projects yet'));
@@ -51,10 +51,11 @@ async function library() {
     else empty.append(el('p', 'Create a project and its first campaign from the command line.'), commandSnippet('bstudio new <project>/<campaign>'));
     target.append(empty); return;
   }
-  const table = el('cds-table'), head = el('cds-table-head'), hr = el('cds-table-header-row'), body = el('cds-table-body'), cards = el('div', null, 'project-cards'); let direction = -1, current = 'Updated';
+  const table = el('cds-table'), head = el('cds-table-head'), hr = el('cds-table-header-row'), body = el('cds-table-body'), cards = el('div', null, 'project-cards'), mobileSort = el('div', null, 'project-sort'), label = el('label', 'Sort campaigns by '), select = el('select'), order = el('button'); let direction = -1, current = 'Updated';
   const value = (p, key) => key === 'Project' ? p.slug.split('/')[0] : key === 'Campaign' ? p.slug.split('/')[1] : key === 'Updated' ? p.updatedAt || '' : key === 'Review status' ? p.reviews.map(r => r.verdict).join(', ') : `${p.exported ? 'Exported' : 'Not exported'} · ${Object.keys(p.published || {}).length} published`;
   function render() {
     for (const cell of hr.children) { cell.removeAttribute('aria-sort'); if (cell.dataset.sort === current) cell.setAttribute('aria-sort', direction === 1 ? 'ascending' : 'descending'); }
+    select.value = current; order.textContent = direction === 1 ? 'Ascending' : 'Descending'; order.setAttribute('aria-label', `Sort order: ${order.textContent}`);
     body.replaceChildren(); cards.replaceChildren(); projects.sort((a, b) => direction * String(value(a, current)).localeCompare(String(value(b, current))));
     for (const project of projects) {
       const row = el('cds-table-row'), link = el('a', project.slug.split('/')[1]); link.href = `${campaignRoute(project.slug)}/overview`;
@@ -67,8 +68,9 @@ async function library() {
       row.classList.add('clickable-row'); row.addEventListener('click', event => { if (!event.target.closest('a')) location.hash = link.hash; }); body.append(row);
     }
   }
-  for (const text of ['Project', 'Campaign', 'Review status', 'Updated', 'Export / published']) { const cell = el('cds-table-header-cell'), control = el('button', text, 'sort-button'); cell.dataset.sort = text; control.setAttribute('aria-label', `Sort by ${text}`); control.addEventListener('click', () => { direction = current === text ? -direction : 1; current = text; render(); }); cell.append(control); hr.append(cell); }
-  head.append(hr); table.append(head, body); render(); target.append(table, cards);
+  for (const text of ['Project', 'Campaign', 'Review status', 'Updated', 'Export / published']) { const cell = el('cds-table-header-cell'), control = el('button', text, 'sort-button'), option = el('option', text); option.value = text; select.append(option); cell.dataset.sort = text; control.setAttribute('aria-label', `Sort by ${text}`); control.addEventListener('click', () => { direction = current === text ? -direction : 1; current = text; render(); }); cell.append(control); hr.append(cell); }
+  select.addEventListener('change', () => { current = select.value; direction = 1; render(); }); order.type = 'button'; order.addEventListener('click', () => { direction = -direction; render(); }); label.append(select); mobileSort.append(label, order);
+  head.append(hr); table.append(head, body); render(); target.append(table, mobileSort, cards);
 }
 function feedbackHistory(project, target) {
   const entries = project.feedback.filter(e => target.platform ? e.target.platform === target.platform : target.asset ? e.target.asset === target.asset : true), section = el('section', null, 'feedback-history');
@@ -88,9 +90,9 @@ function feedbackForm(project, target) {
     try {
       const entry = await api(campaignPath(project.slug, 'feedback'), { method: 'POST', headers, body: JSON.stringify({ target, note }) });
       project.feedback.push(entry); if (feedbackDrafts.get(key) === draft) { feedbackDrafts.delete(key); field.value = ''; }
-      if (activeProject !== project.slug || $('#project').hidden || !section.isConnected) return;
-      const next = feedbackHistory(project, target); history.replaceWith(next); history = next; history.querySelector('details')?.setAttribute('open', '');
-      const apply = $('#apply-feedback'); if (apply) { const count = project.feedback.filter(e => e.status === 'pending').length; apply.disabled = false; apply.textContent = `Apply ${count} feedback ${count === 1 ? 'item' : 'items'}`; $('#apply-reason').textContent = ''; }
+      if (activeProject !== project.slug || $('#project').hidden) return;
+      if (section.isConnected) { const next = feedbackHistory(project, target); history.replaceWith(next); history = next; history.querySelector('details')?.setAttribute('open', ''); }
+      const job = $('#project-detail .job-status'), apply = $('#apply-feedback'); if (apply && job?.project === project) { const count = project.feedback.filter(e => e.status === 'pending').length; apply.disabled = job.dataset.statusKnown !== 'yes' || job.dataset.running === 'yes'; apply.textContent = `Apply ${count} feedback ${count === 1 ? 'item' : 'items'}`; $('#apply-reason').textContent = ''; }
       toast('Feedback queued. Use Apply feedback when ready.');
     } catch (failure) { error.textContent = failure.message; } finally { submit.disabled = false; }
   });
@@ -101,15 +103,16 @@ async function jobStatus(project, region, apply) {
   const announcement = region.querySelector('.job-announcement'), cancel = region.querySelector('.cancel-job'), log = region.querySelector('.job-log');
   if (log.textContent !== status.lines.join('\n')) log.textContent = status.lines.join('\n'); log.parentElement.hidden = !status.lines.length || (!status.running && status.state !== 'failed' && region.dataset.running !== 'yes');
   cancel.hidden = !status.running; cancel.disabled = !!status.cancelling; cancel.dataset.jobId = status.id || '';
-  apply.disabled = status.running || !project.feedback.some(entry => entry.status === 'pending');
+  region.dataset.statusKnown = 'yes'; apply.disabled = status.running || !project.feedback.some(entry => entry.status === 'pending');
   if (status.running) {
     region.dataset.running = 'yes'; if (!region.pendingIds) region.pendingIds = project.feedback.filter(e => e.status === 'pending').map(e => e.id);
     const label = status.cancelling ? 'Cancelling revision…' : 'Applying feedback…';
     if (region.dataset.state !== label) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'info'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', label); announcement.replaceChildren(notice); region.dataset.state = label; }
     scheduleStatus(project, region, apply);
   } else if (region.dataset.running === 'yes') {
-    region.dataset.running = ''; region.dataset.state = ''; announcement.replaceChildren();
+    apply.disabled = true;
     const updated = await api(`/api/project/${encodeURIComponent(project.slug)}`); if (activeProject !== project.slug || $('#project').hidden || !region.isConnected) return;
+    region.dataset.running = ''; region.dataset.state = ''; announcement.replaceChildren();
     const count = updated.feedback.filter(entry => entry.status === 'pending').length, applied = updated.feedback.filter(entry => region.pendingIds?.includes(entry.id) && entry.status === 'applied').length;
     const focus = document.activeElement, inProject = $('#project').contains(focus), selector = inProject && focus.id ? `#${CSS.escape(focus.id)}` : null, tag = inProject && !selector ? focus.tagName : null, index = tag ? [...$('#project').querySelectorAll(tag)].indexOf(focus) : -1, y = window.scrollY, tab = activeTab;
     await openProject(project.slug, tab); if (activeProject !== project.slug || $('#project').hidden) return;
@@ -167,15 +170,15 @@ function overviewPanel(project) {
   table.append(head, body); const scroll = el('div', null, 'table-scroll'); scroll.append(table); section.append(scroll, feedbackHistory(project, {})); return section;
 }
 async function openProject(slug, requested = 'overview') {
-  clearTimeout(timer); activeProject = slug; const container = $('#project-detail'); container.replaceChildren(el('h1', slug.split('/')[1]), el('p', 'Loading campaign…', 'empty')); show('project'); const [project, operations] = await Promise.all([api(`/api/project/${encodeURIComponent(slug)}`), api(`/api/operations?campaign=${encodeURIComponent(slug)}`)]); if (activeProject !== slug) return;
+  const load = ++projectLoad; clearTimeout(timer); activeProject = slug; const container = $('#project-detail'); container.replaceChildren(el('h1', slug.split('/')[1]), el('p', 'Loading campaign…', 'empty')); show('project'); const [project, operations] = await Promise.all([api(`/api/project/${encodeURIComponent(slug)}`), api(`/api/operations?campaign=${encodeURIComponent(slug)}`)]); if (load !== projectLoad || activeProject !== slug) return;
   container.replaceChildren(); const crumb = el('nav', null, 'breadcrumb'); crumb.setAttribute('aria-label', 'Breadcrumb'); const back = el('a', 'Projects'), projectLink = el('a', slug.split('/')[0]); back.href = '#/projects'; projectLink.href = `#/p/${encodeURIComponent(slug.split('/')[0])}`; crumb.append(back, document.createTextNode(' / '), projectLink, document.createTextNode(` / ${slug.split('/')[1]}`)); container.append(crumb);
   const top = el('div', null, 'page-heading'), title = el('div'), actions = el('div'); title.append(el('h1', slug.split('/')[1]), el('p', project.inputs.join(' · ') || `Campaign in ${slug.split('/')[0]}`)); const count = project.feedback.filter(e => e.status === 'pending').length, apply = button(count ? `Apply ${count} feedback ${count === 1 ? 'item' : 'items'}` : 'Apply feedback', 'primary'), reason = el('p', count ? '' : 'No pending feedback', 'muted'); apply.id = 'apply-feedback'; reason.id = 'apply-reason'; apply.setAttribute('aria-describedby', 'apply-reason'); apply.disabled = true; if (operations.revise.requiresTTY) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'info'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', 'Apply feedback from the terminal'); actions.append(notice, commandSnippet(`bstudio revise ${slug} --feedback-only`)); } else actions.append(apply, reason); top.append(title, actions); container.append(top);
-  const job = el('div', null, 'job-status'), announcement = el('div', null, 'job-announcement'), logDetails = el('details'), log = el('pre', null, 'job-log'), cancel = button('Cancel revision', 'secondary'); cancel.className = 'cancel-job'; cancel.hidden = true; cancel.addEventListener('click', async () => { cancel.disabled = true; try { await cancelFeedbackJob(cancel.dataset.jobId); await jobStatus(project, job, apply); } catch (error) { announcement.textContent = error.message; cancel.disabled = false; } }); announcement.setAttribute('role', 'status'); announcement.setAttribute('aria-live', 'polite'); logDetails.hidden = true; logDetails.append(el('summary', 'Revision log'), log); job.append(announcement, cancel, logDetails); apply.addEventListener('click', async () => { apply.disabled = true; try { job.pendingIds = project.feedback.filter(e => e.status === 'pending').map(e => e.id); await startFeedbackJob(slug); job.dataset.running = 'yes'; await jobStatus(project, job, apply); } catch (error) { announcement.replaceChildren(el('p', error.message)); if (error.command) announcement.append(commandSnippet(error.command)); apply.disabled = false; } });
+  const job = el('div', null, 'job-status'), announcement = el('div', null, 'job-announcement'), logDetails = el('details'), log = el('pre', null, 'job-log'), cancel = button('Cancel revision', 'secondary'); cancel.className = 'cancel-job'; cancel.hidden = true; cancel.addEventListener('click', async () => { cancel.disabled = true; try { await cancelFeedbackJob(cancel.dataset.jobId); await jobStatus(project, job, apply); } catch (error) { announcement.textContent = error.message; cancel.disabled = false; } }); announcement.setAttribute('role', 'status'); announcement.setAttribute('aria-live', 'polite'); logDetails.hidden = true; logDetails.append(el('summary', 'Revision log'), log); job.append(announcement, cancel, logDetails); apply.addEventListener('click', async () => { apply.disabled = true; job.dataset.statusKnown = ''; try { job.pendingIds = project.feedback.filter(e => e.status === 'pending').map(e => e.id); await startFeedbackJob(slug); job.dataset.running = 'yes'; await jobStatus(project, job, apply); } catch (error) { announcement.replaceChildren(el('p', error.message)); if (error.command) announcement.append(commandSnippet(error.command)); if (job.dataset.running === 'yes') scheduleStatus(project, job, apply); else { job.dataset.statusKnown = 'yes'; apply.disabled = false; } } });
   const tabs = el('cds-tabs'); tabs.setAttribute('type', 'contained'); const panel = el('div', null, 'tab-content'), options = ['overview', ...orderedPosts(project).map(p => p.platform), 'assets']; activeTab = options.includes(requested) ? requested : 'overview';
   panel.setAttribute('role', 'tabpanel');
   function select(name) { activeTab = name; panel.setAttribute('aria-labelledby', `tab-${name}`); panel.replaceChildren(name === 'overview' ? overviewPanel(project) : name === 'assets' ? assetsPanel(project) : platformPanel(project, project.posts.find(p => p.platform === name))); }
   for (const name of options) { const review = project.reviews.find(r => r.platform === name), tab = el('cds-tab', name === 'overview' ? 'Overview' : name === 'assets' ? 'Assets' : `${project.platforms?.[name]?.name || displayName(name)} · ${review?.verdict || 'unreviewed'}`); const icon = tabStatusIcon(review?.verdict); if (icon) tab.prepend(icon); tab.id = `tab-${name}`; tab.value = name; if (name === activeTab) tab.setAttribute('selected', ''); tabs.append(tab); }
-  tabs.addEventListener('cds-tabs-selected', event => { const name = event.detail.item.value; select(name); event.detail.item.scrollIntoView({ block: 'nearest', inline: 'nearest' }); history.replaceState(null, '', `${campaignRoute(slug)}/${encodeURIComponent(name)}`); }); select(activeTab); container.append(job, tabs, panel); show('project'); requestAnimationFrame(() => tabs.querySelector(`[value="${CSS.escape(activeTab)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })); await jobStatus(project, job, apply);
+  job.project = project; tabs.addEventListener('cds-tabs-selected', event => { const name = event.detail.item.value; select(name); event.detail.item.scrollIntoView({ block: 'nearest', inline: 'nearest' }); history.replaceState(null, '', `${campaignRoute(slug)}/${encodeURIComponent(name)}`); }); select(activeTab); container.append(job, tabs, panel); show('project'); requestAnimationFrame(() => tabs.querySelector(`[value="${CSS.escape(activeTab)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })); try { await jobStatus(project, job, apply); } catch (error) { if (activeProject === slug && !$('#project').hidden && job.isConnected) { message(error.message); scheduleStatus(project, job, apply); } }
 }
 async function settings() {
   const data = await api('/api/budget'), form = $('#settings-form'), spend = $('#spend'); spend.replaceChildren(); spend.className = 'summary-tiles';
@@ -188,13 +191,13 @@ async function sources() {
   for (const key of ['changed', 'failed', 'unverified']) { const details = el('details'); details.append(el('summary', `${key[0].toUpperCase() + key.slice(1)} (${data[key].length})`)); const list = el('ul'); for (const item of data[key]) list.append(el('li', item.replace(/^##\s*/, ''))); details.append(list); target.append(details); }
 }
 async function route(focus = true) {
-  clearTimeout(timer); message(''); const [path, search = ''] = location.hash.slice(1).split('?'), parts = path.split('/').filter(Boolean).map(decodeURIComponent);
+  const routeId = ++navigation; projectLoad++; libraryLoad++; clearTimeout(timer); message(''); const [path, search = ''] = location.hash.slice(1).split('?'), parts = path.split('/').filter(Boolean).map(decodeURIComponent);
   closeNav();
   try {
     if (parts[0] === 'p' && parts[1] && parts[2]) { await openProject(`${parts[1]}/${parts[2]}`, parts[3]); }
     else { activeProject = null; const view = ['settings', 'sources', 'doctor'].includes(parts[0]) ? parts[0] : 'projects'; show(view); if (view === 'projects') { $('#search').value = parts[0] === 'p' ? parts[1] : new URLSearchParams(search).get('q') || ''; await library(); } else if (view === 'settings') await settings(); else if (view === 'sources') await sources(); }
-  } catch (error) { if (error.message === 'Session expired') return; if (error.status === 404) show('not-found'); else message(error.message); }
-  const heading = document.querySelector('.view:not([hidden]) h1'); if (heading) { document.title = `${heading.textContent} – Blast Studio`; if (focus) { heading.setAttribute('tabindex', '-1'); heading.focus({ preventScroll: true }); } }
+  } catch (error) { if (routeId !== navigation || error.message === 'Session expired') return; if (error.status === 404) show('not-found'); else message(error.message); }
+  if (routeId !== navigation) return; const heading = document.querySelector('.view:not([hidden]) h1'); if (heading) { document.title = `${heading.textContent} – Blast Studio`; if (focus) { heading.setAttribute('tabindex', '-1'); heading.focus({ preventScroll: true }); } }
 }
 window.addEventListener('hashchange', route); $('#search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { const query = $('#search').value; history.replaceState(null, '', `#/projects${query ? '?q=' + encodeURIComponent(query) : ''}`); library(); }, 250); });
 const backdrop = el('button', null, 'nav-backdrop'); backdrop.type = 'button'; backdrop.hidden = true; backdrop.setAttribute('aria-label', 'Close navigation'); document.body.append(backdrop);

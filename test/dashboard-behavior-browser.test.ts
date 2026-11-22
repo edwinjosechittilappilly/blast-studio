@@ -41,8 +41,6 @@ test('mobile campaign cards can be sorted by campaign', async t => {
   await page.getByRole('link', { name: 'acme / launch' }).waitFor();
   // The control must be usable at the mobile breakpoint, not just present in the hidden table.
   await page.getByLabel('Sort campaigns by').selectOption({ label: 'Campaign' });
-  const ascending = page.getByRole('button', { name: 'Sort order: Ascending' });
-  if (await ascending.count()) await ascending.click();
   assert.deepEqual(await page.locator('.project-card a').allTextContents(), ['acme / launch', 'acme / other']);
   await page.getByRole('button', { name: /Sort order:/ }).click();
   assert.deepEqual(await page.locator('.project-card a').allTextContents(), ['acme / other', 'acme / launch']);
@@ -57,7 +55,7 @@ test('an older failed search cannot replace newer search results', async t => {
       await route.fulfill({ status: 500, json: { error: 'Old search failed' } });
     } else await route.continue();
   });
-  t.after(old.release);
+  t.after(() => old.release());
   await page.goto(url);
   const search = page.getByLabel('Search projects');
   await search.fill('old'); await old.entered;
@@ -77,7 +75,7 @@ test('a delayed campaign load cannot overwrite a newer visit to the same campaig
     if (++requests === 1) { old.arrived(); await old.blocked; }
     await route.continue();
   });
-  t.after(old.release);
+  t.after(() => old.release());
   await page.goto(url);
   await page.getByRole('link', { name: 'launch', exact: true }).click(); await old.entered;
   await page.getByRole('link', { name: 'Blast Studio' }).click();
@@ -98,7 +96,7 @@ test('a stale route error does not replace the current page', async t => {
     old.arrived(); await old.blocked;
     await route.fulfill({ status: 404, json: { error: 'Campaign missing' } });
   });
-  t.after(old.release);
+  t.after(() => old.release());
   await page.goto(url);
   await page.getByRole('link', { name: 'launch', exact: true }).click(); await old.entered;
   await page.getByRole('link', { name: 'Blast Studio' }).click();
@@ -120,7 +118,7 @@ test('an initial status failure is retried and enables applying feedback', async
   const retried = page.waitForResponse(response => response.url().includes('/api/jobs?') && response.status() === 200);
   await page.goto(url); await openLaunch(page); await retried;
   await page.getByRole('tab', { name: /LinkedIn/ }).click();
-  await page.getByLabel('Feedback for LinkedIn post').fill('Make it clearer');
+  await page.locator('cds-textarea textarea').fill('Make it clearer');
   await page.getByRole('button', { name: 'Add feedback' }).click();
   await page.getByText('Feedback queued. Use Apply feedback when ready.').waitFor();
   await page.waitForFunction(() => {
@@ -138,19 +136,19 @@ test('saving feedback across tabs while revision runs preserves the running stat
   await page.route('**/api/projects/acme%2Flaunch/feedback', async route => {
     save.arrived(); await save.blocked; await route.continue();
   });
-  t.after(save.release);
+  t.after(() => save.release());
   await page.goto(url); await openLaunch(page);
   await page.getByRole('button', { name: 'Cancel revision' }).waitFor();
   await page.getByRole('tab', { name: /LinkedIn/ }).click();
-  const field = page.getByLabel('Feedback for LinkedIn post');
+  const field = page.locator('cds-textarea textarea');
   await field.fill('First note'); await page.getByRole('button', { name: 'Add feedback' }).click(); await save.entered;
   await page.getByRole('tab', { name: 'Overview' }).click();
   await page.getByRole('tab', { name: /LinkedIn/ }).click();
-  await page.getByLabel('Feedback for LinkedIn post').fill('New draft');
+  await page.locator('cds-textarea textarea').fill('New draft');
   const response = page.waitForResponse(response => response.url().endsWith('/feedback') && response.request().method() === 'POST');
   save.release(); await response;
   await page.waitForFunction(() => document.querySelector('#apply-feedback')?.hasAttribute('disabled'));
-  assert.equal(await page.getByLabel('Feedback for LinkedIn post').inputValue(), 'New draft');
+  assert.equal(await page.locator('cds-textarea textarea').inputValue(), 'New draft');
   assert.equal(await page.getByRole('button', { name: 'Apply 1 feedback item' }).isDisabled(), true);
 });
 
