@@ -4,6 +4,14 @@ Each directory under `platforms/` contains a `pack.yml` and a `guide.md`. Packs 
 
 `draft` allows generated drafts. `outline` limits the plan to text talking points with no generated assets, even when the pack lists other destination formats. `none` excludes the platform from generated plans. Formats below describe the destination pack, not a promise that every format can be generated under its AI policy.
 
+Pack fields worth knowing:
+
+- **`aiSource`** names the `sources.yml` entry behind the `ai` policy. It is unset where no official policy page exists (Mastodon today); review then warns that the policy source is unknown.
+- **`verified` / `lastVerified`** on sourced values are written by `bstudio sources verify`. Review warns when a policy or disclosure value has no `lastVerified` or one older than 90 days.
+- **`disclosure`** covers AI-generated text, media and voice. A rule may list **`accepts`**: the exact labels a post must use (DEV's AI-assistance tiers, for example).
+- **`sponsorship`** holds paid-partnership rules, kept apart from AI disclosure. It applies only to posts with `sponsored: true` in their frontmatter.
+- **`accessibility`** overrides the review thresholds: `minFontPx`, `minContrast` (4.5 by default), `minContrastLarge` (3 by default, WCAG large text) and `largeTextPx`.
+
 | Platform and guide | AI policy | Pack formats | Market Blaster |
 | --- | --- | --- | --- |
 | [Bluesky](platforms/bluesky/guide.md) | draft | text, thread, image, video | bluesky |
