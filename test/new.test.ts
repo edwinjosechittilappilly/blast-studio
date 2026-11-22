@@ -28,7 +28,7 @@ test('new provides help and rejects unknown options before creating a brief', as
   const root = tempStudio({ 'projects/demo/project.yml': 'name: demo\ncreatedAt: 2026-01-01\n' });
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') } });
   assert.equal(await create(['--help'], io), 0);
-  assert.match(io.text(), /Example: bstudio new/);
+  assert.match(io.text(), /Examples:\n\s+bstudio new/);
   await assert.rejects(create(['demo/launch', '--unknown'], io), /unknown option/i);
   assert.equal(existsSync(join(root, 'projects/demo/campaigns/launch/brief.md')), false);
 });
