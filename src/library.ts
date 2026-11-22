@@ -28,7 +28,7 @@ export function projectReview(config: StudioConfig, slug: string) {
   const dir = join(config.root, 'projects', slug), project = projectDetails(config, slug);
   const plan = existsSync(join(dir, 'plan.yml')) ? readPlan(dir) : [];
   const packs = cachedPacks ??= loadPacks();
-  const rubric = Object.fromEntries(project.posts.map(post => [post.platform, packs.get(post.platform)?.rubric ?? []]));
+  const rubric = Object.fromEntries(project.posts.map(post => { const pack = packs.get(post.platform); return [post.platform, pack?.ai === 'outline' ? pack.outlineRubric ?? [] : pack?.rubric ?? []]; }));
   const captions: Record<string, string> = {};
   for (const asset of project.assets) {
     const vtt = asset.outputs?.find(output => /\.vtt$/i.test(output.file));

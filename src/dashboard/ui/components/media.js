@@ -12,7 +12,7 @@ function visual(slug, item, captions) {
 export function mediaViewer(slug, item, captions, trigger) {
   const modal = el('cds-modal'); modal.setAttribute('size', 'lg'); modal.setAttribute('aria-label', item.alt || 'Media viewer');
   const header = el('cds-modal-header'), heading = el('cds-modal-heading', item.alt || 'Media viewer'); header.append(heading); const body = el('cds-modal-body', null, 'viewer-body'); const display = visual(slug, item, captions); body.append(display);
-  const footer = el('cds-modal-footer'); const close = button('Close', 'secondary'); close.addEventListener('click', () => { modal.open = false; }); footer.append(close);
+  const footer = el('cds-modal-footer'); const close = button('Close', 'secondary'); close.addEventListener('click', () => { modal.open = false; modal.remove(); trigger.focus(); }); footer.append(close);
   if (kindOf(item.file, item.kind) === 'image') { const zoom = button('View at 100%', 'secondary'); zoom.addEventListener('click', () => { const full = display.classList.toggle('actual-size'); zoom.textContent = full ? 'Fit to window' : 'View at 100%'; }); footer.append(zoom); }
   const download = button('Download', 'primary'); download.addEventListener('click', () => { const link = el('a'); link.href = mediaUrl(slug, item.file); link.download = item.file.split('/').pop(); document.body.append(link); link.click(); link.remove(); }); footer.append(download);
   modal.append(header, body, footer); document.body.append(modal); modal.addEventListener('cds-modal-closed', () => { modal.remove(); trigger.focus(); }); modal.open = true;

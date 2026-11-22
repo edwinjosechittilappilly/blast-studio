@@ -7,6 +7,7 @@ import { EventEmitter } from 'node:events';
 import type { spawn } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 import { loadConfig } from '../src/config.ts';
+import { loadPack } from '../src/packs.ts';
 import { loadLibrary, latestSources } from '../src/library.ts';
 import { startDashboard } from '../src/dashboard/server.ts';
 import { run as status } from '../src/commands/status.ts';
@@ -16,6 +17,7 @@ function fixture() {
   const root = tempStudio({
     'studio.yml': '# keep this comment\nbrand:\n  name: Demo\nbudget:\n  monthlyUsd: 10\n  perProjectUsd: 0\n',
     'projects/launch/brief.md': '## [E1] A launch\nstatus: shipped\nReady.',
+    'projects/launch/plan.yml': '- platform: linkedin\n  type: image\n  angle: launch\n  hooks: [One, Two, Three]\n  assets: [{id: card, kind: card, brief: Launch}]\n',
     'projects/launch/posts/linkedin.md': '---\nplatform: linkedin\nevidence: [E1]\nmedia: []\ntitle: The launch\n---\nHello world',
     'projects/launch/reviews/linkedin.json': JSON.stringify({ platform: 'linkedin', verdict: 'pass', total: 90, scores: [] }),
     'projects/launch/assets/card/asset.yml': 'id: card\nkind: card\noutputs: []\naiGenerated: false\ncostUsd: 0\n',
@@ -75,18 +77,26 @@ test('dashboard authenticates, contains media and validates settings', async t =
 test('feedback and revision endpoints validate targets and serialize runs', async t => {
   const { root, io } = fixture();
   const child = Object.assign(new EventEmitter(), { unref() {} });
-  const started = await startDashboard(io, { port: 0, spawnRevise: (() => child) as unknown as typeof spawn }); t.after(() => started.server.close());
+  let argv: string[] = [], childEnv: NodeJS.ProcessEnv = {};
+  const fakeSpawn = ((command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => { assert.equal(command, process.execPath); argv = args; childEnv = options.env; return child; }) as unknown as typeof spawn;
+  const started = await startDashboard(io, { port: 0, spawnRevise: fakeSpawn }); t.after(() => started.server.close());
   const base = `http://127.0.0.1:${started.port}`, path = '/api/projects/launch/feedback';
   const post = (url: string, headers: Record<string, string>, data: unknown = {}) => fetch(base + url, { method: 'POST', headers, body: JSON.stringify(data) });
   assert.equal((await post(path, {}, { target: {}, note: 'hello' })).status, 401);
   const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
   const headers = { cookie, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
+  assert.equal((await post(path, { cookie }, { target: {}, note: 'hello' })).status, 403);
+  assert.equal((await post('/api/projects/launch/revise', { cookie })).status, 403);
+  assert.equal((await post('/api/projects/BAD/feedback', headers, { target: {}, note: 'hello' })).status, 400);
+  assert.equal((await post(path, headers, { target: { platform: 'linkedin', asset: 'card' }, note: 'hello' })).status, 400);
   assert.equal((await post(path, headers, { target: { platform: 'missing' }, note: 'hello' })).status, 400);
   assert.equal((await post(path, headers, { target: { asset: 'missing' }, note: 'hello' })).status, 400);
   assert.equal((await post(path, headers, { target: {}, note: 'x'.repeat(4001) })).status, 400);
   assert.equal((await post(path, headers, { target: { platform: 'linkedin' }, note: 'Make it clearer' })).status, 201);
   assert.match(readFileSync(join(root, 'projects/launch/feedback.yml'), 'utf8'), /Make it clearer/);
   assert.equal((await post('/api/projects/launch/revise', headers)).status, 202);
+  assert.deepEqual(argv.slice(1), ['revise', 'launch', '--feedback-only']);
+  assert.equal(childEnv.BSTUDIO_HOME, root); assert.equal(childEnv.BSTUDIO_CONFIG, join(root, 'studio.yml'));
   assert.equal((await post('/api/projects/launch/revise', headers)).status, 409);
   assert.equal((await (await fetch(base + '/api/projects/launch/status', { headers })).json()).running, true);
   child.emit('exit', 0);
@@ -114,4 +124,15 @@ test('dashboard sessions survive restarts and reject tampering and expiration', 
   assert.equal((await fetch(url, { headers: { cookie: cookie.replace(/bs=./, 'bs=x') } })).status, 401);
   const payload = `1.${'a'.repeat(32)}`, key = readFileSync(join(root, '.dashboard-key'), 'utf8'), signature = createHmac('sha256', key).update(payload).digest('hex');
   assert.equal((await fetch(url, { headers: { cookie: `bs=${payload}.${signature}` } })).status, 401);
+});
+
+test('project review selects outline rubric and finds asset captions', async t => {
+  const { root, io } = fixture();
+  writeFileSync(join(root, 'projects/launch/posts/reddit.md'), '---\nplatform: reddit\nevidence: []\nmedia: []\n---\nOutline');
+  writeFileSync(join(root, 'projects/launch/assets/card/asset.yml'), 'id: card\nkind: video\noutputs: [{file: out/9x16.mp4}, {file: out/captions.vtt}]\naiGenerated: false\n');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const result = await (await fetch(`http://127.0.0.1:${started.port}/api/project/launch`, { headers: { cookie } })).json();
+  assert.deepEqual(result.rubric.reddit, loadPack('reddit').outlineRubric ?? []);
+  assert.equal(result.captions['assets/card/out/9x16.mp4'], 'assets/card/out/captions.vtt');
 });
