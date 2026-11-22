@@ -8,7 +8,7 @@ import { UserError } from '../types.ts';
 import { closeBrowser, renderDiagram, renderHtml, renderSvg } from '../render/stills.ts';
 
 export const run: Command = async (args, io) => {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: 'boolean' }, size: { type: 'string' }, out: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: 'boolean', short: 'h' }, size: { type: 'string' }, out: { type: 'string' } } });
   if (values.help) {
     io.out('Usage: bstudio render-preview <file.html|.svg|.mmd|.d2> --size WxH --out path\n\nExample:\n  bstudio render-preview design.svg --size 1200x630 --out preview.png');
     return 0;

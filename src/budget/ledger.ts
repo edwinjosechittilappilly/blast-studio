@@ -63,7 +63,7 @@ export function providerTotals(root: string, now = new Date()): Record<string, n
   for (const e of effective(root)) if (e.at.slice(0, 7) === now.toISOString().slice(0, 7)) totals[e.provider] = (totals[e.provider] ?? 0) + (e.usd ?? 0);
   return totals;
 }
-async function locked<T>(root: string, fn: () => T): Promise<T> {
+export async function locked<T>(root: string, fn: () => T): Promise<T> {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const path = join(root, "ledger.lock"), deadline = Date.now() + 10000;
   let fd: number;

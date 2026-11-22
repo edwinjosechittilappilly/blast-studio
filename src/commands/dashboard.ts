@@ -4,7 +4,7 @@ import type { Command } from '../io.ts';
 import { UserError } from '../types.ts';
 
 export const run: Command = async (args, io) => {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: 'boolean' }, port: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: 'boolean', short: 'h' }, port: { type: 'string' } } });
   if (values.help) {
     io.out('Usage: bstudio dashboard [--port <port>]\n\nExample:\n  bstudio dashboard --port 4848');
     return 0;

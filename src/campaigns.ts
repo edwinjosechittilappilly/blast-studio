@@ -73,7 +73,7 @@ export function writeProject(config: StudioConfig, project: string, metadata: Pr
 function lastUpdated(path: string): number {
   const stat = lstatSync(path);
   if (!stat.isDirectory()) return stat.mtimeMs;
-  return readdirSync(path).reduce((latest, name) => Math.max(latest, lastUpdated(join(path, name))), stat.mtimeMs);
+  return readdirSync(path).reduce((latest, name) => Math.max(latest, lstatSync(join(path, name)).mtimeMs), stat.mtimeMs);
 }
 
 export function listProjects(config: StudioConfig): { project: string; campaigns: number; updatedAt: Date }[] {
@@ -84,7 +84,8 @@ export function listProjects(config: StudioConfig): { project: string; campaigns
     const metadata = containedPath(config.root, "projects", e.name, "project.yml");
     if (!existsSync(metadata)) return [];
     const campaigns = containedPath(config.root, "projects", e.name, "campaigns");
-    const entries = existsSync(campaigns) ? readdirSync(campaigns, { withFileTypes: true }).filter(c => c.isDirectory()) : [];
-    return [{ project: e.name, campaigns: entries.length, updatedAt: new Date(lastUpdated(dir)) }];
+    const entries = existsSync(campaigns) ? readdirSync(campaigns, { withFileTypes: true }).filter(c => c.isDirectory() && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(c.name)) : [];
+    const updated = entries.reduce((latest, entry) => Math.max(latest, lastUpdated(join(campaigns, entry.name))), lastUpdated(dir));
+    return [{ project: e.name, campaigns: entries.length, updatedAt: new Date(updated) }];
   }).sort((a, b) => a.project.localeCompare(b.project));
 }

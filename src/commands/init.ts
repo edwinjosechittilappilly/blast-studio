@@ -6,7 +6,7 @@ import type { Command } from "../io.ts";
 import { UserError } from "../types.ts";
 
 export const run: Command = async (args, io) => {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean", short: "h" } } });
   if (values.help) { io.out("Usage: bstudio init\n\nExample:\n  bstudio init"); return 0; }
   if (positionals.length) throw new UserError("usage: bstudio init");
   const file = configFile(io);

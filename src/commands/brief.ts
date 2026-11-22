@@ -7,7 +7,7 @@ import { campaignDir, loadConfig, projectRoot } from "../config.ts";
 import { containedPath, parseCampaignRef } from "../campaigns.ts";
 import { collectNotesAndUrls, collectRepository, evidenceSection } from "../evidence.ts";
 import type { Command, IO } from "../io.ts";
-import { UserError, type ClaimStatus } from "../types.ts";
+import { UserError, type BriefSection, type ClaimStatus } from "../types.ts";
 
 function existingPath(path: string): string {
   let cursor = path;
@@ -42,7 +42,7 @@ export const run: Command = async (args, io) => {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
     idea: { type: "string" }, note: { type: "string", multiple: true }, url: { type: "string", multiple: true },
     pr: { type: "string" }, commit: { type: "string" }, repo: { type: "string" },
-    "mb-brief": { type: "string" }, force: { type: "boolean" }, help: { type: "boolean" },
+    "mb-brief": { type: "string" }, force: { type: "boolean" }, help: { type: "boolean", short: "h" },
   } });
   if (values.help) { io.out("usage: bstudio brief <project>/<campaign> [--idea text] [--note text] [--url URL] [--repo owner/repo] [--force]\nExample: bstudio brief acme/launch --idea 'Announcing launch'"); return 0; }
   if (positionals.length !== 1) throw new UserError("usage: bstudio brief <project>/<campaign> [--idea text] [--note text] [--url url] [--pr N --repo owner/repo] [--commit sha --repo owner/repo|local] [--mb-brief path] [--force]");
@@ -63,9 +63,17 @@ export const run: Command = async (args, io) => {
   const add = (title: string, status: ClaimStatus | undefined, body: string, source?: string) => {
     sections.push(evidenceSection(sections.length + 1, title, status, body, source));
   };
+  const addImported = (section: BriefSection, file: string) => {
+    let body = section.body;
+    const source = body.match(/^Source:[ \t]*(.+)[ \t]*(?:\r?\n|$)/i);
+    if (source) body = body.slice(source[0].length).trim();
+    const fenced = body.match(/^(`{3,}|~{3,})untrusted[ \t]*\r?\n([\s\S]*?)\r?\n\1[ \t]*$/);
+    if (fenced) body = fenced[2];
+    add(section.title, section.status, body, source?.[1].trim() || `${file} [${section.anchor}]`);
+  };
   const shared = containedPath(project, "evidence", "sources.md");
   if (existsSync(shared)) {
-    for (const section of parseBrief(readFileSync(shared, "utf8"))) add(section.title, section.status, section.body, `${shared} [${section.anchor}]`);
+    for (const section of parseBrief(readFileSync(shared, "utf8"))) addImported(section, shared);
   }
   if (values.idea) add("Idea", "claim", values.idea);
   await collectNotesAndUrls(io, add, values.note ?? [], values.url ?? []);
@@ -87,7 +95,7 @@ export const run: Command = async (args, io) => {
     const file = resolve(io.cwd, values["mb-brief"]);
     const imported = parseBrief(readFileSync(file, "utf8"));
     if (!imported.length) throw new UserError("Market Blaster brief has no evidence sections");
-    for (const section of imported) add(section.title, section.status, section.body, `${file} [${section.anchor}]`);
+    for (const section of imported) addImported(section, file);
   }
   if (!sections.length) throw new UserError("Provide at least one brief input");
   mkdirSync(dir, { recursive: true });

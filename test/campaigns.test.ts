@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { listProjects, parseCampaignRef, readProject, writeProject } from "../src/campaigns.ts";
 import { campaignDir, loadConfig } from "../src/config.ts";
 import { run as project } from "../src/commands/project.ts";
 import { run as brief } from "../src/commands/brief.ts";
+import { run as status } from "../src/commands/status.ts";
+import { run as library } from "../src/commands/library.ts";
+import { run as budget } from "../src/commands/budget.ts";
+import { loadLibrary } from "../src/library.ts";
 import { fakeIO, tempStudio } from "./helpers.ts";
 
 function setup() {
@@ -56,4 +60,64 @@ test("project commands persist metadata and share fetched evidence across campai
   await project(["list"], io);
   assert.match(io.text(), /acme\s+2/);
   await assert.rejects(project(["new", "acme"], io), /already exists/);
+});
+
+test("shared evidence retains provenance, status and one outer untrusted fence", async () => {
+  const { root, io } = setup();
+  await project(["new", "acme"], io);
+  const evidence = join(root, "projects/acme/evidence");
+  mkdirSync(evidence, { recursive: true });
+  writeFileSync(join(evidence, "sources.md"), "## [E7] Origin\n\nstatus: shipped\n\nSource: https://example.com/origin\n\n````untrusted\nEvidence with ``` code\n````\n");
+  await brief(["acme/launch"], io);
+  const text = readFileSync(join(root, "projects/acme/campaigns/launch/brief.md"), "utf8");
+  assert.match(text, /status: shipped\n\nSource: https:\/\/example\.com\/origin\n\n````untrusted\nEvidence with ``` code\n````/);
+  assert.equal((text.match(/untrusted/g) ?? []).length, 1);
+  assert.doesNotMatch(text, /sources\.md/);
+  await brief(["-h"], io);
+  assert.match(io.text(), /usage: bstudio brief/);
+});
+
+test("project listing counts valid campaigns and ignores deep snapshot mtimes", () => {
+  const { root, config } = setup();
+  writeProject(config, "acme", { name: "Acme", createdAt: "2026-01-01" });
+  const campaign = join(root, "projects/acme/campaigns/launch");
+  mkdirSync(join(campaign, "history/snapshot"), { recursive: true });
+  mkdirSync(join(root, "projects/acme/campaigns/Bad_Name"), { recursive: true });
+  writeFileSync(join(campaign, "brief.md"), "brief");
+  const old = new Date("2020-01-01T00:00:00Z"), newest = new Date("2021-01-01T00:00:00Z"), deep = new Date("2030-01-01T00:00:00Z");
+  writeFileSync(join(campaign, "history/snapshot/file"), "snapshot");
+  for (const path of [join(root, "projects/acme"), join(root, "projects/acme/project.yml"), join(root, "projects/acme/campaigns"), campaign, join(campaign, "history")]) utimesSync(path, old, old);
+  utimesSync(join(campaign, "brief.md"), newest, newest);
+  utimesSync(join(campaign, "history/snapshot/file"), deep, deep);
+  assert.deepEqual(listProjects(config).map(p => [p.campaigns, p.updatedAt.toISOString()]), [[1, newest.toISOString()]]);
+});
+
+test("status and library group campaigns by project and budget labels campaign cap", async () => {
+  const { io } = setup();
+  for (const name of ["zeta", "alpha"]) {
+    await project(["new", name], io);
+    await brief([`${name}/launch`, "--idea", name], io);
+  }
+  io.stdout.length = 0;
+  await status([], io);
+  assert.ok(io.text().indexOf("Project: alpha") < io.text().indexOf("Project: zeta"));
+  io.stdout.length = 0;
+  await library([], io);
+  assert.match(io.text(), /^PROJECT\tCAMPAIGN\t/m);
+  assert.match(io.text(), /alpha\tlaunch/);
+  assert.ok(io.text().indexOf("alpha\tlaunch") < io.text().indexOf("zeta\tlaunch"));
+  io.stdout.length = 0;
+  await budget(["show"], io);
+  assert.match(io.text(), /Per-campaign cap:/);
+});
+
+test("library skips incomplete migrations while direct campaign access reports them", () => {
+  const { root, config } = setup();
+  for (const name of ["healthy", "legacy", "journal"]) {
+    mkdirSync(join(root, "projects", name, "campaigns", "launch"), { recursive: true });
+  }
+  writeFileSync(join(root, "projects/legacy/brief.md"), "legacy");
+  writeFileSync(join(root, "projects/journal/.bstudio-migration.json"), "{}");
+  assert.deepEqual(loadLibrary(config).map(entry => entry.slug), ["healthy/launch"]);
+  for (const name of ["legacy", "journal"]) assert.throws(() => campaignDir(config, `${name}/launch`), /migration is incomplete/);
 });

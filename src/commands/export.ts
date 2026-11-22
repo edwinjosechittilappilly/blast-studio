@@ -1,7 +1,8 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { loadConfig, campaignDir } from '../config.ts';
-import { compositeSlug, parseCampaignRef } from '../campaigns.ts';
+import { loadConfig, campaignDir, projectRoot } from '../config.ts';
+import { compositeSlug, parseCampaignRef, readProject } from '../campaigns.ts';
 import { exportProject } from '../export.ts';
 import type { Command } from '../io.ts';
 import { UserError } from '../types.ts';
@@ -19,6 +20,9 @@ export const run: Command = async (args, io) => {
   const ref = parseCampaignRef(parsed.positionals[0]), slug = compositeSlug(ref), config = loadConfig(io);
   const mb = parsed.values.mb ?? config.marketBlaster.project;
   const cwd = mb ? resolve(io.cwd, mb) : undefined;
+  if (ref.project === ref.campaign && existsSync(resolve(projectRoot(config, ref.project), 'project.yml')) && readProject(config, ref.project).migratedFrom === ref.campaign) {
+    io.err(`Warning: Market Blaster slug changed from ${ref.campaign} to ${slug}; importing creates a separate campaign and may duplicate previously published posts.`);
+  }
   const dir = exportProject(campaignDir(config, ref), ref, config, parsed.values.dir);
   io.out(`Wrote ${dir}`);
   if (cwd) {

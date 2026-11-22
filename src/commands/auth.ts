@@ -47,7 +47,7 @@ async function readSecret(piped: boolean): Promise<string> {
 
 export async function run(args: string[], io: IO, options: Options = {}): Promise<number> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
-    help: { type: "boolean" }, stdin: { type: "boolean" },
+    help: { type: "boolean", short: "h" }, stdin: { type: "boolean" },
   } });
   if (values.help) {
     io.out("Usage: bstudio auth set <KEY> [--stdin] | list\n\nExamples:\n  bstudio auth list\n  bstudio auth set OPENAI_API_KEY --stdin");

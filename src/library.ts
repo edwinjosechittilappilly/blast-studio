@@ -48,7 +48,7 @@ export function loadLibrary(config: StudioConfig, query = '') {
   const needle = query.toLocaleLowerCase();
   const root = join(config.root, 'projects');
   const validId = (id: string) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id);
-  return dirs(root).filter(validId).flatMap(project => dirs(join(root, project, 'campaigns')).filter(validId).map(campaign => projectDetails(config, `${project}/${campaign}`))).filter(p => !needle || [p.slug, ...p.inputs, ...p.posts.flatMap(post => [post.title ?? '', post.body]), ...p.assets.map(a => a.kind)].some(s => s.toLocaleLowerCase().includes(needle)));
+  return dirs(root).filter(validId).filter(project => !existsSync(join(root, project, 'brief.md')) && !existsSync(join(root, project, '.bstudio-migration.json'))).flatMap(project => dirs(join(root, project, 'campaigns')).filter(validId).map(campaign => projectDetails(config, `${project}/${campaign}`))).filter(p => !needle || [p.slug, ...p.inputs, ...p.posts.flatMap(post => [post.title ?? '', post.body]), ...p.assets.map(a => a.kind)].some(s => s.toLocaleLowerCase().includes(needle)));
 }
 export function latestSources(config: StudioConfig) {
   const paths = [join(config.root, 'updates'), join(repoRoot, 'updates')];

@@ -14,7 +14,10 @@ export const run: Command = async (args, io) => {
   if (parsed.values.help) { io.out(`${usage}\nExample: bstudio library search launch`); return 0; }
   if (parsed.positionals.length && (parsed.positionals.length !== 2 || parsed.positionals[0] !== 'search')) throw new UserError(usage);
   const projects = loadLibrary(loadConfig(io), parsed.positionals[1]);
-  io.out('CAMPAIGN\tINPUTS\tPLATFORMS\tASSETS\tEXPORTED');
-  for (const project of projects) io.out(`${project.slug}\t${project.inputs.join(', ')}\t${project.posts.map(p => p.platform).join(', ')}\t${project.assets.map(a => a.kind).join(', ')}\t${project.exported ? 'yes' : 'no'}`);
+  io.out('PROJECT\tCAMPAIGN\tINPUTS\tPLATFORMS\tASSETS\tEXPORTED');
+  for (const project of projects) {
+    const [name, campaign] = project.slug.split('/');
+    io.out(`${name}\t${campaign}\t${project.inputs.join(', ')}\t${project.posts.map(p => p.platform).join(', ')}\t${project.assets.map(a => a.kind).join(', ')}\t${project.exported ? 'yes' : 'no'}`);
+  }
   return 0;
 };

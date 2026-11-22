@@ -32,7 +32,7 @@ The research established these points, which shape the design:
 
 ## Goals
 
-1. `bstudio new <slug>` turns any combination of inputs (`--idea`, `--note`, `--url`, `--pr`, `--commit`, `--repo`,
+1. After `bstudio project new <project>`, `bstudio new <project>/<campaign>` turns any combination of inputs (`--idea`, `--note`, `--url`, `--pr`, `--commit`, `--repo`,
    `--mb-brief`) into reviewed content.
 2. **Formats, each with an editable source and rendered outputs:**
    - text;
@@ -87,7 +87,8 @@ code repo holds code, skills, templates and platform packs only.
 
 | Term | Meaning |
 |---|---|
-| Project | `<root>/projects/<slug>/`: one idea or change |
+| Project | `<root>/projects/<project>/`: shared metadata and evidence for one or more campaigns |
+| Campaign | `<root>/projects/<project>/campaigns/<campaign>/`: one idea or change |
 | Brief | `brief.md`. Sections use `## [E<n>] <title>` (the Market Blaster format) and may carry `status: shipped|planned|claim` so writers and reviewers keep shipped and planned apart |
 | Platform pack | `platforms/<id>/pack.yml` (data) and `platforms/<id>/guide.md` (writing guidance). Each value is `{value, source, verified}` or `unknown` |
 | Plan | `plan.yml`: per platform, the post type, 3 hook options, the angle and the assets needed |
@@ -138,17 +139,17 @@ flowchart LR
 | `init` | Writes the global `studio.yml`: brand kit (OFL fonts only in this repo; user fonts stay local), voice rules, platforms, agent and reviewer commands, providers, `budget.monthlyUsd: 0`, `budget.perProjectUsd`, `providers.allowUpload: false` |
 | `doctor` | Checks pinned Node, FFmpeg, Playwright Chromium, HyperFrames, VHS, Mermaid and D2 versions; provider keys; `omp` `generate_image.enabled`; the cap; Market Blaster on `PATH` |
 | `install-skills` | Links `skills/*` into `~/.agents/skills` and `~/.claude/skills`, and installs the pinned HyperFrames skills |
-| `new <slug> <inputs>` | `brief`, `plan`, `make`, `render`, `review`; stops at the first failure and prints the command to resume |
-| `brief <slug> <inputs>` | One anchored section per source. URLs are fetched and reduced to text, fenced as untrusted. `--pr`/`--commit` go through `gh` and git |
-| `plan <slug>` / `make <slug>` | The agent runs in an isolated workspace: no credentials, `bstudio render-preview` available offline and free. Only declared files copy back |
-| `render <slug> [--regen]` | Deterministic renders. Paid generations are cached by prompt hash and rerun only with `--regen` |
-| `review <slug> [--calibrate]` | Gates, render metrics and reviewer scores. `--calibrate` reports per-criterion agreement with about 20 owner-labelled fixtures |
-| `revise <slug>` | Applies the findings, re-renders and re-reviews, up to `review.maxRounds` (default 2) |
-| `accept <slug> <platform> --reason` | Records a human override of scores (never of gates) |
-| `export <slug> [--mb <project>]` | Writes `export/manifest.json` (schema v1) and the assets, then runs `mblast import` and `mblast check`. Refuses posts without `pass` or `accepted`. Includes `studio.reviewHash` per post |
-| `mark <slug> <platform> --url` | Records a manual post for platforms outside Market Blaster |
+| `new <project>/<campaign> <inputs>` | `brief`, `plan`, `make`, `render`, `review`; stops at the first failure and prints the command to resume |
+| `brief <project>/<campaign> <inputs>` | One anchored section per source. URLs are fetched and reduced to text, fenced as untrusted. `--pr`/`--commit` go through `gh` and git |
+| `plan <project>/<campaign>` / `make <project>/<campaign>` | The agent runs in an isolated workspace: no credentials, `bstudio render-preview` available offline and free. Only declared files copy back |
+| `render <project>/<campaign> [--regen]` | Deterministic renders. Paid generations are cached by prompt hash and rerun only with `--regen` |
+| `review <project>/<campaign>` / `review --calibrate` | Gates, render metrics and reviewer scores. `--calibrate` reports per-criterion agreement with about 20 owner-labelled fixtures |
+| `revise <project>/<campaign>` | Applies the findings, re-renders and re-reviews, up to `review.maxRounds` (default 2) |
+| `accept <project>/<campaign> <platform> --reason` | Records a human override of scores (never of gates) |
+| `export <project>/<campaign> [--mb <path>]` | Writes the campaign package, then runs `mblast import` and `mblast check` when configured. Refuses posts without `pass` or `accepted`. Includes `studio.reviewHash` per post |
+| `mark <project>/<campaign> <platform> --url` | Records a manual post for platforms outside Market Blaster |
 | `budget [show \| set <usd> \| set-project <usd>]` | Cap management; month-to-date spend (UTC) |
-| `library [search <q>]`, `status [<slug>]` | Terminal views derived from the files |
+| `library [search <q>]`, `status [<project>/<campaign>]` | Terminal views derived from the files |
 | `dashboard [--port 4848]` | Local web UI (see below) |
 | `sources check \| propose \| verify <id>...` | Updater (see below) |
 

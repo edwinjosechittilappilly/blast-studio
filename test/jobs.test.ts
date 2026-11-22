@@ -37,6 +37,16 @@ test('project operations use global structured arguments', () => {
   assert.throws(() => buildOperation('project new', { project: 'acme', url: ['https://example.com', 'file:///etc/passwd'] }));
 });
 
+test('rename operations use validated structured arguments', () => {
+  assert.deepEqual(buildOperation('project rename', { project: 'acme', destination: 'other' }).args, ['project', 'rename', 'acme', 'other']);
+  assert.deepEqual(buildOperation('campaign rename', { source: 'acme/launch', destination: 'other/news' }).args, ['campaign', 'rename', 'acme/launch', 'other/news']);
+  assert.throws(() => buildOperation('project rename', { project: '../acme', destination: 'other' }));
+  assert.throws(() => buildOperation('campaign rename', { source: 'acme/launch', destination: '../news' }));
+  assert.throws(() => buildOperation('campaign rename', { source: 'acme/launch', destination: 'other/news', flag: '--force' }));
+  assert.deepEqual(buildOperation('accept', { campaign: 'acme/launch', platform: 'x', reason: '- checked by legal' }).args, ['accept', 'acme/launch', 'x', '--reason=- checked by legal']);
+  assert.deepEqual(buildOperation('confirm', { campaign: 'acme/launch', asset: 'image', license: '- license' }).args, ['confirm', 'acme/launch', 'image', '--license=- license']);
+});
+
 test('project registry arguments reach project commands', async () => {
   const root = tempStudio();
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') } });

@@ -25,7 +25,7 @@ Terminal demos use VHS and a `source/demo.tape` with MP4 or GIF `Output` directi
 
 An `illustration` asset reads a prompt from `source.json`; a `voiceover` asset reads `source.txt`. Select an image provider (`gemini`, `openai`, or `omp`) or the OpenAI voice provider in the studio configuration before using them. Both default to `none`. Provider calls can incur costs and are subject to the configured budget. Generated metadata records provider, cost, prompt hash, AI status and license information. Generated assets used by composites propagate their AI status through `embeds`.
 
-`bstudio render <slug>` uses cached paid generation when available. `--regen` requests fresh generation. Review licensing, disclosure and platform requirements for the resulting media.
+`bstudio render <project>/<campaign>` uses cached paid generation when available. `--regen` requests fresh generation. Review licensing, disclosure and platform requirements for the resulting media.
 
 ## Preview
 

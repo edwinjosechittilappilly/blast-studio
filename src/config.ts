@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { parseDocument } from "yaml";
@@ -121,6 +121,8 @@ export function projectRoot(config: StudioConfig, project: string): string {
 export function campaignDir(config: StudioConfig, ref: CampaignRef | string): string {
   const identity = typeof ref === "string" ? parseCampaignRef(ref) : { project: validateId(ref.project), campaign: validateId(ref.campaign) };
   const project = projectRoot(config, identity.project);
+  if (existsSync(join(project, "brief.md")) || existsSync(join(project, ".bstudio-migration.json")))
+    throw new UserError(`Campaign migration is incomplete for ${project}; resolve the migration warning before retrying`);
   return containedPath(project, "campaigns", identity.campaign);
 }
 export function writeConfigField(config: StudioConfig, path: string[], value: unknown): void {

@@ -19,8 +19,11 @@ export const run: Command = async (args, io) => {
   if (slug) campaignDir(config, slug);
   const projects = loadLibrary(config).filter(p => !slug || p.slug === slug);
   if (slug && !projects.length) throw new UserError(`Campaign not found: ${slug}`);
+  let heading = '';
   for (const project of projects) {
-    io.out(project.slug);
+    const [name, campaign] = project.slug.split('/');
+    if (name !== heading) { heading = name; io.out(`Project: ${name}`); }
+    io.out(`  ${campaign}`);
     for (const platform of new Set([...project.posts.map(p => p.platform), ...project.reviews.map(r => r.platform)])) {
       const review = project.reviews.find(r => r.platform === platform);
       io.out(`  ${platform}: ${review?.verdict ?? 'unreviewed'}${review?.total == null ? '' : ` (${review.total}/100)`}`);

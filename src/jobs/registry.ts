@@ -1,7 +1,7 @@
 import { parseCampaignRef } from '../campaigns.ts';
 import { UserError } from '../types.ts';
 
-type Kind = 'id' | 'ids' | 'text' | 'url' | 'path' | 'number' | 'bool' | 'repo' | 'sha';
+type Kind = 'id' | 'campaign' | 'ids' | 'text' | 'url' | 'path' | 'number' | 'bool' | 'repo' | 'sha';
 type Field = { kind: Kind; required?: boolean; positional?: boolean; flag?: string; multiple?: boolean };
 export type Operation = { fields: Record<string, Field>; campaign: boolean; paid: boolean; step: string; requiresTTY: boolean };
 const campaign: Field = { kind: 'id', required: true, positional: true };
@@ -15,6 +15,8 @@ export const operations: Readonly<Record<string, Operation>> = {
   init: operation('init', {}, false, false), doctor: operation('doctor', {}, false, false),
   'project new': operation('project', { project: id(true), repo: option('repo', '--repo'), url: { ...option('url', '--url'), multiple: true }, note: { ...option('text', '--note'), multiple: true } }, false, false),
   'project list': operation('project', {}, false, false),
+  'project rename': operation('project', { project: id(true), destination: id(true) }, false, false),
+  'campaign rename': operation('campaign', { source: { kind: 'campaign', required: true, positional: true }, destination: { kind: 'campaign', required: true, positional: true } }, false, false),
   new: operation('new', { campaign, ...inputs }, true),
   brief: operation('brief', { campaign, ...inputs }),
   plan: operation('plan', { campaign, ...scope }, true),
@@ -49,6 +51,7 @@ export function campaignRef(value: unknown): string {
 function validate(value: unknown, kind: Kind, key: string): string | boolean {
   if (kind === 'bool') { if (typeof value !== 'boolean') throw new UserError(`Invalid ${key}`); return value; }
   if (typeof value !== 'string' || !value || value.length > 4096 || value.includes('\0')) throw new UserError(`Invalid ${key}`);
+  if (kind === 'campaign') return campaignRef(value);
   if (kind === 'id' && !slug.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'ids' && !value.split(',').every(s => slug.test(s))) throw new UserError(`Invalid ${key}`);
   if (kind === 'number' && !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) throw new UserError(`Invalid ${key}`);
@@ -78,8 +81,7 @@ export function buildOperation(name: string, raw: unknown, options: { imageProvi
       if (field.positional) positional.push(String(parsed));
       else if (field.flag && parsed !== false) {
         if (parsed === true) flags.push(field.flag);
-        else if (field.flag === '--assets' || field.flag === '--platforms' || ['brief', 'new', 'revise', 'export', 'feedback', 'project'].includes(cmd)) flags.push(`${field.flag}=${parsed}`);
-        else flags.push(field.flag, String(parsed));
+        else flags.push(`${field.flag}=${parsed}`);
       }
     }
   }

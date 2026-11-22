@@ -6,7 +6,7 @@ import { propose, verify } from '../updater/propose.ts';
 
 export const run: Command = async (args, io) => {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
-    help: { type: 'boolean' }, only: { type: 'string' }, write: { type: 'boolean' }, branch: { type: 'boolean' },
+    help: { type: 'boolean', short: 'h' }, only: { type: 'string' }, write: { type: 'boolean' }, branch: { type: 'boolean' },
   } });
   if (values.help) {
     io.out('Usage: bstudio sources check [--only id,...] [--write] | propose [--branch] | verify <id...>\n\nExamples:\n  bstudio sources check --only example --write\n  bstudio sources propose --branch\n  bstudio sources verify example');

@@ -38,10 +38,11 @@ Image and voice providers default to `none`. The default zero monthly budget dis
 
 Selected API providers receive image prompts or voice text. `providers.allowUpload` defaults to `false`, but is not a general network or privacy switch; reference-image uploads are currently unsupported even when it is enabled. Authoring and review agents can also send project content to their model providers. Agents run without OS sandbox restrictions by default; see [configuration](configuration.md#agent-isolation) before processing sensitive or untrusted material.
 
-## Make a first project
+## Make a first campaign
 
 ```sh
-bstudio new launch-note --idea "Explain the new release" --note "It is available today."
+bstudio project new acme
+bstudio new acme/launch-note --idea "Explain the new release" --note "It is available today."
 ```
 
-The slug uses lowercase letters, numbers and single hyphens. `new` runs brief, plan, make, render and review in order; if a stage fails, it prints a command for resuming. Inspect the resulting files under `~/BlastStudio/projects/launch-note/`, or under your configured root. Review the evidence, drafts, media and findings before export. See [workflow](workflow.md), [formats](formats.md), and [review](review.md) for the individual stages and their limits.
+Project and campaign slugs use lowercase letters, numbers and single hyphens. `new` runs brief, plan, make, render and review in order; if a stage fails, it prints a command for resuming. Inspect the resulting files under `~/BlastStudio/projects/acme/campaigns/launch-note/`, or under your configured root. Review the evidence, drafts, media and findings before export. See [workflow](workflow.md), [formats](formats.md), and [review](review.md) for the individual stages and their limits.

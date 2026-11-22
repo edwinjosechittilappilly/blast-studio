@@ -9,7 +9,7 @@ export const SKILLS_SOURCE = resolve(dirname(fileURLToPath(import.meta.url)), ".
 export const run: Command = async (args, io) => installSkills(args, io);
 export async function installSkills(args: string[], io: IO, sourceRoot = SKILLS_SOURCE): Promise<number> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
-    help: { type: "boolean" }, "with-hyperframes": { type: "boolean" },
+    help: { type: "boolean", short: "h" }, "with-hyperframes": { type: "boolean" },
   } });
   if (values.help) {
     io.out("Usage: bstudio install-skills [--with-hyperframes]\n\nExample:\n  bstudio install-skills --with-hyperframes");

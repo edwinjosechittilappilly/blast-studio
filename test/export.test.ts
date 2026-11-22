@@ -54,6 +54,16 @@ test('refuses missing gates and changed media', async () => {
   await assert.rejects(exportCommand(['acme/demo'], f.io), /media is stale/);
 });
 
+test('warns that a migrated campaign has a new Market Blaster identity', async () => {
+  const f = fixture();
+  const migrated = join(f.root, 'projects/demo/campaigns/demo');
+  cpSync(f.project, migrated, { recursive: true });
+  writeFileSync(join(f.root, 'projects/demo/project.yml'), 'name: Demo\ncreatedAt: 2025-01-01\nmigratedFrom: demo\n');
+  await exportCommand(['demo/demo', '--dir'], f.io);
+  assert.match(f.io.stderr.join('\n'), /slug changed from demo to demo--demo/);
+  assert.match(f.io.stderr.join('\n'), /duplicate previously published posts/);
+});
+
 test('market-blaster imports manifest and media', async t => {
   const marketBlaster = marketBlasterDir();
   if (!existsSync(marketBlaster)) {
@@ -176,5 +186,5 @@ test('library enumerates and searches composite campaign identities', async () =
   assert.deepEqual(entries.map(entry => entry.slug), ['acme/demo', 'other/demo']);
   assert.deepEqual(loadLibrary(loadConfig(f.io), 'OTHER/DEMO').map(entry => entry.slug), ['other/demo']);
   await library(['search', 'acme'], f.io);
-  assert.match(f.io.text(), /acme\/demo/);
+  assert.match(f.io.text(), /acme\tdemo/);
 });

@@ -102,6 +102,9 @@ test("command help is side-effect free and unknown flags are rejected", async ()
     assert.equal(await command(["--help"], io), 0);
     assert.match(io.text(), /Usage: bstudio/);
     assert.match(io.text(), /Example/);
+    const short = fakeIO({ cwd: home, env: {} });
+    assert.equal(await command(["-h"], short), 0);
+    assert.match(short.text(), /Example/);
     await assert.rejects(command(["--unknown"], io), /unknown option/i);
   }
 });
