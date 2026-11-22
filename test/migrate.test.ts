@@ -197,6 +197,35 @@ test("studio lock recovers a dead owner", () => {
   assert.equal(existsSync(join(root, "projects/.bstudio-studio.lock")), false);
 });
 
+test("studio lock recovers a reused PID without disturbing the current process", () => {
+  const { root } = setup({ "projects/demo/brief.md": "brief" });
+  const path = join(root, "projects/.bstudio-studio.lock");
+  const owner = withStudioLock(root, () => JSON.parse(readFileSync(path, "utf8")));
+  writeFileSync(path, JSON.stringify({ ...owner, processStarted: `${owner.processStarted}-old` }));
+  assert.equal(withStudioLock(root, () => "acquired"), "acquired");
+  assert.equal(existsSync(path), false);
+});
+
+test("studio lock times out without removing a live holder", t => {
+  const { root } = setup({ "projects/demo/brief.md": "brief" });
+  const path = join(root, "projects/.bstudio-studio.lock");
+  withStudioLock(root, () => {
+    const owner = readFileSync(path, "utf8");
+    assert.equal(JSON.parse(owner).pid, process.pid);
+    assert.equal(typeof JSON.parse(owner).processStarted, "string");
+    let now = 0;
+    t.mock.method(performance, "now", () => { now += 30000; return now; });
+    assert.throws(() => withStudioLock(root, () => assert.fail("live lock was acquired")), error => {
+      assert.match(String(error), /timed out/i);
+      assert.ok(String(error).includes(path));
+      assert.match(String(error), /stop|exit/i);
+      assert.match(String(error), /manually|remove/i);
+      return true;
+    });
+    assert.equal(readFileSync(path, "utf8"), owner);
+  });
+});
+
 test("studio lock is released when its operation fails", () => {
   const { root } = setup({ "projects/demo/brief.md": "brief" });
   assert.throws(() => withStudioLock(root, () => { throw new Error("operation failed"); }), /operation failed/);

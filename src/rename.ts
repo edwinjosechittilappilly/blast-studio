@@ -10,7 +10,8 @@ import { UserError, type StudioConfig } from "./types.ts";
 
 interface Change { path: string; before: string; after: string; mode: number }
 
-interface RenameJournal { source: string; destination: string; changes: Change[] }
+interface LedgerMapping { from: string; to: string; prefix: boolean }
+interface RenameJournal { source: string; destination: string; changes: Change[]; ledgerMappings?: LedgerMapping[] }
 const JOURNAL = ".bstudio-rename.json";
 function present(path: string): boolean {
   try { lstatSync(path); return true; } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }
@@ -66,6 +67,15 @@ function ledgerChange(root: string, translate: (value: string) => string): Chang
     record.projectSlug = next;
     return JSON.stringify(record);
   }).join("\n"));
+}
+
+function translateLedger(value: string, mappings: LedgerMapping[]): string {
+  for (const mapping of mappings) {
+    if (mapping.prefix ? value.startsWith(mapping.from) : value === mapping.from) {
+      return mapping.to + value.slice(mapping.from.length);
+    }
+  }
+  return value;
 }
 
 // Only visit actual job stores, never symlinks or arbitrary JSON inside campaigns.
@@ -130,7 +140,18 @@ function finishRename(root: string, journal: RenameJournal): void {
   for (const change of changes) {
     if (!change || typeof change.path !== "string" || typeof change.before !== "string" || typeof change.after !== "string" || !Number.isInteger(change.mode) || change.mode < 0 || change.mode > 0o777) throw new UserError("Invalid rename journal change");
   }
-  for (const path of [source, destination, ...changes.flatMap(change => [change.path, inside(source, change.path) ? join(destination, relative(source, change.path)) : change.path])]) {
+  if (journal.ledgerMappings !== undefined) {
+    const mappings = journal.ledgerMappings;
+    const expected = sourceParts.length === 1
+      ? [{ from: `${sourceParts[0]}/`, to: `${destParts[0]}/`, prefix: true }, { from: sourceParts[0], to: `${destParts[0]}/${sourceParts[0]}`, prefix: false }]
+      : [{ from: `${sourceParts[0]}/${sourceParts[2]}`, to: `${destParts[0]}/${destParts[2]}`, prefix: false }, { from: sourceParts[0], to: `${destParts[0]}/${destParts[2]}`, prefix: false }];
+    if (!Array.isArray(mappings) || mappings.length < 1 || mappings.length > 2 ||
+        mappings.some((mapping, index) => !mapping || mapping.from !== expected[index].from || mapping.to !== expected[index].to || mapping.prefix !== expected[index].prefix) ||
+        (sourceParts.length === 3 && mappings.length === 2 && sourceParts[0] !== sourceParts[2]) ||
+        changes.some(change => resolve(change.path) === join(base, "ledger.jsonl"))) throw new UserError("Invalid rename journal ledger mappings");
+  }
+  const ledgerPath = join(base, "ledger.jsonl");
+  for (const path of [source, destination, ...(journal.ledgerMappings ? [ledgerPath] : []), ...changes.flatMap(change => [change.path, inside(source, change.path) ? join(destination, relative(source, change.path)) : change.path])]) {
     if (typeof path !== "string" || !isAbsolute(path) || !inside(base, path)) throw new UserError("Invalid rename journal paths");
     let current = base;
     for (const part of relative(base, path).split(sep)) {
@@ -139,6 +160,7 @@ function finishRename(root: string, journal: RenameJournal): void {
       if (lstatSync(current).isSymbolicLink()) throw new UserError(`Unsafe rename journal path: ${current}`);
     }
   }
+  const ledger = journal.ledgerMappings && ledgerChange(base, value => translateLedger(value, journal.ledgerMappings!));
   if (sourceParts.length === 3) {
     assertNoActiveLocks(join(projects, sourceParts[0]));
     assertNoActiveLocks(join(projects, destParts[0]));
@@ -162,13 +184,22 @@ function finishRename(root: string, journal: RenameJournal): void {
     assertNoActiveLocks(destination);
     if (destParts.length === 1) for (const campaign of projectCampaigns(destination)) assertNoActiveLocks(campaign);
   }
-  const pending = changes.map(change => ({ change, path: inside(source, change.path) ? join(destination, relative(source, change.path)) : change.path }));
-  for (const { change, path } of pending) {
+  const pending = changes.map(change => {
+    const path = inside(source, change.path) ? join(destination, relative(source, change.path)) : change.path;
     if (!present(path) || !lstatSync(path).isFile() || lstatSync(path).isSymbolicLink()) throw new UserError(`Cannot recover rename: unsafe or missing file ${path}`);
     const current = readFileSync(path, "utf8");
-    if (current !== change.before && current !== change.after) throw new UserError(`Cannot recover rename: ${path} changed; restore or reconcile it before retrying`);
-  }
-  for (const { change, path } of pending) if (readFileSync(path, "utf8") !== change.after) updateFile(path, change.after, change.mode);
+    let after = change.after;
+    if (!journal.ledgerMappings && path === ledgerPath && current !== change.before && current !== change.after) {
+      if (change.before.endsWith("\n") && current.startsWith(change.before)) after += current.slice(change.before.length);
+      else if (change.after.endsWith("\n") && current.startsWith(change.after)) after = current;
+      else throw new UserError(`Cannot recover rename: ${path} changed; restore or reconcile it before retrying`);
+    } else if (current !== change.before && current !== change.after) {
+      throw new UserError(`Cannot recover rename: ${path} changed; restore or reconcile it before retrying`);
+    }
+    return { change, path, current, after };
+  });
+  for (const { change, path, current, after } of pending) if (current !== after) updateFile(path, after, change.mode);
+  if (ledger) updateFile(ledger.path, ledger.after, ledger.mode);
   unlinkSync(journalPath(root));
 }
 
@@ -213,10 +244,11 @@ function recoverLocked(root: string): void {
   finishRename(root, journal);
 }
 
-function move(root: string, source: string, destination: string, changes: Change[]): void {
+function move(root: string, source: string, destination: string, changes: Change[], ledgerMappings: LedgerMapping[]): void {
   const path = journalPath(root), stage = `${path}.${randomUUID()}.tmp`;
+  const journal: RenameJournal = { source, destination, changes, ledgerMappings };
   try {
-    writeFileSync(stage, JSON.stringify({ source, destination, changes }), { flag: "wx", mode: 0o600 });
+    writeFileSync(stage, JSON.stringify(journal), { flag: "wx", mode: 0o600 });
     linkSync(stage, path);
   } finally { if (present(stage)) unlinkSync(stage); }
   try { mkdirSync(destination); }
@@ -225,7 +257,7 @@ function move(root: string, source: string, destination: string, changes: Change
     if ((error as NodeJS.ErrnoException).code === "EEXIST") throw new UserError(`Destination already exists: ${destination}`);
     throw error;
   }
-  finishRename(root, { source, destination, changes });
+  finishRename(root, journal);
 }
 
 function projectCampaigns(path: string): string[] {
@@ -249,8 +281,11 @@ export async function renameProject(config: StudioConfig, from: string, to: stri
     for (const campaign of projectCampaigns(source)) assertNoActiveLocks(campaign);
     const legacy = metadata.migratedFrom === from ? from : undefined;
     const translate = (value: string) => value.startsWith(`${from}/`) ? `${to}/${value.slice(from.length + 1)}` : value === legacy ? `${to}/${from}` : value;
-    const changes = [metadataChange(join(source, "project.yml"), to, Boolean(legacy)), ledgerChange(config.root, translate), ...jobChanges(config.root, source, (value, inSource) => value === legacy && !inSource ? value : translate(value))].filter((change): change is Change => Boolean(change));
-    move(config.root, source, destination, changes);
+    const ledgerMappings: LedgerMapping[] = [{ from: `${from}/`, to: `${to}/`, prefix: true }];
+    if (legacy) ledgerMappings.push({ from: legacy, to: `${to}/${from}`, prefix: false });
+    ledgerChange(config.root, value => translateLedger(value, ledgerMappings));
+    const changes = [metadataChange(join(source, "project.yml"), to, Boolean(legacy)), ...jobChanges(config.root, source, (value, inSource) => value === legacy && !inSource ? value : translate(value))].filter((change): change is Change => Boolean(change));
+    move(config.root, source, destination, changes, ledgerMappings);
   }));
 }
 
@@ -269,7 +304,10 @@ export async function renameCampaign(config: StudioConfig, from: string, to: str
     assertNoActiveLocks(oldProject); assertNoActiveLocks(newProject); assertNoActiveLocks(source);
     const legacy = oldRef.project === oldRef.campaign && metadata.migratedFrom === oldRef.project ? oldRef.project : undefined;
     const translate = (value: string) => value === from || value === legacy ? to : value;
-    const changes = [legacy ? metadataChange(join(oldProject, "project.yml"), undefined, true) : undefined, ledgerChange(config.root, translate), ...jobChanges(config.root, source, (value, inSource) => value === legacy && !inSource ? value : translate(value))].filter((change): change is Change => Boolean(change));
-    move(config.root, source, destination, changes);
+    const ledgerMappings: LedgerMapping[] = [{ from, to, prefix: false }];
+    if (legacy) ledgerMappings.push({ from: legacy, to, prefix: false });
+    ledgerChange(config.root, value => translateLedger(value, ledgerMappings));
+    const changes = [legacy ? metadataChange(join(oldProject, "project.yml"), undefined, true) : undefined, ...jobChanges(config.root, source, (value, inSource) => value === legacy && !inSource ? value : translate(value))].filter((change): change is Change => Boolean(change));
+    move(config.root, source, destination, changes, ledgerMappings);
   }));
 }

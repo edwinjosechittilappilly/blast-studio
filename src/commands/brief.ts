@@ -63,13 +63,14 @@ export const run: Command = async (args, io) => {
   const add = (title: string, status: ClaimStatus | undefined, body: string, source?: string) => {
     sections.push(evidenceSection(sections.length + 1, title, status, body, source));
   };
-  const addImported = (section: BriefSection, file: string) => {
+  const addImported = (section: BriefSection, file: string, untrustedSource = false) => {
     let body = section.body;
     const source = body.match(/^Source:[ \t]*(.+)[ \t]*(?:\r?\n|$)/i);
     if (source) body = body.slice(source[0].length).trim();
     const fenced = body.match(/^(`{3,}|~{3,})untrusted[ \t]*\r?\n([\s\S]*?)\r?\n\1[ \t]*$/);
     if (fenced) body = fenced[2];
-    add(section.title, section.status, body, source?.[1].trim() || `${file} [${section.anchor}]`);
+    if (untrustedSource && source) body = `${source[0].trim()}\n\n${body}`;
+    add(section.title, section.status, body, !untrustedSource && source?.[1].trim() || `${file} [${section.anchor}]`);
   };
   const shared = containedPath(project, "evidence", "sources.md");
   if (existsSync(shared)) {
@@ -95,7 +96,7 @@ export const run: Command = async (args, io) => {
     const file = resolve(io.cwd, values["mb-brief"]);
     const imported = parseBrief(readFileSync(file, "utf8"));
     if (!imported.length) throw new UserError("Market Blaster brief has no evidence sections");
-    for (const section of imported) addImported(section, file);
+    for (const section of imported) addImported(section, file, true);
   }
   if (!sections.length) throw new UserError("Provide at least one brief input");
   mkdirSync(dir, { recursive: true });

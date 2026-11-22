@@ -14,6 +14,8 @@ Run `bstudio help`, `bstudio --help`, or `bstudio -h` for the command list; `bst
 
 - `bstudio project new <project> [--repo owner/repo] [--url URL]... [--note text]...` creates a project and collects optional shared evidence. URLs and notes can be repeated; an existing project is not overwritten.
 - `bstudio project list` lists projects with their campaign counts and last update times.
+- `bstudio project rename <project> <new-project>` moves a project and its campaigns to a new slug.
+- `bstudio campaign rename <project>/<campaign> <new-project>/<new-campaign>` moves a campaign within or between existing projects. Both rename commands preserve campaign records and spending attribution and refuse active jobs or an existing destination.
 
 Projects contain shared evidence and independent campaigns. Legacy flat projects are migrated automatically on startup; see [workflow](workflow.md) for storage and recovery.
 

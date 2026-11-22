@@ -18,16 +18,39 @@ function present(path: string): boolean {
 const STUDIO_LOCK = ".bstudio-studio.lock";
 const sleep = new Int32Array(new SharedArrayBuffer(4));
 
-function processAlive(pid: number): boolean {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+function processInfo(pid: number): { state: string; started: string } | undefined {
   if (process.platform === "linux") {
     try {
       const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-      if (stat.slice(stat.lastIndexOf(")") + 2).startsWith("Z ")) return false;
-    } catch { /* Fall back to the OS probe. */ }
+      const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+      if (fields[0] && fields[19]) return { state: fields[0], started: `linux:${fields[19]}` };
+    } catch { /* Fall back to ps if procfs is unavailable. */ }
   }
-  try { process.kill(pid, 0); return true; }
-  catch (error) { return (error as NodeJS.ErrnoException).code !== "ESRCH"; }
+  try {
+    const output = execFileSync("ps", ["-o", "stat=", "-o", "lstart=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 1000 }).trim();
+    const match = /^(\S+)\s+(.+)$/.exec(output);
+    if (match) return { state: match[1], started: `ps:${match[2]}` };
+  } catch { /* An unavailable probe must not make a live owner appear dead. */ }
+  return undefined;
+}
+
+function processAlive(pid: number): boolean {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return false; }
+  return !processInfo(pid)?.state.startsWith("Z");
+}
+
+function studioOwnerAlive(owner: { pid?: number; processStarted?: string }): boolean {
+  if (!Number.isSafeInteger(owner.pid) || owner.pid! <= 0) return false;
+  const pid = owner.pid!;
+  try { process.kill(pid, 0); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return false; }
+  const info = processInfo(pid);
+  if (info?.state.startsWith("Z")) return false;
+  if (typeof owner.processStarted !== "string" || !owner.processStarted || !info) return true;
+  if (owner.processStarted.startsWith("linux:") !== info.started.startsWith("linux:")) return true;
+  return info.started === owner.processStarted;
 }
 
 function processStarted(pid: number): string | undefined {
@@ -70,9 +93,16 @@ export function withStudioLock<T>(root: string, fn: () => T): T {
   const path = join(projects, STUDIO_LOCK);
   const temp = join(projects, `${STUDIO_LOCK}-${randomUUID()}.tmp`);
   const recovery = `${path}.recovery`;
-  writeFileSync(temp, JSON.stringify({ pid: process.pid }), { flag: "wx", mode: 0o600 });
+  const started = processInfo(process.pid)?.started;
+  if (!started) throw new UserError(`Cannot determine process start identity for studio lock ${path}`);
+  const owner = { pid: process.pid, processStarted: started };
+  writeFileSync(temp, JSON.stringify(owner), { flag: "wx", mode: 0o600 });
+  const deadline = performance.now() + 60000;
   try {
     for (;;) {
+      if (performance.now() >= deadline) {
+        throw new UserError(`Timed out waiting for studio lock ${path}. Stop or exit all studio processes, verify no owner is still running, then manually remove the lock and its ${recovery} recovery directory if they remain.`);
+      }
       try {
         linkSync(temp, path);
         // A recovering process may have observed the previous owner.
@@ -85,14 +115,14 @@ export function withStudioLock<T>(root: string, fn: () => T): T {
       try {
         mkdirSync(recovery);
         try {
-          writeFileSync(join(recovery, "owner"), String(process.pid));
+          writeFileSync(join(recovery, "owner"), JSON.stringify(owner));
           const identity = statSync(path);
-          let owner: { pid?: number } | undefined;
-          try { owner = JSON.parse(readFileSync(path, "utf8")); }
+          let lockOwner: { pid?: number; processStarted?: string } | undefined;
+          try { lockOwner = JSON.parse(readFileSync(path, "utf8")); }
           catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") continue; }
           const age = Date.now() - identity.mtimeMs;
-          const validPid = Number.isSafeInteger(owner?.pid) && owner!.pid! > 0;
-          if ((validPid && !processAlive(owner!.pid!)) || (!validPid && age > 30000)) {
+          const validPid = Number.isSafeInteger(lockOwner?.pid) && lockOwner!.pid! > 0;
+          if ((validPid && !studioOwnerAlive(lockOwner!)) || (!validPid && age > 30000)) {
             const current = statSync(path);
             if (current.dev === identity.dev && current.ino === identity.ino) unlinkSync(path);
           }
@@ -104,9 +134,13 @@ export function withStudioLock<T>(root: string, fn: () => T): T {
         try {
           const age = Date.now() - statSync(recovery).mtimeMs;
           if (age > 30000) {
-            let pid = 0;
-            try { pid = Number(readFileSync(join(recovery, "owner"), "utf8")); } catch { /* Owner may have died before writing. */ }
-            if (!processAlive(pid)) rmSync(recovery, { recursive: true, force: true });
+            let recoveryOwner: { pid?: number; processStarted?: string } = {};
+            try {
+              const stored = readFileSync(join(recovery, "owner"), "utf8");
+              const parsed = JSON.parse(stored);
+              recoveryOwner = typeof parsed === "number" ? { pid: parsed } : parsed ?? {};
+            } catch { /* Owner may have died before writing. */ }
+            if (!studioOwnerAlive(recoveryOwner)) rmSync(recovery, { recursive: true, force: true });
           }
         } catch (err) { if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err; }
       }

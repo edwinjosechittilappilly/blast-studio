@@ -119,6 +119,63 @@ test('interrupted renames recover their move and remaining updates', async () =>
   assert.equal(existsSync(join(root, 'projects/.bstudio-rename.json')), false);
 });
 
+test('recovery translates ledger addresses without losing later unrelated spending', async () => {
+  const root = tempStudio({
+    'projects/new/project.yml': 'name: new\ncreatedAt: now\n',
+    'projects/new/campaigns/old/brief.md': 'legacy\n',
+    'projects/new/campaigns/launch/brief.md': 'launch\n',
+    'ledger.jsonl': ledger('old', 1) + ledger('old/launch', 2),
+  });
+  const source = join(root, 'projects/old'), destination = join(root, 'projects/new');
+  writeFileSync(join(root, 'projects/.bstudio-rename.json'), JSON.stringify({
+    source, destination, changes: [],
+    ledgerMappings: [
+      { from: 'old/', to: 'new/', prefix: true },
+      { from: 'old', to: 'new/old', prefix: false },
+    ],
+  }));
+  writeFileSync(join(root, 'ledger.jsonl'), ledger('other/campaign', 3), { flag: 'a' });
+  const warnings: string[] = [];
+  assert.equal((await recoverRenames(loadConfig(ioFor(root)), message => warnings.push(message))).size, 0);
+  assert.deepEqual(warnings, []);
+  assert.equal(readFileSync(join(root, 'ledger.jsonl'), 'utf8'), ledger('old', 1).replace('"projectSlug":"old"', '"projectSlug":"new/old"') + ledger('old/launch', 2).replace('"projectSlug":"old/launch"', '"projectSlug":"new/launch"') + ledger('other/campaign', 3));
+  assert.equal(existsSync(join(root, 'projects/.bstudio-rename.json')), false);
+});
+
+test('legacy journal recovery preserves spending appended after interruption', async () => {
+  const before = ledger('old/launch', 2), after = ledger('new/launch', 2), appended = ledger('other/campaign', 3);
+  const root = tempStudio({
+    'projects/new/project.yml': 'name: new\ncreatedAt: now\n',
+    'projects/new/campaigns/launch/brief.md': 'launch\n',
+    'ledger.jsonl': before + appended,
+  });
+  const source = join(root, 'projects/old'), destination = join(root, 'projects/new');
+  writeFileSync(join(root, 'projects/.bstudio-rename.json'), JSON.stringify({ source, destination, changes: [
+    { path: join(root, 'ledger.jsonl'), before, after, mode: 0o600 },
+  ] }));
+  assert.equal((await recoverRenames(loadConfig(ioFor(root)), () => {})).size, 0);
+  assert.equal(readFileSync(join(root, 'ledger.jsonl'), 'utf8'), after + appended);
+});
+
+test('campaign recovery leaves already translated ledger entries unchanged', async () => {
+  const contents = ledger('new/renamed', 1) + ledger('old/old', 2) + ledger('old', 3) + ledger('other/campaign', 4);
+  const root = tempStudio({
+    'projects/old/project.yml': 'name: old\ncreatedAt: now\n',
+    'projects/new/project.yml': 'name: new\ncreatedAt: now\n',
+    'projects/new/campaigns/renamed/brief.md': 'renamed\n',
+    'ledger.jsonl': contents,
+  });
+  const source = join(root, 'projects/old/campaigns/old'), destination = join(root, 'projects/new/campaigns/renamed');
+  writeFileSync(join(root, 'projects/.bstudio-rename.json'), JSON.stringify({
+    source, destination, changes: [], ledgerMappings: [
+      { from: 'old/old', to: 'new/renamed', prefix: false },
+      { from: 'old', to: 'new/renamed', prefix: false },
+    ],
+  }));
+  assert.equal((await recoverRenames(loadConfig(ioFor(root)), () => {})).size, 0);
+  assert.equal(readFileSync(join(root, 'ledger.jsonl'), 'utf8'), ledger('new/renamed', 1) + ledger('old/old', 2).replace('"projectSlug":"old/old"', '"projectSlug":"new/renamed"') + ledger('old', 3).replace('"projectSlug":"old"', '"projectSlug":"new/renamed"') + ledger('other/campaign', 4));
+});
+
 test('recovery preserves conflicting ledger edits and reports affected projects', async () => {
   const root = tempStudio({ 'projects/new/project.yml': 'name: new\ncreatedAt: now\n', 'projects/new/campaigns/launch/brief.md': 'launch\n', 'ledger.jsonl': 'concurrent update\n' });
   const source = join(root, 'projects/old'), destination = join(root, 'projects/new');
