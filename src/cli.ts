@@ -7,6 +7,8 @@ import { run as budget } from "./commands/budget.ts";
 import { run as dashboard } from "./commands/dashboard.ts";
 import { run as doctor } from "./commands/doctor.ts";
 import { run as exportProject } from "./commands/export.ts";
+import { run as feedback } from "./commands/feedback.ts";
+import { run as history, restore } from "./commands/history.ts";
 import { run as init } from "./commands/init.ts";
 import { run as installSkills } from "./commands/install-skills.ts";
 import { run as library } from "./commands/library.ts";
@@ -33,11 +35,14 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
     run: newProject,
   },
   brief: { summary: "collect evidence: brief <slug> [--idea text] [--note text] [--url url] [--pr number] [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force]", run: brief },
-  plan: { summary: "choose post types, angles and hooks per platform: plan <slug>", run: plan },
-  make: { summary: "write posts and asset sources with the agent: make <slug>", run: make },
+  plan: { summary: "choose post types, angles and hooks: plan <slug> [--platforms=id,...] [--assets=id,...]", run: plan },
+  make: { summary: "write posts and assets: make <slug> [--platforms=id,...] [--assets=id,...]", run: make },
   render: { summary: "render images, carousels, logos, diagrams and video: render <slug> [--regen] [--assets=id,...] [--platforms=id,...]", run: render },
   review: { summary: "gates + platform reviewer scores: review [<slug>] [--calibrate] [--platforms=id,...] (slug required unless calibrating)", run: review },
   revise: { summary: "apply review findings or owner feedback: revise <slug> [--note text] [--asset id] [--platform id] [--feedback-only]", run: revise },
+  feedback: { summary: "queue and manage feedback: feedback <slug> list|add|rm", run: feedback },
+  history: { summary: "list snapshots: history <slug>", run: history },
+  restore: { summary: "restore a snapshot: restore <slug> <n>", run: restore },
   accept: { summary: "human override of scores (never gates): accept <slug> <platform> --reason <reason>", run: accept },
   confirm: { summary: "record human asset rights checks: confirm <slug> <asset-id> [--trademark-checked] [--license <license>]", run: confirm },
   budget: { summary: "paid generation caps: budget [show | set <usd> | set-project <usd>]", run: budget },

@@ -8,6 +8,10 @@ export function readPlan(projectDir: string): PlanEntry[] {
   const path = join(projectDir, 'plan.yml');
   let value: unknown;
   try { value = parse(readFileSync(path, 'utf8')); } catch (e) { throw new UserError(`plan.yml: ${String(e)}`); }
+  return validatePlan(value);
+}
+
+export function validatePlan(value: unknown): PlanEntry[] {
   if (!Array.isArray(value)) throw new UserError(`plan.yml: expected an array, got ${JSON.stringify(value)}`);
   const errors: string[] = [], seen = new Set<string>();
   const assets = new Map<string, { kind: unknown; aspect: unknown }>();

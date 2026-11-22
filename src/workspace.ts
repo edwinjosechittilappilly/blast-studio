@@ -4,15 +4,15 @@ import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from 'no
 import { fileURLToPath } from 'node:url';
 import { parse, stringify } from 'yaml';
 import type { IO } from './io.ts';
-import type { StudioConfig } from './types.ts';
+import type { Post, StudioConfig } from './types.ts';
 import { UserError } from './types.ts';
 import { agentEnv, runBilledAgent } from './agent-env.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-import { parsePost } from './posts.ts';
+import { parsePost, serializePost } from './posts.ts';
 function safePath(path: string): boolean { return !!path && !isAbsolute(path) && normalize(path) === path && !path.split(/[\\/]/).some(p => p === '..' || p === '.'); }
 
-export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs, passEnv = [], validate }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string>; allowOut: RegExp[]; prompt: string; timeoutMs: number; passEnv?: string[]; validate?: (workspace: string) => { path: string; message: string }[] }): Promise<{ copied: string[]; ignored: string[] }> {
+export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs, passEnv = [], validate, preserveBlockers = false, workspaceOnly = [] }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string>; allowOut: RegExp[]; prompt: string; timeoutMs: number; passEnv?: string[]; validate?: (workspace: string) => { path: string; message: string }[]; preserveBlockers?: boolean; workspaceOnly?: string[] }): Promise<{ copied: string[]; ignored: string[] }> {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-agent-'));
   const temp = mkdtempSync(join(tmpdir(), 'bstudio-agent-tmp-'));
   const copied: string[] = [], ignored: string[] = [];
@@ -40,6 +40,7 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
           const st = lstatSync(path);
           if (st.isSymbolicLink()) { ignored.push(rel); continue; }
           if (st.isDirectory()) { visit(path, rel); continue; }
+          if (st.isFile() && workspaceOnly.includes(rel)) continue;
           const permitted = allowOut.some(re => { re.lastIndex = 0; return re.test(rel); });
           if (st.isFile() && Object.hasOwn(files, rel) && readFileSync(path, 'utf8') === files[rel]) continue;
           if (!st.isFile() || !permitted) { ignored.push(rel); continue; }
@@ -86,7 +87,17 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
           const asset = parse(data.toString('utf8')) as Record<string, unknown>;
           delete asset.trademarkChecked;
           delete asset.license;
+          if (preserveBlockers && existsSync(target)) {
+            const previous = parse(readFileSync(target, 'utf8')) as Record<string, unknown>;
+            if (Object.hasOwn(previous, 'blockers')) asset.blockers = previous.blockers;
+          }
           content = stringify(asset);
+        }
+        else if (preserveBlockers && /^posts\/[^/]+\.md$/.test(rel) && existsSync(target)) {
+          const post = parsePost(rel, data.toString('utf8')) as Post & { blockers?: unknown };
+          const previous = parsePost(rel, readFileSync(target, 'utf8')) as typeof post;
+          if (Object.hasOwn(previous, 'blockers')) post.blockers = previous.blockers;
+          content = serializePost(post);
         }
         mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, content); copied.push(rel);
       }

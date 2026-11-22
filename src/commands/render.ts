@@ -13,15 +13,20 @@ import { generateImage } from '../providers/images.ts';
 import { generateVoice } from '../providers/voice.ts';
 import { UserError } from '../types.ts';
 import type { AssetMeta } from '../types.ts';
-import type { Command } from '../io.ts';
+import type { Command, IO } from '../io.ts';
+import { snapshot } from '../history.ts';
 
-export const run: Command = async (args, io) => {
+async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<number> {
   const regen = args.includes('--regen'), selection = args.find(a => a.startsWith('--assets=')), platforms = args.find(a => a.startsWith('--platforms='));
   const selected = selection ? new Set(selection.slice(9).split(',').filter(Boolean)) : undefined;
   const selectedPlatforms = platforms ? new Set(platforms.slice(12).split(',').filter(Boolean)) : undefined;
   const pos = args.filter(a => a !== '--regen' && a !== selection && a !== platforms);
   if (pos.length !== 1 || pos[0].startsWith('-')) throw new UserError('usage: bstudio render <slug> [--regen]');
   const config = loadConfig(io), project = projectDir(config, pos[0]), plan = readPlan(project), packs = loadPacks();
+  const validAssets = [...new Set(plan.flatMap(entry => entry.assets.map(asset => asset.id)))], validPlatforms = plan.map(entry => entry.platform);
+  for (const id of selected ?? []) if (!validAssets.includes(id)) throw new UserError(`Unknown asset: ${id}. Valid assets: ${validAssets.join(', ') || '(none)'}`);
+  for (const id of selectedPlatforms ?? []) if (!validPlatforms.some(platform => platform === id)) throw new UserError(`Unknown platform: ${id}. Valid platforms: ${validPlatforms.join(', ') || '(none)'}`);
+  if (saveSnapshot) snapshot(project, 'render');
   const metadata = new Map<string, { dir: string; meta: AssetMeta }>();
   const selections = new Map<string, Map<string, { image?: string; document?: string; slides?: string[] }>>();
   const rendered = new Set<string>();
@@ -150,4 +155,7 @@ export const run: Command = async (args, io) => {
     for (const line of skipped) io.out(`skipped ${line}`);
     io.out(`Rendered ${rendered.size - skipped.length} assets${skipped.length ? `, skipped ${skipped.length}` : ''}`); return 0;
   } finally { await closeBrowser(); }
-};
+}
+
+export const run: Command = (args, io) => render(args, io, true);
+export const renderRevision: Command = (args, io) => render(args, io, false);
