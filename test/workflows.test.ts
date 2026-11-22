@@ -1,0 +1,33 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+import { parse } from 'yaml';
+
+test('weekly platform watch isolates issue, proposal, and restricted PR privileges', () => {
+  const source = readFileSync(new URL('../.github/workflows/platform-watch.yml', import.meta.url), 'utf8');
+  const workflow = parse(source);
+  assert.equal(workflow.on.schedule[0].cron, '17 6 * * 1');
+  assert.deepEqual(workflow.permissions, { contents: 'read' });
+  const { check, propose, pr } = workflow.jobs;
+  assert.deepEqual(check.permissions, { contents: 'read', issues: 'write' });
+  const checkScript = check.steps.map((s: { run?: string }) => s.run ?? '').join('\n');
+  assert.match(checkScript, /gh issue create/);
+  assert.match(checkScript, /gh issue edit/);
+  assert.equal(propose.needs, 'check');
+  assert.match(propose.if, /needs\.check\.outputs\.changed\s*==\s*'true'/);
+  assert.match(propose.if, /needs\.check\.outputs\.key_available\s*==\s*'true'/);
+  assert.match(JSON.stringify(check.steps), /secrets\.MODEL_API_KEY/);
+  assert.deepEqual(propose.permissions, { contents: 'read' });
+  assert.equal(propose.steps.find((s: { uses?: string }) => s.uses?.startsWith('actions/checkout@')).with['persist-credentials'], false);
+  assert.match(JSON.stringify(propose.steps), /secrets\.MODEL_API_KEY/);
+  assert.doesNotMatch(JSON.stringify(propose), /github\.token|secrets\.(?:GITHUB_TOKEN|GH_TOKEN)|\bGH_TOKEN\b|\bGITHUB_TOKEN\b/i);
+  assert.equal(pr.needs, 'propose');
+  assert.deepEqual(pr.permissions, { contents: 'write', 'pull-requests': 'write' });
+  const script = pr.steps.map((s: { run?: string }) => s.run ?? '').join('\n');
+  const adds = script.split('\n').map((line: string) => line.trim()).filter((line: string) => /^git add\b/.test(line));
+  assert.deepEqual(adds, ["git add -- 'platforms/*/pack.yml' platforms/snapshots/"]);
+  assert.match(script, /Forbidden patch path/);
+  assert.match(script, /gh pr create/);
+  assert.match(script, /gh pr edit/);
+  assert.doesNotMatch(source, /gh\s+pr\s+merge|--auto\b|(?:auto[-_]?merge|merge[-_]?pull[-_]?request)@/i);
+});

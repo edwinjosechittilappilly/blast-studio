@@ -12,12 +12,13 @@ import { loadPosts } from '../posts.ts';
 export const run: Command = async (args, io) => {
   if (args.length !== 1) throw new UserError('usage: bstudio revise <slug>');
   const config = loadConfig(io), dir = projectDir(config, args[0]), reviewDir = join(dir, 'reviews');
-  for (let round = 0; round < config.review.maxRounds; round++) {
+  for (let round = 0; ; round++) {
     if (!existsSync(reviewDir)) throw new UserError('Run review before revise');
     const reviews = readdirSync(reviewDir).filter(f => f.endsWith('.json')).map(f => JSON.parse(readFileSync(join(reviewDir, f), 'utf8')) as Review);
     if (!reviews.length) throw new UserError('Run review before revise');
     if (reviews.every(r => r.verdict === 'pass' || r.verdict === 'accepted')) break;
     if (reviews.some(r => r.verdict === 'blocked')) throw new UserError('Blocked rights require human resolution before revision');
+    if (round >= config.review.maxRounds) throw new UserError(`Revision round limit (${config.review.maxRounds}) reached without a passing review`);
     const failing = reviews.filter(r => r.verdict !== 'pass' && r.verdict !== 'accepted');
     const posts = loadPosts(dir);
     const assetClosure = (ids: string[]) => {
