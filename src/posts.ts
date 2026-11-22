@@ -4,6 +4,17 @@ import { parse, stringify } from 'yaml';
 import { PLATFORM_IDS, UserError } from './types.ts';
 import type { PlatformId, Post } from './types.ts';
 
+export function validSelfReview(value: unknown, asset = false): boolean {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const review = value as Record<string, unknown>;
+  return typeof review.summary === 'string' && Array.isArray(review.checks) &&
+    review.checks.every((check: unknown) => {
+      if (!check || typeof check !== 'object' || Array.isArray(check)) return false;
+      const item = check as Record<string, unknown>;
+      return typeof item.item === 'string' && typeof item.pass === 'boolean' && (item.note === undefined || typeof item.note === 'string');
+    }) && (!asset || (Number.isInteger(review.iterations) && (review.iterations as number) >= 1 && (review.iterations as number) <= 3));
+}
+
 export function parsePost(path: string, text: string): Post {
   const match = text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)([\s\S]*)$/);
   if (!match) throw new UserError(`${path}: expected YAML frontmatter`);
@@ -13,6 +24,7 @@ export function parsePost(path: string, text: string): Post {
   if (!PLATFORM_IDS.includes(platform as PlatformId) || !Array.isArray(data.evidence) || !data.evidence.every(v => typeof v === 'string') || !Array.isArray(data.media) || !data.media.every(v => v && typeof v === 'object' && typeof v.asset === 'string' && typeof v.file === 'string' && typeof v.alt === 'string' && ['image', 'video', 'document', 'gif'].includes(v.kind)) || (data.thread !== undefined && (!Array.isArray(data.thread) || !data.thread.every(v => typeof v === 'string'))) || (data.title !== undefined && typeof data.title !== 'string') || (data.disclosure !== undefined && (!data.disclosure || typeof data.disclosure !== 'object' || Array.isArray(data.disclosure)))) throw new UserError(`${path}: invalid post frontmatter`);
   if (data.sponsored !== undefined && typeof data.sponsored !== 'boolean') throw new UserError(`${path}: sponsored must be boolean`);
   if (data.tags !== undefined && (!Array.isArray(data.tags) || !data.tags.every(v => typeof v === 'string'))) throw new UserError(`${path}: tags must be an array of strings`);
+  if (data.selfReview !== undefined && !validSelfReview(data.selfReview)) throw new UserError(`${path}: invalid selfReview`);
   return { ...data, platform, body: match[2].trim(), path } as Post;
 }
 export function loadPosts(projectDir: string): Map<PlatformId, Post> {

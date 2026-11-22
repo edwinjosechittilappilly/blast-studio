@@ -163,6 +163,15 @@ export interface PostMedia {
   kind: "image" | "video" | "document" | "gif";
 }
 
+export interface SelfReview {
+  checks: { item: string; pass: boolean; note?: string }[];
+  summary: string;
+}
+
+export interface AssetSelfReview extends SelfReview {
+  iterations: number;
+}
+
 export interface Post {
   platform: PlatformId;
   title?: string;
@@ -173,6 +182,7 @@ export interface Post {
   media: PostMedia[];
   /** Thread items after the first post (exported as a handoff file). */
   thread?: string[];
+  selfReview?: SelfReview;
   body: string;
   path: string;
 }
@@ -181,6 +191,7 @@ export interface AssetMeta {
   id: string;
   kind: AssetKind;
   provider: "template" | "mermaid" | "d2" | "arch-diagram" | "hyperframes" | "vhs" | "gemini" | "openai" | "omp";
+  selfReview?: AssetSelfReview;
   promptHash?: string;
   costUsd?: number | null;
   outputs: { file: string; width?: number; height?: number; seconds?: number; bytes: number; aspect?: string }[];
