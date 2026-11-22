@@ -25,6 +25,9 @@ test("campaign addresses validate each component and reject escaping symlinks", 
   const outside = tempStudio();
   symlinkSync(outside, join(root, "projects", "acme"));
   assert.throws(() => campaignDir(config, "acme/launch"), /escapes/);
+  mkdirSync(join(root, "projects", "safe"));
+  symlinkSync(outside, join(root, "projects", "safe", "campaigns"));
+  assert.throws(() => campaignDir(config, "safe/launch"), /escapes/);
 });
 
 
