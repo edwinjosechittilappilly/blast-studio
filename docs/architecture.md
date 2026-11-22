@@ -22,6 +22,10 @@ Paid provider calls use the budget ledger for reservations and settlement; agent
 
 The review hash covers title, trimmed body, and media basenames and alt text in order. It does not hash media file contents (Market Blaster's own approval hash does). Review checks and export behavior are implemented in [`src/commands/review.ts`](https://github.com/edwinjosechittilappilly/blast-studio/blob/main/src/commands/review.ts), [`src/review/gates.ts`](https://github.com/edwinjosechittilappilly/blast-studio/blob/main/src/review/gates.ts) and [`src/export.ts`](https://github.com/edwinjosechittilappilly/blast-studio/blob/main/src/export.ts).
 
+## Perceptual goldens
+
+The golden tests render bundled still templates and three HyperFrames video frames, comparing each with FFmpeg SSIM at a threshold of 0.98. Goldens are specific to the operating system and are skipped when that OS has no golden directory. After reviewing an intentional rendering change, install the rendering prerequisites and run `make goldens` on each supported OS, then run `node --test test/goldens.test.ts` and review the changed PNGs before committing them. Linux goldens should be generated in the Linux CI environment.
+
 ## Decisions
 
 - [HyperFrames for video](adr/0001-hyperframes.md)
