@@ -12,15 +12,22 @@ import { readPlan } from './plan.ts';
 import type { AssetMeta, PlatformId, PlatformPack, Review, StudioConfig } from './types.ts';
 
 const dirs = (path: string) => existsSync(path) ? readdirSync(path, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name).sort() : [];
-export function listExports(config: StudioConfig, ref: CampaignRef | string): { name: string; size: number; time: string }[] {
+export function listExports(config: StudioConfig, ref: CampaignRef | string): { name: string; size: number; time: string; kind: 'zip' | 'directory' }[] {
   const identity = typeof ref === 'string' ? parseCampaignRef(ref) : ref;
   const dir = join(campaignDir(config, identity), 'export');
   if (!existsSync(dir)) return [];
-  const suffix = `-${compositeSlug(identity)}.campaign.zip`;
-  return readdirSync(dir, { withFileTypes: true })
-    .filter(entry => entry.isFile() && entry.name.endsWith(suffix) && /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z(?:-\d+)?-/.test(entry.name))
-    .map(entry => { const stat = statSync(join(dir, entry.name)); return { name: entry.name, size: stat.size, time: stat.mtime.toISOString() }; })
-    .sort((a, b) => b.time.localeCompare(a.time) || b.name.localeCompare(a.name));
+  const sizeOf = (path: string): number => readdirSync(path, { withFileTypes: true }).reduce((sum, entry) =>
+    sum + (entry.isFile() ? statSync(join(path, entry.name)).size : entry.isDirectory() ? sizeOf(join(path, entry.name)) : 0), 0);
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry): { name: string; size: number; time: string; kind: 'zip' | 'directory'; collision: number }[] => {
+    const match = entry.isDirectory() && /^(\d{4}-\d{2}-\d{2})T(\d{2})-(\d{2})-(\d{2})-(\d{3})Z(?:-(\d+))?$/.exec(entry.name);
+    if (!match) return [];
+    const time = `${match[1]}T${match[2]}:${match[3]}:${match[4]}.${match[5]}Z`;
+    if (!Number.isFinite(Date.parse(time))) return [];
+    const folder = join(dir, entry.name), zipName = `${compositeSlug(identity)}.campaign.zip`, zip = join(folder, zipName);
+    if (existsSync(zip) && statSync(zip).isFile()) return [{ name: `${entry.name}/${zipName}`, size: statSync(zip).size, time, kind: 'zip' as const, collision: Number(match[6] ?? 0) }];
+    if (existsSync(join(folder, 'manifest.json'))) return [{ name: `${entry.name}/`, size: sizeOf(folder), time, kind: 'directory' as const, collision: Number(match[6] ?? 0) }];
+    return [];
+  }).sort((a, b) => b.time.localeCompare(a.time) || b.collision - a.collision).map(({ collision: _collision, ...entry }) => entry);
 }
 export function projectDetails(config: StudioConfig, slug: string) {
   const dir = campaignDir(config, slug);
@@ -33,7 +40,9 @@ export function projectDetails(config: StudioConfig, slug: string) {
   });
   const brief = join(dir, 'brief.md');
   const marksFile = join(dir, 'published.json');
-  const updatedAt = new Date(readdirSync(dir, { withFileTypes: true }).filter(entry => entry.isFile()).reduce((latest, entry) => Math.max(latest, statSync(join(dir, entry.name)).mtimeMs), statSync(dir).mtimeMs)).toISOString();
+  const files = (path: string) => existsSync(path) ? readdirSync(path, { withFileTypes: true }).filter(entry => entry.isFile()).map(entry => join(path, entry.name)) : [];
+  const recentFiles = [...files(dir), ...files(join(dir, 'posts')), ...files(reviewsDir), ...dirs(join(dir, 'assets')).map(id => join(dir, 'assets', id, 'asset.yml')).filter(existsSync)];
+  const updatedAt = new Date(recentFiles.reduce((latest, file) => Math.max(latest, statSync(file).mtimeMs), statSync(dir).mtimeMs)).toISOString();
   const pendingFeedback = loadFeedback(dir).filter(entry => entry.status === 'pending').length;
   return { slug, created: statSync(dir).birthtime.toISOString(), updatedAt, pendingFeedback, inputs: existsSync(brief) ? readBrief(dir).map(s => s.title) : [], posts, reviews, assets, exported: existsSync(join(dir, 'export', 'manifest.json')) || existsSync(join(dir, 'export', `${compositeSlug(parseCampaignRef(slug))}.campaign.zip`)), published: existsSync(marksFile) ? JSON.parse(readFileSync(marksFile, 'utf8')) as Record<string, unknown> : {} };
 }

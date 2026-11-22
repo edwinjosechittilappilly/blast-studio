@@ -44,8 +44,13 @@ export const run: Command = async (args, io) => {
       return !asset || (match[2] === '--trademark-checked' ? !asset.trademarkChecked : !asset.license?.trim());
     });
     const unreviewed = project.posts.some(post => !project.reviews.some(review => review.platform === post.platform));
+    const dir = campaignDir(config, project.slug);
+    const inputFiles = [...project.posts.map(post => join(dir, 'posts', `${post.platform}.md`)), ...project.reviews.map(review => join(dir, 'reviews', `${review.platform}.json`))];
+    const latestInput = Math.max(0, ...inputFiles.filter(existsSync).map(file => statSync(file).mtimeMs), ...project.reviews.map(review => Date.parse(review.at ?? '') || 0));
+    const staleExport = !exportedAt || latestInput > Date.parse(exportedAt);
+    const unmarked = project.posts.find(post => ['instagram', 'youtube-shorts', 'tiktok', 'dailydev'].includes(post.platform) && !published.includes(post.platform));
     const needsRevision = project.reviews.some(review => review.verdict !== 'pass' && review.verdict !== 'accepted');
-    const next = blocker ? 'resolve blockers: edit the brief or artifact metadata, then remove resolved blockers' : unresolved ? `confirm rights: ${unresolved[0]}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(campaignDir(config, project.slug), 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : !project.exported ? `export: bstudio export ${project.slug}` : 'review exports and publication status';
+    const next = blocker ? 'resolve blockers: edit the brief or artifact metadata, then remove resolved blockers' : unresolved ? `confirm rights: ${unresolved[0]}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(dir, 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : staleExport ? `export: bstudio export ${project.slug}` : unmarked ? `record publication: bstudio mark ${project.slug} ${unmarked.platform} --url <url>` : 'done';
     io.out(`  next: ${next}`);
   }
   io.out(`Month to date: $${monthToDate(config.root).toFixed(2)} / $${config.budget.monthlyUsd.toFixed(2)}`);

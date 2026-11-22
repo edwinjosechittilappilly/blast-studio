@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse } from 'yaml';
@@ -23,17 +24,19 @@ export const run: Command = async (args, io) => {
   if (parsed.values.list) {
     if (parsed.values.mb !== undefined || parsed.values.force || parsed.values.dir) throw new UserError(usage);
     const exports = listExports(config, ref);
-    if (!exports.length) io.out('No campaign zip exports.');
-    else for (const entry of exports) io.out(`${entry.time}\t${entry.size} bytes\t${entry.name}`);
+    if (!exports.length) io.out('No campaign exports.');
+    else for (const entry of exports) io.out(`${entry.time}\t${entry.size} bytes\t${entry.kind}\t${entry.name}`);
     return 0;
   }
-  const metadataPath = resolve(projectRoot(config, ref.project), 'project.yml');
-  const metadata: unknown = existsSync(metadataPath) ? parse(readFileSync(metadataPath, 'utf8')) : undefined;
+  const projectDir = projectRoot(config, ref.project);
+  const metadataPath = resolve(projectDir, 'project.yml');
+  const metadata: unknown = parsed.values.mb === undefined && existsSync(metadataPath) ? parse(readFileSync(metadataPath, 'utf8')) : undefined;
   const market = metadata && typeof metadata === 'object' && 'marketBlaster' in metadata ? metadata.marketBlaster : undefined;
   const projectTarget = market && typeof market === 'object' && 'project' in market ? market.project : undefined;
   if (projectTarget !== undefined && (typeof projectTarget !== 'string' || !projectTarget.trim())) throw new UserError('Invalid marketBlaster.project in project.yml');
   const mb = parsed.values.mb ?? projectTarget ?? config.marketBlaster.project;
-  const cwd = mb ? resolve(io.cwd, mb) : undefined;
+  const expanded = mb === '~' ? (io.env.HOME || homedir()) : mb?.startsWith('~/') ? resolve(io.env.HOME || homedir(), mb.slice(2)) : mb;
+  const cwd = expanded ? resolve(projectTarget !== undefined && parsed.values.mb === undefined ? projectDir : io.cwd, expanded) : undefined;
   if (cwd && (!existsSync(cwd) || !statSync(cwd).isDirectory())) throw new UserError(`Market Blaster project directory not found: ${cwd}`);
   if (ref.project === ref.campaign && existsSync(resolve(projectRoot(config, ref.project), 'project.yml')) && readProject(config, ref.project).migratedFrom === ref.campaign) {
     io.err(`Warning: Market Blaster slug changed from ${ref.campaign} to ${slug}; importing creates a separate campaign and may duplicate previously published posts.`);

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
@@ -7,7 +7,7 @@ import { parse } from 'yaml';
 import { readBrief } from './brief.ts';
 import { compositeSlug, type CampaignRef } from './campaigns.ts';
 import { runGates } from './review/gates.ts';
-import { writeCampaignZip } from './campaign-zip.ts';
+import { reserveExportHistory, writeCampaignZip } from './campaign-zip.ts';
 import { loadPacks } from './packs.ts';
 import { loadPosts } from './posts.ts';
 import { mediaContentHash, reviewHash } from './review-hash.ts';
@@ -90,5 +90,15 @@ export function exportProject(project: string, identity: CampaignRef, config: St
   const manifest = { version: 1, slug, project: identity.project, campaign: identity.campaign, generatedAt: new Date().toISOString(), brief: 'brief.md', posts: entries };
   if (!validate(manifest)) throw new UserError(`Invalid export manifest: ${ajv.errorsText(validate.errors)}`);
   writeFileSync(join(dir, 'brief.md'), brief); writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+  const history = reserveExportHistory(dir);
+  try {
+    copyFileSync(join(dir, 'brief.md'), join(history, 'brief.md'));
+    if (existsSync(join(dir, 'media'))) cpSync(join(dir, 'media'), join(history, 'media'), { recursive: true });
+    if (existsSync(join(project, 'exports'))) cpSync(join(project, 'exports'), join(history, 'handoff'), { recursive: true });
+    copyFileSync(join(dir, 'manifest.json'), join(history, 'manifest.json'));
+  } catch (error) {
+    rmSync(history, { recursive: true, force: true });
+    throw error;
+  }
   return dir;
 }
