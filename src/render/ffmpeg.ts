@@ -16,8 +16,10 @@ export async function runTool(io: IO, name: keyof typeof guidance, command: stri
   try {
     const configured = Number(io.env.BSTUDIO_RENDER_TIMEOUT_MS);
     const timeoutMs = Number.isFinite(configured) && configured > 0 ? configured : (name === "vhs" || name === "hyperframes" ? 1_800_000 : 120_000);
-    const wrapped = sandbox ? sandboxCommand(io, sandbox.config, sandbox.workspace, temp, command, args, { render: true, loopback: name === "vhs" || name === "hyperframes" }) : { command, args };
-    return await io.run(wrapped.command, wrapped.args, { cwd, env: agentEnv(io, { temp, home: temp, minimal: true }), timeoutMs });
+    const wrapped = sandbox ? sandboxCommand(io, sandbox.config, sandbox.workspace, temp, command, args, { render: true, loopback: name === "vhs" || name === "hyperframes", pty: name === "vhs" }) : { command, args };
+    const env = agentEnv(io, { temp, home: temp, minimal: true });
+    if (name === "vhs" && wrapped.command !== command) env.VHS_NO_SANDBOX = "1";
+    return await io.run(wrapped.command, wrapped.args, { cwd, env, timeoutMs });
   } catch (error) {
     throw new UserError(`${name} failed or is unavailable; run bstudio doctor; install: ${guidance[name]}. ${String(error)}`);
   } finally {

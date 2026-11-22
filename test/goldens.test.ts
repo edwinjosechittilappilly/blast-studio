@@ -9,7 +9,8 @@ import { realIO } from '../src/cli.ts';
 import { closeBrowser, renderHtml } from '../src/render/stills.ts';
 import { fillTemplate } from '../src/render/template.ts';
 import { renderVideo } from '../src/render/video.ts';
-import type { StudioConfig } from '../src/types.ts';
+import { loadConfig } from '../src/config.ts';
+import { fakeIO, tempStudio } from './helpers.ts';
 
 const goldenDir = fileURLToPath(new URL(`./goldens/${process.platform}/`, import.meta.url));
 const fixtures = fileURLToPath(new URL('./fixtures/video/', import.meta.url));
@@ -54,8 +55,12 @@ test('HyperFrames video start, middle and end match perceptual goldens', { skip,
   cpSync(join(fixtures, '9:16'), join(asset, 'source/9:16'), { recursive: true });
   copyFileSync(join(fixtures, 'captions.vtt'), join(asset, 'source/captions.vtt'));
   writeFileSync(join(asset, 'asset.yml'), "kind: video\naspects: ['9:16']\ncaptions:\n  burn: true\n");
-  const io = realIO();
-  const outputs = await renderVideo(asset, {} as StudioConfig, io);
+  const io = realIO(), studio = tempStudio();
+  let outputs;
+  try {
+    const config = loadConfig(fakeIO({ cwd: studio, env: { BSTUDIO_HOME: studio, BSTUDIO_CONFIG: 'studio.yml' } }));
+    outputs = await renderVideo(asset, config, io);
+  } finally { rmSync(studio, { recursive: true, force: true }); }
   const video = outputs.find(output => output.file === 'out/9x16.mp4');
   assert.ok(video?.seconds);
   for (const [name, at] of [['start', 0], ['middle', video.seconds / 2], ['end', Math.max(0, video.seconds - 0.1)]] as const) {

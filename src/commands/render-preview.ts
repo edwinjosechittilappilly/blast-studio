@@ -29,7 +29,7 @@ export const run: Command = async (args, io) => {
   } else if (ext === '.svg') {
     renderSvg(input, [{ file: out, size: +match[1] }]);
   } else if (ext === '.mmd' || ext === '.d2') {
-    await renderDiagram(input, out);
+    await renderDiagram(input, out, undefined, io);
   } else throw new UserError('render-preview supports .html, .svg, .mmd and .d2 files');
   io.out(out); return 0;
 };

@@ -2,7 +2,7 @@
 
 ## Why
 
-Market Blaster safely publishes but does not create and review platform-native media from diverse sources. Blast Studio provides an isolated, evidence-grounded production workflow with explicit policy, rights, cost and human-approval controls before handoff.
+Market Blaster safely publishes but does not create and review platform-native media from diverse sources. Blast Studio provides an evidence-grounded production workflow with temporary agent workspaces and explicit policy, rights, cost and human-approval controls before handoff.
 
 ## What Changes
 

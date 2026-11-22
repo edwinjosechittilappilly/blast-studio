@@ -44,10 +44,18 @@ test('provider keys are passed only for an API-billed role; publishing tokens re
 test('video tools receive a temporary home without secrets', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-security-'));
   try {
-    let env: Record<string, string | undefined> | undefined;
-    const io = fakeIO({ cwd: dir, env: { HOME: '/real-home', PATH: '/bin', GH_TOKEN: 'secret', XDG_CONFIG_HOME: '/secret' }, run: async (_cmd, _args, opts) => { env = opts?.env; return ''; } });
-    await runTool(io, 'hyperframes', 'hyperframes', []);
+    let env: Record<string, string | undefined> | undefined, command = '';
+    const io = fakeIO({ cwd: dir, env: { HOME: '/real-home', PATH: '/bin', GH_TOKEN: 'secret', XDG_CONFIG_HOME: '/secret', BSTUDIO_CONFIG: 'studio.yml' }, run: async (cmd, _args, opts) => { command = cmd; env = opts?.env; return ''; } });
+    writeFileSync(join(dir, 'studio.yml'), 'brand:\n  name: Test\n');
+    const config = loadConfig(io);
+    assert.equal(config.agent.sandbox, 'off');
+    await runTool(io, 'hyperframes', 'hyperframes', [], dir, { config, workspace: dir });
+    assert.equal(command, 'hyperframes');
     assert.notEqual(env?.HOME, '/real-home'); assert.equal(env?.GH_TOKEN, undefined); assert.equal(env?.XDG_CONFIG_HOME, undefined);
+    for (const invalid of ['auto', 'invalid']) {
+      writeFileSync(join(dir, 'studio.yml'), `agent:\n  sandbox: ${invalid}\n`);
+      assert.throws(() => loadConfig(io), /agent\.sandbox must be on or off/);
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -57,6 +65,7 @@ test('OS sandbox denies reading the studio root and writes outside the workspace
   try {
     const io = fakeIO({ cwd: root, env: { HOME: process.env.HOME, PATH: process.env.PATH, BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml' } });
     const config = loadConfig(io), env = agentEnv(io, { temp });
+    config.agent.sandbox = 'on';
     const outside = join(root, 'write'), secret = join(root, '.env');
     const wrapped = sandboxCommand(io, config, work, temp, '/bin/sh', ['-c', 'echo x > "$1"; echo x 2>/dev/null; cat "$2"; touch "$3"; touch "$4"; touch "$5"', 'sh', join(work, 'ok'), secret, outside, join(process.env.HOME!, '.omp/agent/AGENTS.md'), join(process.env.HOME!, 'Library/Caches/ms-playwright')]);
     const result = spawnSync(wrapped.command, wrapped.args, { cwd: work, env, encoding: 'utf8' });

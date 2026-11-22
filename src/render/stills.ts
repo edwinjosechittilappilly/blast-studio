@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -8,7 +8,7 @@ import { Resvg } from "@resvg/resvg-js";
 import { chromium } from "playwright";
 import type { Browser } from "playwright";
 import { agentEnv, sandboxCommand } from "../agent-env.ts";
-import { loadConfig } from "../config.ts";
+import { configFile, loadConfig } from "../config.ts";
 import type { IO } from "../io.ts";
 import type { StudioConfig } from "../types.ts";
 import { measureText } from "./metrics.ts";
@@ -86,12 +86,11 @@ export async function renderDiagram(sourcePath: string, out: string, config?: St
   const base = /\.(svg|png)$/i.test(out) ? out.slice(0, -4) : out;
   const svg = `${base}.svg`, png = `${base}.png`;
   mkdirSync(dirname(resolve(svg)), { recursive: true });
-  const temp = mkdtempSync(join(tmpdir(), 'bstudio-diagram-'));
   const toolIO = io ?? { cwd: process.cwd(), env: process.env, err: (message: string) => console.error(message) } as IO;
   if (!config) {
-    try { config = loadConfig(toolIO); }
-    catch { config = { root: resolve(toolIO.env.HOME ?? temp, 'BlastStudio'), file: resolve(toolIO.env.HOME ?? temp, '.config/blast-studio/studio.yml'), agent: { sandbox: 'auto' } } as StudioConfig; }
+    config = existsSync(configFile(toolIO)) ? loadConfig(toolIO) : { root: resolve(toolIO.env.HOME ?? tmpdir(), 'BlastStudio'), file: resolve(toolIO.env.HOME ?? tmpdir(), '.config/blast-studio/studio.yml'), agent: { sandbox: 'off' } } as StudioConfig;
   }
+  const temp = mkdtempSync(join(tmpdir(), 'bstudio-diagram-'));
   const run = async (command: string, args: string[], extraReads: string[] = []) => {
     const wrapped = sandboxCommand(toolIO, config!, dirname(resolve(svg)), temp, command, args, { render: true, readPaths: [resolve(sourcePath), ...extraReads] });
     return exec(wrapped.command, wrapped.args, { timeout: 30000, env: agentEnv(toolIO, { temp, home: temp, minimal: true }) });

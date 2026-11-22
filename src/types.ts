@@ -125,7 +125,7 @@ export interface StudioConfig {
   file: string;
   brand: BrandKit;
   platforms: PlatformId[];
-  agent: { command: string[]; timeoutSeconds: number; passEnv?: string[]; billing?: 'subscription' | 'api'; maxUsdPerRun?: number; sandbox?: 'auto' | 'off' };
+  agent: { command: string[]; timeoutSeconds: number; passEnv?: string[]; billing?: 'subscription' | 'api'; maxUsdPerRun?: number; sandbox?: 'on' | 'off' };
   /** Reviewer agent; null = deterministic gates plus a human checklist only. */
   reviewer: { command: string[] | null; timeoutSeconds: number; billing?: 'subscription' | 'api'; maxUsdPerRun?: number };
   review: { threshold: number; maxRounds: number };

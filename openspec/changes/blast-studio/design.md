@@ -6,7 +6,7 @@ The approved [Blast Studio design](../../../docs/design/blast-studio.md) is the 
 
 ## Goals / Non-Goals
 
-**Goals:** Preserve evidence, isolate untrusted inputs and agent workspaces, make review and spend auditable, and hand off only eligible content.
+**Goals:** Preserve evidence, fence untrusted inputs and use temporary agent workspaces, make review and spend auditable, and hand off only eligible content.
 
 **Non-Goals:** Publishing, analytics, stock marketplaces, voice cloning, website automation, and Remotion or Motion Canvas adapters.
 
@@ -15,7 +15,7 @@ The approved [Blast Studio design](../../../docs/design/blast-studio.md) is the 
 - Deliver M1 text and stills, M2 motion and media, then M3 operations, while implementing each group's tests and documentation alongside it. Market Blaster's `media-and-import` is a separate dependency for the integrated handoff.
 - Use editable HTML/CSS with Playwright for stills, SVG for logos, Mermaid/D2 for diagrams, and separate HyperFrames compositions per aspect ratio; VHS handles terminal demos. Render metrics are review inputs, not approximations of visual quality.
 - Represent briefs, plans, assets, reviews and the append-only reserve/settle ledger as files. Cache generated media by prompt hash and require `--regen` to repeat paid generation.
-- Run maker and reviewer in isolated credential-free workspaces with untrusted content fenced; use a different reviewer model, validated JSON and deterministic gates before scoring. Human acceptance cannot override gates.
+- Run maker and reviewer in temporary workspaces with an allowlisted environment and untrusted content fenced; OS sandboxing of agents and render tools is opt-in with `agent.sandbox: on`, and by default they run locally as the user. Use a different reviewer model, validated JSON and deterministic gates before scoring. Human acceptance cannot override gates.
 - Seed sourced pack data and unknowns from research. Snapshot source changes with failure separated from change; proposed pack edits require quoted evidence and schema validation, and human verification is separate.
 - Use a loopback-only Node HTTP dashboard with a one-time token exchanged for a strict HttpOnly cookie. Limit writes to budget and provider settings using the YAML Document API; derive views from files.
 

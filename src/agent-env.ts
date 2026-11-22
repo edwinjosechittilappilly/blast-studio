@@ -28,8 +28,8 @@ export function agentEnv(io: IO, options: { temp: string; home?: string; bin?: s
 let warnedSandbox = false;
 let bwrapProbe: { path: string; available: boolean } | undefined;
 /** Wrap subprocesses in the OS sandbox where available. */
-export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, temp: string, command: string, args: string[], options: { render?: boolean; loopback?: boolean; readPaths?: string[] } = {}): { command: string; args: string[] } {
-  if (!options.render && config.agent.sandbox === 'off') return { command, args };
+export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, temp: string, command: string, args: string[], options: { render?: boolean; loopback?: boolean; pty?: boolean; readPaths?: string[] } = {}): { command: string; args: string[] } {
+  if (config.agent.sandbox !== 'on') return { command, args };
   const home = io.env.HOME;
   const canonical = (path: string) => { try { return realpathSync(path); } catch { return resolve(path); } };
   const writable = [workspace, temp].map(canonical);
@@ -47,6 +47,7 @@ export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, 
     const profile = ['(version 1)', '(allow default)', '(deny file-write*)',
       ...(options.render ? [tmpdir(), '/tmp'].map(p => `(allow file-write* (regex #${JSON.stringify(`^${canonical(p).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[.]?com[.]google[.](Chrome|chrome[.]for[.]testing)[.]`)}))`) : []),
       '(allow file-write* (literal "/dev/null") (literal "/dev/tty") (regex #"^/dev/fd/"))',
+      ...(options.pty ? ['(allow file-write* (literal "/dev/ptmx") (regex #"^/dev/ttys[0-9]+$"))'] : []),
       ...(home ? [`(deny file-read* (subpath ${JSON.stringify(canonical(home))}))`] : []),
       ...(home ? [`(allow file-read-metadata (subpath ${JSON.stringify(canonical(home))}))`] : []),
       ...packageMetadata.map(p => `(allow file-read* (literal ${JSON.stringify(p)}))`),

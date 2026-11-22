@@ -3,17 +3,21 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import test from "node:test";
+import test, { after } from "node:test";
 import { realIO } from "../src/cli.ts";
 import { chromium } from "playwright";
 import { renderVideo } from "../src/render/video.ts";
 import { encodeVideo } from "../src/render/ffmpeg.ts";
-import type { StudioConfig } from "../src/types.ts";
+import { loadConfig } from "../src/config.ts";
 import { fakeIO, tempStudio } from "./helpers.ts";
 
 const fixtures = fileURLToPath(new URL("./fixtures/video/", import.meta.url));
 const hf = fileURLToPath(new URL("../node_modules/.bin/hyperframes", import.meta.url));
-const config = {} as StudioConfig;
+// Render tools run sandboxed with the studio root hidden, so tests need a real config.
+const studio = tempStudio();
+const config = loadConfig(fakeIO({ cwd: studio, env: { BSTUDIO_HOME: studio, BSTUDIO_CONFIG: "studio.yml" } }));
+config.agent.sandbox = "on";
+after(() => rmSync(studio, { recursive: true, force: true }));
 const available = (cmd: string) => spawnSync("which", [cmd]).status === 0;
 const mediaMissing = ["ffmpeg", "ffprobe"].filter(c => !available(c));
 const missingVideo = [...mediaMissing, ...(!existsSync(hf) ? ["hyperframes"] : [])];

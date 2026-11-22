@@ -14,11 +14,19 @@ The system SHALL produce a plan per platform with post type, three hook options,
 - **THEN** each selected platform has those four plan fields
 
 ### Requirement: Isolated maker
-The maker SHALL run without credentials in an isolated workspace with free offline `render-preview`, copying back only declared files.
+The maker SHALL run in a temporary workspace with an allowlisted environment and free offline `render-preview`, copying back only declared files. Agents and rendering tools SHALL run as the current user by default; `agent.sandbox: on` SHALL enable the available OS sandbox for both.
 
 #### Scenario: Agent creates an undeclared file
 - **WHEN** the maker finishes with an undeclared file in its workspace
 - **THEN** that file is not copied into the project
+
+#### Scenario: Sandbox opt-in
+- **WHEN** the user enables `agent.sandbox: on`
+- **THEN** maker, reviewer and render tool processes use the available OS sandbox
+
+#### Scenario: Default local execution
+- **WHEN** the user does not enable the sandbox
+- **THEN** those processes run as the current user with their environment allowlists still applied
 
 ### Requirement: Still rendering
 The system SHALL render editable HTML cards, quotes, code cards, posters and thumbnails to PNG, and carousel slides to individual PNGs and a PDF.

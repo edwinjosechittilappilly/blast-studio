@@ -22,6 +22,7 @@ platforms: [devto, linkedin, x, bluesky, mastodon, hn, reddit, github-discussion
 agent:
   command: [omp, -p]
   timeoutSeconds: 900
+  sandbox: off
 reviewer:
   command: [omp, -p, --model, '@review']
   timeoutSeconds: 900
@@ -93,7 +94,7 @@ export function loadConfig(io: IO): StudioConfig {
   if (providers.allowUpload !== undefined && typeof providers.allowUpload !== "boolean") throw new UserError("providers.allowUpload must be boolean");
   if (grounding.waive !== undefined && (!Array.isArray(grounding.waive) || grounding.waive.some((v) => typeof v !== "string"))) throw new UserError("grounding.waive must be a list of strings");
   if (agent.passEnv !== undefined && (!Array.isArray(agent.passEnv) || agent.passEnv.some(v => typeof v !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(v)))) throw new UserError("agent.passEnv must be a list of environment variable names");
-  if (!["auto", "off"].includes(String(agent.sandbox ?? "auto"))) throw new UserError("agent.sandbox must be auto or off");
+  if (!["on", "off"].includes(String(agent.sandbox ?? "off"))) throw new UserError("agent.sandbox must be on or off");
   for (const [name, settings] of [["agent", agent], ["reviewer", reviewer]] as const) {
     if (!["subscription", "api"].includes(String(settings.billing ?? "subscription"))) throw new UserError(`${name}.billing must be subscription or api`);
     if (settings.maxUsdPerRun !== undefined && (typeof settings.maxUsdPerRun !== "number" || !Number.isFinite(settings.maxUsdPerRun) || settings.maxUsdPerRun <= 0)) throw new UserError(`${name}.maxUsdPerRun must be a positive number`);
@@ -103,7 +104,7 @@ export function loadConfig(io: IO): StudioConfig {
     root: expand(root, home, io.cwd), file,
     brand: { ...brand, name: typeof brand.name === "string" ? brand.name : "My brand" } as StudioConfig["brand"],
     platforms: platforms as PlatformId[],
-    agent: { command: command(agent.command, ["omp", "-p"], "agent.command"), timeoutSeconds: number(agent.timeoutSeconds, 900, "agent.timeoutSeconds"), passEnv: (agent.passEnv ?? []) as string[], billing: (agent.billing ?? "subscription") as "subscription" | "api", maxUsdPerRun: agent.maxUsdPerRun as number | undefined, sandbox: (agent.sandbox ?? "auto") as "auto" | "off" },
+    agent: { command: command(agent.command, ["omp", "-p"], "agent.command"), timeoutSeconds: number(agent.timeoutSeconds, 900, "agent.timeoutSeconds"), passEnv: (agent.passEnv ?? []) as string[], billing: (agent.billing ?? "subscription") as "subscription" | "api", maxUsdPerRun: agent.maxUsdPerRun as number | undefined, sandbox: (agent.sandbox ?? "off") as "on" | "off" },
     reviewer: { command: reviewer.command === null ? null : command(reviewer.command, ["omp", "-p", "--model", "@review"], "reviewer.command"), timeoutSeconds: number(reviewer.timeoutSeconds, 900, "reviewer.timeoutSeconds"), billing: (reviewer.billing ?? "subscription") as "subscription" | "api", maxUsdPerRun: reviewer.maxUsdPerRun as number | undefined },
     review: { threshold: number(review.threshold, 75, "review.threshold", 100), maxRounds: number(review.maxRounds, 2, "review.maxRounds") },
     images: { provider: imageProvider as StudioConfig["images"]["provider"], ...(typeof images.model === "string" ? { model: images.model } : {}) },

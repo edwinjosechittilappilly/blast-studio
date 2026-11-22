@@ -19,7 +19,7 @@
 ## 4. M1 — Writer, plan and make workspace
 
 - [x] 4.1 Implement writer skill and per-platform plans with three honest hooks, angle, type and assets, respecting evidence statuses and destination policy; verify representative plans and policy boundaries with tests and document authoring.
-- [x] 4.2 Implement credential-free isolated make workspace, offline free render-preview and declared-file copyback; verify secrets and undeclared files cannot leak with tests.
+- [x] 4.2 Implement a temporary make workspace with an allowlisted environment, free render-preview and declared-file copyback; verify explicit OS sandbox opt-in blocks access to studio secrets and undeclared files are not copied back.
 
 ## 5. M1 — Stills rendering and metrics
 
