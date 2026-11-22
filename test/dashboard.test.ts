@@ -95,6 +95,28 @@ test('library updatedAt tolerates entries removed during traversal', t => {
     syncBuiltinESMExports();
   }
 });
+test('export history downloads only authenticated contained zip entries', async t => {
+  const { root, io } = fixture();
+  const history = join(root, 'projects/acme/campaigns/launch/export/2025-01-02T03-04-05-000Z');
+  mkdirSync(history, { recursive: true });
+  writeFileSync(join(history, 'acme--launch.campaign.zip'), 'zip content');
+  writeFileSync(join(history, 'secret.txt'), 'secret');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const base = `http://127.0.0.1:${started.port}`, path = '/api/campaigns/acme/launch/exports';
+  assert.equal((await fetch(base + path)).status, 401);
+  const exchange = await fetch(started.url, { redirect: 'manual' }), cookie = exchange.headers.get('set-cookie')!;
+  const headers = { cookie };
+  const entries = await (await fetch(base + path, { headers })).json() as { name: string; kind: string }[];
+  assert.equal(entries.length, 1); assert.equal(entries[0].kind, 'zip');
+  const downloaded = await fetch(`${base}${path}/${encodeURIComponent(entries[0].name)}`, { headers });
+  assert.equal(downloaded.status, 200); assert.match(downloaded.headers.get('content-disposition')!, /^attachment;/);
+  assert.equal(await downloaded.text(), 'zip content');
+  assert.equal((await fetch(`${base}${path}/${encodeURIComponent('2025-01-02T03-04-05-000Z/secret.txt')}`, { headers })).status, 404);
+  unlinkSync(join(history, 'acme--launch.campaign.zip'));
+  const outside = join(root, 'outside.zip'); writeFileSync(outside, 'outside');
+  symlinkSync(outside, join(history, 'acme--launch.campaign.zip'));
+  assert.equal((await fetch(`${base}${path}/${encodeURIComponent(entries[0].name)}`, { headers })).status, 403);
+});
 test('dashboard authenticates, contains media and validates settings', async t => {
   const { root, io } = fixture(); const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
   const base = `http://127.0.0.1:${started.port}`;

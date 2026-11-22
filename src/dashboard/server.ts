@@ -6,7 +6,7 @@ import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { addFeedback } from '../feedback.ts';
 import { loadConfig, campaignDir, writeConfigField } from '../config.ts';
-import { loadLibrary, projectReview, latestSources } from '../library.ts';
+import { listExports, loadLibrary, projectReview, latestSources } from '../library.ts';
 import { monthToDate, projectTotal, providerTotals } from '../budget/ledger.ts';
 import type { IO } from '../io.ts';
 import { handleJobsApi } from './jobs-api.ts';
@@ -122,6 +122,26 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
         }
       }
       if (req.method === 'GET') {
+        const exportsApi = /^\/api\/campaigns\/([^/]+)\/([^/]+)\/exports(?:\/(.+))?$/.exec(pathname);
+        if (exportsApi) {
+          const project = decodeURIComponent(exportsApi[1]), campaign = decodeURIComponent(exportsApi[2]);
+          const dir = campaignDir(config, { project, campaign });
+          if (!existsSync(dir)) { send(res, 404, { error: 'Campaign not found' }); return; }
+          const campaignBase = realpathSync(dir), exportDir = join(dir, 'export');
+          if (existsSync(exportDir)) {
+            const rel = relative(campaignBase, realpathSync(exportDir));
+            if (!rel || rel === '..' || rel.startsWith(`..${sep}`)) { send(res, 403, { error: 'Forbidden' }); return; }
+          }
+          const entries = listExports(config, { project, campaign });
+          if (!exportsApi[3]) { send(res, 200, entries); return; }
+          const name = decodeURIComponent(exportsApi[3]);
+          if (!entries.some(entry => entry.kind === 'zip' && entry.name === name)) { send(res, 404, { error: 'Export not found' }); return; }
+          const exportBase = realpathSync(exportDir);
+          const file = realpathSync(join(exportBase, name)), rel = relative(exportBase, file);
+          if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || !statSync(file).isFile() || extname(file).toLowerCase() !== '.zip') { send(res, 403, { error: 'Forbidden' }); return; }
+          res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name.split('/').pop()!)}`);
+          serveFile(req, res, file); return;
+        }
         if (pathname === '/api/library') { send(res, 200, loadLibrary(config, url.searchParams.get('q') ?? '')); return; }
         if (pathname === '/api/budget') { send(res, 200, { cap: config.budget.monthlyUsd, perProject: config.budget.perProjectUsd, mtd: monthToDate(config.root), providerTotals: providerTotals(config.root), projects: Object.fromEntries(loadLibrary(config).map(p => [p.slug, projectTotal(config.root, p.slug)])), providers: { images: config.images.provider, voice: config.voice.provider }, brand: config.brand }); return; }
         if (pathname === '/api/sources') { send(res, 200, latestSources(config)); return; }
