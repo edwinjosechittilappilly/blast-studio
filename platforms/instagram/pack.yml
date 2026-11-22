@@ -1,0 +1,132 @@
+{
+  "id": "instagram",
+  "name": "Instagram Reels and carousels",
+  "marketBlaster": null,
+  "ai": "draft",
+  "formats": [
+    "video",
+    "carousel",
+    "image"
+  ],
+  "textLimit": "unknown",
+  "titleLimit": "unknown",
+  "media": [
+    {
+      "kind": "image",
+      "maxCount": {
+        "value": 20,
+        "source": "instagram-46"
+      }
+    },
+    {
+      "kind": "video",
+      "aspectRatios": "unknown"
+    }
+  ],
+  "disclosure": {
+    "text": "unknown",
+    "media": {
+      "rule": "Check Meta AI info labels and disclose branded content with the paid partnership label where required.",
+      "source": "instagram-47"
+    },
+    "voice": "unknown"
+  },
+  "rubric": [
+    {
+      "id": "hook",
+      "question": "Does the first frame or slide identify the specific topic?",
+      "anchors": {
+        "0": "The opening has no identifiable subject or result.",
+        "1": "A subject appears, but the problem or outcome is vague or delayed.",
+        "2": "The opening identifies the subject and a concrete problem or outcome."
+      }
+    },
+    {
+      "id": "audience-fit",
+      "question": "Can a developer or founder see who the workflow helps?",
+      "anchors": {
+        "0": "No intended reader or relevant situation is identifiable.",
+        "1": "A reader group or situation is hinted at but not connected to the content.",
+        "2": "The intended reader and relevant situation are explicit."
+      }
+    },
+    {
+      "id": "simplicity",
+      "question": "Does each scene or slide advance one idea in a coherent sequence?",
+      "anchors": {
+        "0": "The reader cannot reconstruct the main point or sequence.",
+        "1": "The main point is present but key context or ordering is missing.",
+        "2": "The main point and necessary steps are clear and ordered."
+      }
+    },
+    {
+      "id": "anti-slop",
+      "question": "Are generic inspiration, fake urgency and misleading visuals absent?",
+      "anchors": {
+        "0": "The candidate relies on hype, fabricated urgency or unsupported claims.",
+        "1": "Some concrete substance is present but generic or inflated language remains.",
+        "2": "Concrete language replaces hype and claims are supported."
+      }
+    },
+    {
+      "id": "platform-fit",
+      "question": "Does the format fit Reels or a coherent Feed carousel rather than a text dump?",
+      "anchors": {
+        "0": "The candidate ignores the destination’s format or community rules.",
+        "1": "The format or community is identified but a relevant rule or constraint remains unchecked.",
+        "2": "The format and relevant destination rules are checked and followed."
+      }
+    },
+    {
+      "id": "visual-quality",
+      "question": "Is text legible on mobile with captions or image alternatives?",
+      "anchors": {
+        "0": "The visual is unreadable or lacks its relevant alternative or captions.",
+        "1": "The visual is partly readable or an alternative or caption is incomplete.",
+        "2": "Key content is readable and relevant alternatives or accurate captions are present."
+      },
+      "appliesTo": [
+        "image",
+        "carousel",
+        "poster",
+        "video",
+        "diagram",
+        "logo",
+        "terminal-demo"
+      ]
+    },
+    {
+      "id": "value",
+      "question": "Does the sequence demonstrate a real useful action or result?",
+      "anchors": {
+        "0": "No supported takeaway or useful example is identifiable.",
+        "1": "A takeaway is present but its evidence or practical detail is incomplete.",
+        "2": "A specific takeaway is supported by a concrete example or source."
+      }
+    },
+    {
+      "id": "label-check",
+      "question": "Were branded content and applicable AI info labels checked?",
+      "anchors": {
+        "0": "The relevant requirement is absent or contradicted.",
+        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
+        "2": "The requirement is met and the relevant evidence or check is recorded."
+      }
+    }
+  ],
+  "sources": [
+    "instagram-43",
+    "instagram-44",
+    "instagram-45",
+    "instagram-46",
+    "instagram-47",
+    "instagram-48",
+    "cross-platform-63",
+    "cross-platform-64"
+  ],
+  "notes": [
+    "[JUDGEMENT] Rubric scores are editorial aids, not predictions of reach.",
+    "Check actual account, route, community and current requirements before publication.",
+    "Reels support aspect ratios from 1.91:1 to 9:16, at least 30 fps and 720 pixels; over three minutes are not recommended to new audiences. Carousel orientation is shared."
+  ]
+}

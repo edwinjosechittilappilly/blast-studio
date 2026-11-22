@@ -1,0 +1,135 @@
+{
+  "id": "bluesky",
+  "name": "Bluesky",
+  "marketBlaster": "bluesky",
+  "ai": "draft",
+  "formats": [
+    "text",
+    "thread",
+    "image",
+    "video"
+  ],
+  "textLimit": {
+    "value": 300,
+    "source": "bluesky-12"
+  },
+  "titleLimit": "unknown",
+  "media": [
+    {
+      "kind": "image",
+      "maxCount": {
+        "value": 4,
+        "source": "bluesky-11"
+      }
+    },
+    {
+      "kind": "video",
+      "maxSeconds": {
+        "value": 180,
+        "source": "bluesky-11"
+      }
+    }
+  ],
+  "disclosure": {
+    "text": "unknown",
+    "media": "unknown",
+    "voice": "unknown"
+  },
+  "rubric": [
+    {
+      "id": "hook",
+      "question": "Can the first post stand alone with a clear proposition?",
+      "anchors": {
+        "0": "The opening has no identifiable subject or result.",
+        "1": "A subject appears, but the problem or outcome is vague or delayed.",
+        "2": "The opening identifies the subject and a concrete problem or outcome."
+      }
+    },
+    {
+      "id": "audience-fit",
+      "question": "Does the post identify the relevant community or feed without assuming a single algorithm?",
+      "anchors": {
+        "0": "No intended reader or relevant situation is identifiable.",
+        "1": "A reader group or situation is hinted at but not connected to the content.",
+        "2": "The intended reader and relevant situation are explicit."
+      }
+    },
+    {
+      "id": "simplicity",
+      "question": "Does a thread keep each reply intelligible and advance one point?",
+      "anchors": {
+        "0": "The reader cannot reconstruct the main point or sequence.",
+        "1": "The main point is present but key context or ordering is missing.",
+        "2": "The main point and necessary steps are clear and ordered."
+      }
+    },
+    {
+      "id": "anti-slop",
+      "question": "Are generic launch boasts and misleading engagement requests absent?",
+      "anchors": {
+        "0": "The candidate relies on hype, fabricated urgency or unsupported claims.",
+        "1": "Some concrete substance is present but generic or inflated language remains.",
+        "2": "Concrete language replaces hype and claims are supported."
+      }
+    },
+    {
+      "id": "platform-fit",
+      "question": "Does the record respect the actual grapheme and byte limits and identify promotion?",
+      "anchors": {
+        "0": "The candidate ignores the destination’s format or community rules.",
+        "1": "The format or community is identified but a relevant rule or constraint remains unchecked.",
+        "2": "The format and relevant destination rules are checked and followed."
+      }
+    },
+    {
+      "id": "visual-quality",
+      "question": "Are image alternatives meaningful and video captions accurate?",
+      "anchors": {
+        "0": "The visual is unreadable or lacks its relevant alternative or captions.",
+        "1": "The visual is partly readable or an alternative or caption is incomplete.",
+        "2": "Key content is readable and relevant alternatives or accurate captions are present."
+      },
+      "appliesTo": [
+        "image",
+        "carousel",
+        "poster",
+        "video",
+        "diagram",
+        "logo",
+        "terminal-demo"
+      ]
+    },
+    {
+      "id": "value",
+      "question": "Is an evidence link or reproducible detail available to the reader?",
+      "anchors": {
+        "0": "No supported takeaway or useful example is identifiable.",
+        "1": "A takeaway is present but its evidence or practical detail is incomplete.",
+        "2": "A specific takeaway is supported by a concrete example or source."
+      }
+    },
+    {
+      "id": "promotion-disclosed",
+      "question": "Is commercial content clearly identified when applicable?",
+      "anchors": {
+        "0": "The relevant requirement is absent or contradicted.",
+        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
+        "2": "The requirement is met and the relevant evidence or check is recorded."
+      }
+    }
+  ],
+  "sources": [
+    "bluesky-10",
+    "bluesky-11",
+    "bluesky-12",
+    "bluesky-13",
+    "bluesky-14",
+    "cross-platform-63",
+    "cross-platform-64"
+  ],
+  "notes": [
+    "[JUDGEMENT] Rubric scores are editorial aids, not predictions of reach.",
+    "Check actual account, route, community and current requirements before publication.",
+    "Text limit is graphemes; the record also has a 3,000-byte limit."
+  ]
+}

@@ -61,6 +61,10 @@ export interface Criterion {
   question: string;
   /** Relative weight in the platform score; default 1. */
   weight?: number;
+  /** What a 0, 1 and 2 look like for this criterion, so different reviewers score the same post the same way. */
+  anchors?: { "0": string; "1": string; "2": string };
+  /** Post types this criterion applies to; omitted = all. Others score N/A. */
+  appliesTo?: PostType[];
 }
 
 export interface MediaSpec {
@@ -88,6 +92,8 @@ export interface PlatformPack {
   media: MediaSpec[];
   disclosure: { text: DisclosureRule; media: DisclosureRule; voice: DisclosureRule };
   rubric: Criterion[];
+  /** Separate review for talking points handed to a human author. */
+  outlineRubric?: Criterion[];
   /** Ids from platforms/sources.yml that govern this pack. */
   sources: string[];
   /** Warnings the reviewer always surfaces (e.g. text-heavy Reels). */
@@ -174,8 +180,8 @@ export interface AssetMeta {
   embeds?: string[];
   /** Logos only: a human ran a trademark search. */
   trademarkChecked?: boolean;
-  /** Render metrics per output (stills): smallest text, worst contrast, safe-zone overflow. */
-  metrics?: { file: string; minFontPx: number; minContrast: number; overflow: boolean }[];
+  /** Render metrics per output (stills): smallest text, worst contrast (null when text sits on an image), overflow. */
+  metrics?: { file: string; minFontPx: number; minContrast: number | null; overflow: boolean }[];
 }
 
 export interface GateResult {

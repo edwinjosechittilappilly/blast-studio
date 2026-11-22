@@ -152,6 +152,12 @@ flowchart LR
 | `dashboard [--port 4848]` | Local web UI (see below) |
 | `sources check \| propose \| verify <id>...` | Updater (see below) |
 
+**Review hash (shared with Market Blaster):** lowercase hex SHA-256 of the UTF-8 string
+`${title ?? ""}\n---\n${body.trim()}\n---\n${media.map(m => basename(m.path) + "|" + m.alt.trim()).join("\n")}`,
+with media in manifest order. Test vector: title `T`, body `"  Hello\n"`, media `[{path: "a/img.png", alt: " Alt "}]`
+gives `5d5491c0f7ae06bef68e9dabfd55f2e6c8152f8e6fdb96cd24d294cd203bc977`. Both repos assert it.
+
+
 ## Rendering
 
 | Kind | Source | Renderer | Output |

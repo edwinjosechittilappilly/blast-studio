@@ -1,0 +1,58 @@
+{
+  "id": "hn",
+  "name": "Hacker News",
+  "marketBlaster": "hn",
+  "ai": "none",
+  "formats": [
+    "text"
+  ],
+  "textLimit": "unknown",
+  "titleLimit": "unknown",
+  "media": [],
+  "disclosure": {
+    "text": "unknown",
+    "media": "unknown",
+    "voice": "unknown"
+  },
+  "rubric": [
+    {
+      "id": "original-title",
+      "question": "Does the human-provided title accurately preserve the source title without editorializing?",
+      "anchors": {
+        "0": "The title is generated, inaccurate or editorialized.",
+        "1": "The title is human-provided but its fidelity to the original is unclear.",
+        "2": "The human-provided title accurately reflects the original source."
+      }
+    },
+    {
+      "id": "source-url",
+      "question": "Does the human-provided URL lead to the original substantive source?",
+      "anchors": {
+        "0": "The URL is missing, generated as a substitute, or not the original source.",
+        "1": "The URL exists but its originality or substance has not been checked.",
+        "2": "The URL leads to the original substantive source."
+      }
+    },
+    {
+      "id": "source-suitability",
+      "question": "Is the source suitable for HN, including Show HN eligibility and video/PDF markers where relevant?",
+      "anchors": {
+        "0": "The source is unsuitable, or a required marker is missing.",
+        "1": "The type is identified but eligibility or marker remains unchecked.",
+        "2": "The source is suitable and relevant Show HN eligibility and markers are checked."
+      }
+    }
+  ],
+  "sources": [
+    "hn-23",
+    "hn-24",
+    "hn-25",
+    "cross-platform-63",
+    "cross-platform-64"
+  ],
+  "notes": [
+    "[JUDGEMENT] Rubric scores are editorial aids, not predictions of reach.",
+    "Check actual account, route, community and current requirements before publication.",
+    "Do not generate a draft or outline; review only a human-authored candidate."
+  ]
+}

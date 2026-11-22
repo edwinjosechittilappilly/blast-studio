@@ -1,0 +1,142 @@
+{
+  "id": "dailydev",
+  "name": "daily.dev",
+  "marketBlaster": null,
+  "ai": "outline",
+  "formats": [
+    "text",
+    "article"
+  ],
+  "textLimit": "unknown",
+  "titleLimit": "unknown",
+  "media": [],
+  "disclosure": {
+    "text": "unknown",
+    "media": "unknown",
+    "voice": "unknown"
+  },
+  "rubric": [
+    {
+      "id": "hook",
+      "question": "Does the human-authored opening identify a useful developer lesson?",
+      "anchors": {
+        "0": "The opening has no identifiable subject or result.",
+        "1": "A subject appears, but the problem or outcome is vague or delayed.",
+        "2": "The opening identifies the subject and a concrete problem or outcome."
+      }
+    },
+    {
+      "id": "audience-fit",
+      "question": "Does the author identify the developer problem and intended reader?",
+      "anchors": {
+        "0": "No intended reader or relevant situation is identifiable.",
+        "1": "A reader group or situation is hinted at but not connected to the content.",
+        "2": "The intended reader and relevant situation are explicit."
+      }
+    },
+    {
+      "id": "simplicity",
+      "question": "Is the explanation organized around an authentic example rather than a pitch?",
+      "anchors": {
+        "0": "The reader cannot reconstruct the main point or sequence.",
+        "1": "The main point is present but key context or ordering is missing.",
+        "2": "The main point and necessary steps are clear and ordered."
+      }
+    },
+    {
+      "id": "anti-slop",
+      "question": "Does the human-written candidate avoid generic hype and generated article prose?",
+      "anchors": {
+        "0": "The candidate relies on hype, fabricated urgency or unsupported claims.",
+        "1": "Some concrete substance is present but generic or inflated language remains.",
+        "2": "Concrete language replaces hype and claims are supported."
+      }
+    },
+    {
+      "id": "platform-fit",
+      "question": "Does the candidate satisfy daily.dev rules on promotion and generated content?",
+      "anchors": {
+        "0": "The candidate ignores the destination’s format or community rules.",
+        "1": "The format or community is identified but a relevant rule or constraint remains unchecked.",
+        "2": "The format and relevant destination rules are checked and followed."
+      }
+    },
+    {
+      "id": "visual-quality",
+      "question": "Are the preview image and any diagrams relevant, readable and described?",
+      "anchors": {
+        "0": "The visual is unreadable or lacks its relevant alternative or captions.",
+        "1": "The visual is partly readable or an alternative or caption is incomplete.",
+        "2": "Key content is readable and relevant alternatives or accurate captions are present."
+      },
+      "appliesTo": [
+        "image",
+        "carousel",
+        "poster",
+        "video",
+        "diagram",
+        "logo",
+        "terminal-demo"
+      ]
+    },
+    {
+      "id": "value",
+      "question": "Can the lesson be used independently of buying a product?",
+      "anchors": {
+        "0": "No supported takeaway or useful example is identifiable.",
+        "1": "A takeaway is present but its evidence or practical detail is incomplete.",
+        "2": "A specific takeaway is supported by a concrete example or source."
+      }
+    },
+    {
+      "id": "human-authored-substance",
+      "question": "Is the article’s substance and voice human-authored, not generated from the outline?",
+      "anchors": {
+        "0": "The relevant requirement is absent or contradicted.",
+        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
+        "2": "The requirement is met and the relevant evidence or check is recorded."
+      }
+    }
+  ],
+  "outlineRubric": [
+    {
+      "id": "coverage",
+      "question": "Do the talking points cover the problem, relevant context and useful takeaway for developers seeking educational content?",
+      "anchors": {
+        "0": "The problem or takeaway is absent.",
+        "1": "The problem and takeaway are present but important context is missing.",
+        "2": "The problem, relevant context and actionable takeaway are covered as talking points."
+      }
+    },
+    {
+      "id": "evidence",
+      "question": "Do the talking points identify evidence for the a debugging lesson example without inventing experience?",
+      "anchors": {
+        "0": "The outline asserts unsupported facts or invented experience.",
+        "1": "Some evidence is identified but a material assertion lacks a source.",
+        "2": "Material assertions point to evidence and uncertainty is noted."
+      }
+    },
+    {
+      "id": "community-rules-checked",
+      "question": "Have the rules and authorship policy for the intended dailydev destination been checked before the human writes?",
+      "anchors": {
+        "0": "The target or its rules are not identified.",
+        "1": "The target is named but current rules or authorship restrictions are unchecked.",
+        "2": "The named destination’s current rules and authorship restrictions are recorded."
+      }
+    }
+  ],
+  "sources": [
+    "dailydev-55",
+    "dailydev-56",
+    "dailydev-57",
+    "cross-platform-63",
+    "cross-platform-64"
+  ],
+  "notes": [
+    "[JUDGEMENT] Rubric scores are editorial aids, not predictions of reach.",
+    "Check actual account, route, community and current requirements before publication.",
+    "Only human-authored substance and voice: an outline does not authorize submission of generated prose."
+  ]
+}

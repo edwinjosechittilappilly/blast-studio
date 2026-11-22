@@ -1,0 +1,145 @@
+{
+  "id": "threads",
+  "name": "Threads",
+  "marketBlaster": "threads",
+  "ai": "draft",
+  "formats": [
+    "text",
+    "image",
+    "carousel",
+    "video"
+  ],
+  "textLimit": {
+    "value": 500,
+    "source": "threads-19"
+  },
+  "titleLimit": "unknown",
+  "media": [
+    {
+      "kind": "image",
+      "maxBytes": {
+        "value": 8000000,
+        "source": "threads-19"
+      },
+      "maxCount": {
+        "value": 20,
+        "source": "threads-19"
+      }
+    },
+    {
+      "kind": "video",
+      "maxBytes": {
+        "value": 1000000000,
+        "source": "threads-19"
+      },
+      "maxSeconds": {
+        "value": 300,
+        "source": "threads-19"
+      }
+    }
+  ],
+  "disclosure": {
+    "text": "unknown",
+    "media": {
+      "rule": "Check Meta AI info labels and disclose branded content with the paid partnership label where required.",
+      "source": "instagram-47"
+    },
+    "voice": "unknown"
+  },
+  "rubric": [
+    {
+      "id": "hook",
+      "question": "Does the first line contain a concrete observation rather than a vague teaser?",
+      "anchors": {
+        "0": "The opening has no identifiable subject or result.",
+        "1": "A subject appears, but the problem or outcome is vague or delayed.",
+        "2": "The opening identifies the subject and a concrete problem or outcome."
+      }
+    },
+    {
+      "id": "audience-fit",
+      "question": "Does the observation invite the people affected by the problem into the discussion?",
+      "anchors": {
+        "0": "No intended reader or relevant situation is identifiable.",
+        "1": "A reader group or situation is hinted at but not connected to the content.",
+        "2": "The intended reader and relevant situation are explicit."
+      }
+    },
+    {
+      "id": "simplicity",
+      "question": "Can the observation and its context be understood in one pass?",
+      "anchors": {
+        "0": "The reader cannot reconstruct the main point or sequence.",
+        "1": "The main point is present but key context or ordering is missing.",
+        "2": "The main point and necessary steps are clear and ordered."
+      }
+    },
+    {
+      "id": "anti-slop",
+      "question": "Does the prompt avoid manufactured controversy or engagement bait?",
+      "anchors": {
+        "0": "The candidate relies on hype, fabricated urgency or unsupported claims.",
+        "1": "Some concrete substance is present but generic or inflated language remains.",
+        "2": "Concrete language replaces hype and claims are supported."
+      }
+    },
+    {
+      "id": "platform-fit",
+      "question": "Is any invitation to respond relevant to the observation and within channel limits?",
+      "anchors": {
+        "0": "The candidate ignores the destination’s format or community rules.",
+        "1": "The format or community is identified but a relevant rule or constraint remains unchecked.",
+        "2": "The format and relevant destination rules are checked and followed."
+      }
+    },
+    {
+      "id": "visual-quality",
+      "question": "Does visual media preserve readable context and include alternatives or captions?",
+      "anchors": {
+        "0": "The visual is unreadable or lacks its relevant alternative or captions.",
+        "1": "The visual is partly readable or an alternative or caption is incomplete.",
+        "2": "Key content is readable and relevant alternatives or accurate captions are present."
+      },
+      "appliesTo": [
+        "image",
+        "carousel",
+        "poster",
+        "video",
+        "diagram",
+        "logo",
+        "terminal-demo"
+      ]
+    },
+    {
+      "id": "value",
+      "question": "Is the observation supported by a specific example?",
+      "anchors": {
+        "0": "No supported takeaway or useful example is identifiable.",
+        "1": "A takeaway is present but its evidence or practical detail is incomplete.",
+        "2": "A specific takeaway is supported by a concrete example or source."
+      }
+    },
+    {
+      "id": "relationship-label",
+      "question": "Were applicable partnership and AI labels checked?",
+      "anchors": {
+        "0": "The relevant requirement is absent or contradicted.",
+        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
+        "2": "The requirement is met and the relevant evidence or check is recorded."
+      }
+    }
+  ],
+  "sources": [
+    "threads-18",
+    "threads-19",
+    "instagram-47",
+    "instagram-48",
+    "cross-platform-63",
+    "cross-platform-64"
+  ],
+  "notes": [
+    "[JUDGEMENT] Rubric scores are editorial aids, not predictions of reach.",
+    "Check actual account, route, community and current requirements before publication.",
+    "Media limits are API-specific, not necessarily app limits."
+  ]
+}

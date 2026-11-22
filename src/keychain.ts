@@ -20,7 +20,7 @@ export function keychainGet(
   available(platform);
   guardTestRunner(runner);
   try {
-    return runner(["find-generic-password", "-s", "market-blaster", "-a", key, "-w"])
+    return runner(["find-generic-password", "-s", "blast-studio", "-a", key, "-w"])
       .replace(/\r?\n$/, "") || undefined;
   } catch (err) {
     if (typeof err === "object" && err !== null && "status" in err && err.status === 44) return undefined;
@@ -34,7 +34,7 @@ export function keychainSet(
   available(platform);
   guardTestRunner(runner);
   // security's interactive parser has a 4096-byte line buffer.
-  const command = `add-generic-password -U -s market-blaster -a ${JSON.stringify(key)} -T "" -X ${
+  const command = `add-generic-password -U -s blast-studio -a ${JSON.stringify(key)} -T "" -X ${
     Buffer.from(value).toString("hex")}\n`;
   if (Buffer.byteLength(command) >= 4096)
     throw new UserError(`Could not save ${key} in Keychain: credential is too long`);

@@ -1,0 +1,899 @@
+[
+  {
+    "id": "linkedin-1",
+    "platform": "linkedin",
+    "url": "https://www.linkedin.com/help/linkedin/answer/a1499047",
+    "scope": "algorithm / feed recommendations",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "linkedin-2",
+    "platform": "linkedin",
+    "url": "https://www.linkedin.com/help/linkedin/answer/a7494039",
+    "scope": "specs / organic video",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "linkedin-3",
+    "platform": "linkedin",
+    "url": "https://www.linkedin.com/help/linkedin/answer/a1481496",
+    "scope": "AI policy",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "linkedin-4",
+    "platform": "linkedin",
+    "url": "https://www.linkedin.com/help/linkedin/answer/a1627083",
+    "scope": "community rules / branded content",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "disclosure",
+      "notes"
+    ]
+  },
+  {
+    "id": "x-5",
+    "platform": "x",
+    "url": "https://github.com/xai-org/x-algorithm",
+    "scope": "algorithm / current open-source For You",
+    "detector": {
+      "kind": "git-path",
+      "repo": "xai-org/x-algorithm",
+      "path": ""
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "x-6",
+    "platform": "x",
+    "url": "https://help.x.com/en/using-x/how-to-post",
+    "scope": "specs / text",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "x-7",
+    "platform": "x",
+    "url": "https://help.x.com/en/using-x/premium-longer-videos",
+    "scope": "specs / video",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "x-8",
+    "platform": "x",
+    "url": "https://help.x.com/en/rules-and-policies/authenticity",
+    "scope": "community rules / manipulation",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "disclosure",
+      "notes"
+    ]
+  },
+  {
+    "id": "x-9",
+    "platform": "x",
+    "url": "https://help.x.com/rules-and-policies/paid-partnerships-policy",
+    "scope": "community rules / partnerships; access unverified",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "disclosure",
+      "notes"
+    ]
+  },
+  {
+    "id": "bluesky-10",
+    "platform": "bluesky",
+    "url": "https://bsky.social/about/blog/7-27-2023-custom-feeds",
+    "scope": "algorithm / custom feeds",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "bluesky-11",
+    "platform": "bluesky",
+    "url": "https://bsky.social/about/blog/01-26-2026-whats-next-at-bluesky",
+    "scope": "specs / video and images; product update",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "bluesky-12",
+    "platform": "bluesky",
+    "url": "https://github.com/bluesky-social/atproto/blob/main/packages/api/lexicons/app/bsky/feed/post.json",
+    "scope": "specs / post record",
+    "detector": {
+      "kind": "git-path",
+      "repo": "bluesky-social/atproto",
+      "path": "packages/api/lexicons/app/bsky/feed/post.json",
+      "branch": "main"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "bluesky-13",
+    "platform": "bluesky",
+    "url": "https://bsky.network/docs/about-bluesky-content/video",
+    "scope": "specs / video",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "bluesky-14",
+    "platform": "bluesky",
+    "url": "https://bsky.social/about/support/community-guidelines",
+    "scope": "AI policy / community rules",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "mastodon-15",
+    "platform": "mastodon",
+    "url": "https://docs.joinmastodon.org/user/network/",
+    "scope": "algorithm / federation and discovery",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "mastodon-16",
+    "platform": "mastodon",
+    "url": "https://docs.joinmastodon.org/user/posting/",
+    "scope": "specs / posting and visibility",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "mastodon-17",
+    "platform": "mastodon",
+    "url": "https://docs.joinmastodon.org/entities/Instance/",
+    "scope": "specs / instance configuration",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "threads-18",
+    "platform": "threads",
+    "url": "https://about.fb.com/news/2024/10/find-your-community-with-new-threads-educational-insights/",
+    "scope": "algorithm / creator guidance",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "threads-19",
+    "platform": "threads",
+    "url": "https://developers.facebook.com/documentation/threads/posts",
+    "scope": "specs / API and AI labeling",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "reddit-20",
+    "platform": "reddit",
+    "url": "https://support.reddithelp.com/hc/en-us/articles/4402284777364-What-are-home-feed-recommendations",
+    "scope": "algorithm / Home recommendations",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "reddit-21",
+    "platform": "reddit",
+    "url": "https://support.reddithelp.com/hc/en-us/articles/360060422572-How-do-I-post-and-comment-on-Reddit",
+    "scope": "specs / community post types",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "reddit-22",
+    "platform": "reddit",
+    "url": "https://support.reddithelp.com/hc/en-us/articles/360043504051-Spam",
+    "scope": "community rules / spam",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "disclosure",
+      "notes"
+    ]
+  },
+  {
+    "id": "hn-23",
+    "platform": "hn",
+    "url": "https://news.ycombinator.com/newsfaq.html",
+    "scope": "algorithm / ranking explanation",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "hn-24",
+    "platform": "hn",
+    "url": "https://news.ycombinator.com/newsguidelines.html",
+    "scope": "AI policy / community rules",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "hn-25",
+    "platform": "hn",
+    "url": "https://news.ycombinator.com/showhn.html",
+    "scope": "community rules / Show HN",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "disclosure",
+      "notes"
+    ]
+  },
+  {
+    "id": "devto-26",
+    "platform": "devto",
+    "url": "https://dev.to/help/writing-editing-scheduling",
+    "scope": "specs / editor and canonical",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "devto-27",
+    "platform": "devto",
+    "url": "https://developers.forem.com/api/v1",
+    "scope": "specs / article API",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "devto-28",
+    "platform": "devto",
+    "url": "https://dev.to/devteam/introducing-ai-disclosure-on-dev-tools-for-nuance-clarity-and-better-feeds-34mk",
+    "scope": "AI policy / disclosure tiers",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "devto-29",
+    "platform": "devto",
+    "url": "https://dev.to/code-of-conduct",
+    "scope": "community rules",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "disclosure",
+      "notes"
+    ]
+  },
+  {
+    "id": "hashnode-30",
+    "platform": "hashnode",
+    "url": "https://townhall.hashnode.com/revamped-personalized-feed",
+    "scope": "algorithm / historical feed",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "hashnode-31",
+    "platform": "hashnode",
+    "url": "https://townhall.hashnode.com/why-you-should-republish-your-devblog-posts-and-how-to-do-it",
+    "scope": "specs / syndication",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "hashnode-32",
+    "platform": "hashnode",
+    "url": "https://github.com/Hashnode/gql-skill/blob/main/skills/gql-api/references/mutations.md",
+    "scope": "specs / image upload API",
+    "detector": {
+      "kind": "git-path",
+      "repo": "Hashnode/gql-skill",
+      "path": "skills/gql-api/references/mutations.md",
+      "branch": "main"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "hashnode-33",
+    "platform": "hashnode",
+    "url": "https://hashnode.com/terms",
+    "scope": "AI policy / community rules",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "medium-34",
+    "platform": "medium",
+    "url": "https://help.medium.com/hc/en-us/articles/360018677974-What-happens-to-your-story-when-you-publish-on-Medium",
+    "scope": "algorithm / distribution and Boost",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "medium-35",
+    "platform": "medium",
+    "url": "https://help.medium.com/hc/en-us/articles/213480228-API-Importing",
+    "scope": "specs / import",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "medium-36",
+    "platform": "medium",
+    "url": "https://help.medium.com/hc/en-us/articles/22576852947223-Artificial-Intelligence-AI-content-policy",
+    "scope": "AI policy / disclosure and paywall",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "producthunt-37",
+    "platform": "producthunt",
+    "url": "https://help.producthunt.com/en/articles/10275873-what-are-points",
+    "scope": "algorithm / leaderboard",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "producthunt-38",
+    "platform": "producthunt",
+    "url": "https://help.producthunt.com/en/articles/17734646-8-launch-faq-and-myths",
+    "scope": "community rules / launch",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "disclosure",
+      "notes"
+    ]
+  },
+  {
+    "id": "producthunt-39",
+    "platform": "producthunt",
+    "url": "https://help.producthunt.com/en/articles/17834537-4-build-your-product-page",
+    "scope": "specs / launch page",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "youtube-shorts-40",
+    "platform": "youtube-shorts",
+    "url": "https://support.google.com/youtube/answer/11914225?co=YOUTUBE._YTVideoType%3Dshorts&hl=en",
+    "scope": "algorithm / recommendation signals",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "youtube-shorts-41",
+    "platform": "youtube-shorts",
+    "url": "https://support.google.com/youtube/answer/15424877?hl=en",
+    "scope": "specs / Shorts eligibility and copyright",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "youtube-shorts-42",
+    "platform": "youtube-shorts",
+    "url": "https://support.google.com/youtube/answer/14328491?hl=en",
+    "scope": "AI policy / disclosure",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "instagram-43",
+    "platform": "instagram",
+    "url": "https://about.instagram.com/blog/announcements/instagram-ranking-explained",
+    "scope": "algorithm / historical ranking explanation",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "instagram-44",
+    "platform": "instagram",
+    "url": "https://www.facebook.com/help/instagram/1038071743007909?locale=en_GB",
+    "scope": "specs / Reels size",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "instagram-45",
+    "platform": "instagram",
+    "url": "https://www.facebook.com/help/instagram/456185931138729?locale=en_GB",
+    "scope": "specs / Reels duration and discovery",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "instagram-46",
+    "platform": "instagram",
+    "url": "https://www.facebook.com/help/instagram/1188122969438057",
+    "scope": "specs / carousel",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "instagram-47",
+    "platform": "instagram",
+    "url": "https://about.fb.com/news/2024/04/metas-approach-to-labeling-ai-generated-content-and-manipulated-media/",
+    "scope": "AI policy / labeling",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "instagram-48",
+    "platform": "instagram",
+    "url": "https://help.instagram.com/2467529163409127",
+    "scope": "community rules / branded content",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "disclosure",
+      "notes"
+    ]
+  },
+  {
+    "id": "tiktok-49",
+    "platform": "tiktok",
+    "url": "https://support.tiktok.com/en/using-tiktok/exploring-videos/how-tiktok-recommends-content",
+    "scope": "algorithm / recommendations",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "tiktok-50",
+    "platform": "tiktok",
+    "url": "https://developers.tiktok.com/docs/en/content-posting-api-media-transfer-guide",
+    "scope": "specs / API video",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "tiktok-51",
+    "platform": "tiktok",
+    "url": "https://www.tiktok.com/community-guidelines/en/integrity-authenticity",
+    "scope": "AI policy / unoriginal media",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "gist-52",
+    "platform": "gist",
+    "url": "https://docs.github.com/en/get-started/exploring-projects-on-github/discovering-projects-on-github",
+    "scope": "algorithm / Explore",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "gist-53",
+    "platform": "gist",
+    "url": "https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/customizing-your-repositorys-social-media-preview",
+    "scope": "specs / social preview",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "gist-54",
+    "platform": "gist",
+    "url": "https://docs.github.com/en/site-policy/acceptable-use-policies/github-acceptable-use-policies",
+    "scope": "community rules / promotion and manipulation",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "disclosure",
+      "notes"
+    ]
+  },
+  {
+    "id": "dailydev-55",
+    "platform": "dailydev",
+    "url": "https://docs.daily.dev/what-the-feed-recommends/",
+    "scope": "algorithm / feed guidance and AI editing",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "dailydev-56",
+    "platform": "dailydev",
+    "url": "https://docs.daily.dev/content-guidelines/",
+    "scope": "AI policy / source and promotion rules",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "dailydev-57",
+    "platform": "dailydev",
+    "url": "https://docs.daily.dev/how-to-get-featured/",
+    "scope": "specs / submissions",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "media",
+      "textLimit",
+      "titleLimit"
+    ]
+  },
+  {
+    "id": "newsletter-58",
+    "platform": "newsletter",
+    "url": "https://buttondown.com/legal/acceptable-use-policy",
+    "scope": "AI policy / opt-in",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "newsletter-59",
+    "platform": "newsletter",
+    "url": "https://support.substack.com/hc/en-us/articles/50891130623508-How-can-I-detect-AI-on-Substack",
+    "scope": "AI policy / detector scope",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "ai",
+      "disclosure"
+    ]
+  },
+  {
+    "id": "newsletter-60",
+    "platform": "newsletter",
+    "url": "https://support.google.com/mail/answer/81126?hl=en",
+    "scope": "delivery / authentication and unsubscribe",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "newsletter-61",
+    "platform": "newsletter",
+    "url": "https://cooperpress.com/submit/",
+    "scope": "community rules / editorial submission",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "disclosure",
+      "notes"
+    ]
+  },
+  {
+    "id": "newsletter-62",
+    "platform": "newsletter",
+    "url": "https://changelog.com/news/submit",
+    "scope": "community rules / editorial submission",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "disclosure",
+      "notes"
+    ]
+  },
+  {
+    "id": "cross-platform-63",
+    "platform": "cross-platform",
+    "url": "https://www.w3.org/WAI/tutorials/images/",
+    "scope": "accessibility / text alternatives",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "cross-platform-64",
+    "platform": "cross-platform",
+    "url": "https://www.w3.org/WAI/media/av/captions/",
+    "scope": "accessibility / captions",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "notes"
+    ]
+  },
+  {
+    "id": "openai-image-pricing",
+    "platform": "provider",
+    "url": "https://openai.com/api/pricing/",
+    "scope": "OpenAI image generation pricing",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "provider.pricing"
+    ]
+  },
+  {
+    "id": "gemini-pricing",
+    "platform": "provider",
+    "url": "https://ai.google.dev/gemini-api/docs/pricing",
+    "scope": "Gemini API pricing",
+    "detector": {
+      "kind": "page-hash"
+    },
+    "governs": [
+      "provider.pricing"
+    ]
+  },
+  {
+    "id": "hyperframes-releases",
+    "platform": "tool",
+    "url": "https://github.com/heygen-com/hyperframes/releases",
+    "scope": "HyperFrames releases",
+    "detector": {
+      "kind": "git-path",
+      "repo": "heygen-com/hyperframes",
+      "path": ""
+    },
+    "governs": [
+      "tool.version"
+    ]
+  },
+  {
+    "id": "playwright-releases",
+    "platform": "tool",
+    "url": "https://github.com/microsoft/playwright/releases",
+    "scope": "Playwright releases",
+    "detector": {
+      "kind": "git-path",
+      "repo": "microsoft/playwright",
+      "path": ""
+    },
+    "governs": [
+      "tool.version"
+    ]
+  }
+]

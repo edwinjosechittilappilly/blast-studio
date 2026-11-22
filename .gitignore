@@ -8,5 +8,7 @@
 node_modules/
 site/
 .env
+.env.*
+!.env.example
 *.tmp
 out/

@@ -1,0 +1,51 @@
+import { fileURLToPath } from "node:url";
+
+import { loadConfig } from "../config.ts";
+import { loadEnv } from "../env.ts";
+import type { Command } from "../io.ts";
+import { UserError } from "../types.ts";
+
+export const run: Command = async (args, io) => {
+  if (args.length) throw new UserError("usage: bstudio doctor");
+  const config = loadConfig(io);
+  let failed = false;
+  const major = Number(process.versions.node.split(".")[0]);
+  io.out(`Node: ${process.version}${major < 22 ? " (requires Node >=22.18; install from https://nodejs.org/)" : ""}`);
+  const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
+  if (nodeMajor < 22 || (nodeMajor === 22 && nodeMinor < 18)) failed = true;
+  async function check(name: string, cmd: string, argv: string[], install: string, required = false): Promise<string | undefined> {
+    try {
+      const result = await io.run(cmd, argv, { cwd: fileURLToPath(new URL("../..", import.meta.url)), timeoutMs: 15000 });
+      io.out(`${name}: ${result.trim().split(/\r?\n/)[0] || "available"}`);
+      return result;
+    } catch {
+      io.out(`${name}: missing${required ? " (required)" : " (optional)"}; ${install}`);
+      if (required) failed = true;
+      return undefined;
+    }
+  }
+  await check("FFmpeg", "ffmpeg", ["-version"], "install: brew install ffmpeg (or your OS package manager)");
+  await check("Playwright Chromium", process.execPath,
+    ["--input-type=module", "-e", "import { chromium } from 'playwright'; const b = await chromium.launch({headless:true}); await b.close(); console.log('available')"],
+    "install: npx playwright install chromium", true);
+  await check("HyperFrames", "npx", ["--no-install", "hyperframes", "--version"], "install: npm install (HyperFrames is an optional dependency)");
+  await check("VHS", "vhs", ["--version"], "install: brew install vhs");
+  await check("Mermaid (mmdc)", "npx", ["--no-install", "mmdc", "--version"], "install: npm install (Mermaid is an optional dependency)", true);
+  await check("D2", "d2", ["--version"], "install: brew install d2");
+  await check("Market Blaster", config.marketBlaster.command[0], [...config.marketBlaster.command.slice(1), "--help"], "install: npm install -g market-blaster");
+  const env = loadEnv(config.root, io.env, io.keychain);
+  for (const key of ["GEMINI_API_KEY", "OPENAI_API_KEY"]) {
+    const required = (key === "GEMINI_API_KEY" && config.images.provider === "gemini") ||
+      (key === "OPENAI_API_KEY" && (config.images.provider === "openai" || config.voice.provider === "openai"));
+    io.out(`${key}: ${env[key] ? "present" : `not set${required ? " (required)" : ""}; set it in the environment, studio .env, or Keychain`}`);
+    if (required && !env[key]) failed = true;
+  }
+  const omp = await check("omp generate_image.enabled", "omp", ["config", "get", "generate_image.enabled"],
+    "install: https://github.com/can1357/oh-my-pi; enable generate_image.enabled in omp config", config.images.provider === "omp");
+  if (config.images.provider === "omp" && omp !== undefined && !/^(true|enabled)$/i.test(omp.trim())) {
+    io.out("omp generate_image is disabled; enable generate_image.enabled in omp config");
+    failed = true;
+  }
+  io.out(`Budget: $${config.budget.monthlyUsd}/month, $${config.budget.perProjectUsd}/project${config.budget.monthlyUsd === 0 || config.budget.perProjectUsd === 0 ? " (paid calls disabled)" : ""}`);
+  return failed ? 1 : 0;
+};
