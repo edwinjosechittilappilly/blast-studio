@@ -92,9 +92,9 @@
       "id": "recipient-permission",
       "question": "Has the editor invited submissions or has the recipient opted in?",
       "anchors": {
-        "0": "The relevant requirement is absent or contradicted.",
-        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
-        "2": "The requirement is met and the relevant evidence or check is recorded."
+        "0": "The recipient did not opt in and the editor did not invite suggestions.",
+        "1": "The recipient or editor is named but permission is unverified.",
+        "2": "The recipient opted in or the named editor explicitly accepts submissions."
       }
     }
   ],

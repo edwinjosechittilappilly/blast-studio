@@ -97,9 +97,9 @@
       "id": "discussion-category",
       "question": "Does the selected category match the question or proposal?",
       "anchors": {
-        "0": "The relevant requirement is absent or contradicted.",
-        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
-        "2": "The requirement is met and the relevant evidence or check is recorded."
+        "0": "The category is unrelated to the topic.",
+        "1": "A plausible category is selected but its fit is unresolved.",
+        "2": "The selected category matches the project question or proposal."
       }
     }
   ],

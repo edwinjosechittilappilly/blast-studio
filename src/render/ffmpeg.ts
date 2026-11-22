@@ -1,0 +1,56 @@
+import { statSync } from "node:fs";
+import type { IO } from "../io.ts";
+import { UserError } from "../types.ts";
+
+const guidance: Record<string, string> = {
+  ffmpeg: "brew install ffmpeg (or your OS package manager)",
+  ffprobe: "brew install ffmpeg (or your OS package manager)",
+  vhs: "brew install vhs",
+  hyperframes: "npm install (HyperFrames is an optional dependency)",
+};
+
+export async function runTool(io: IO, name: keyof typeof guidance, command: string, args: string[], cwd?: string): Promise<string> {
+  try {
+    return await io.run(command, args, { cwd, env: io.env, timeoutMs: 120_000 });
+  } catch (error) {
+    throw new UserError(`${name} failed or is unavailable; run bstudio doctor; install: ${guidance[name]}. ${String(error)}`);
+  }
+}
+
+export interface MediaProbe { width: number; height: number; seconds: number; bytes: number }
+
+export async function probeMedia(file: string, io: IO): Promise<MediaProbe> {
+  const text = await runTool(io, "ffprobe", "ffprobe", ["-v", "error", "-show_entries", "stream=width,height:format=duration", "-of", "json", file]);
+  const data = JSON.parse(text) as { streams?: { width?: number; height?: number }[]; format?: { duration?: string } };
+  const video = data.streams?.find(s => s.width && s.height);
+  const seconds = Number(data.format?.duration);
+  if (!video?.width || !video.height || !Number.isFinite(seconds) || seconds <= 0) throw new UserError(`ffprobe could not determine video dimensions and duration: ${file}`);
+  return { width: video.width, height: video.height, seconds, bytes: statSync(file).size };
+}
+
+/** FFmpeg's filter parser has its own escaping, independent of shell quoting. */
+function filterPath(path: string): string {
+  return path.replace(/\\/g, "\\\\").replace(/'/g, "'\\''").replace(/:/g, "\\:").replace(/,/g, "\\,").replace(/\[/g, "\\[").replace(/\]/g, "\\]");
+}
+
+export async function encodeVideo(input: string, output: string, io: IO, options: { captions?: string; voiceover?: string } = {}): Promise<void> {
+  const args = ["-y", "-i", input];
+  if (options.voiceover) args.push("-i", options.voiceover, "-map", "0:v:0", "-map", "1:a:0", "-af", "apad", "-shortest");
+  if (options.captions) args.push("-vf", `subtitles=filename='${filterPath(options.captions)}'`);
+  args.push("-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-c:a", "aac", output);
+  try {
+    await runTool(io, "ffmpeg", "ffmpeg", args);
+  } catch (error) {
+    if (options.captions && /No such filter: '?subtitles'?|filter not found/i.test(String(error))) {
+      throw new UserError("FFmpeg lacks the subtitles filter (libass); install a libass-enabled FFmpeg, e.g. brew install ffmpeg-full, and run bstudio doctor");
+    }
+    throw error;
+  }
+}
+
+export async function extractFrames(input: string, files: string[], seconds: number, io: IO): Promise<void> {
+  for (let i = 0; i < files.length; i++) {
+    const at = seconds * (i + 1) / (files.length + 1);
+    await runTool(io, "ffmpeg", "ffmpeg", ["-y", "-ss", String(at), "-i", input, "-frames:v", "1", "-update", "1", files[i]]);
+  }
+}

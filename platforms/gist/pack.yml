@@ -97,9 +97,9 @@
       "id": "runnable-example",
       "question": "Are dependencies and commands sufficient to reproduce the example?",
       "anchors": {
-        "0": "The relevant requirement is absent or contradicted.",
-        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
-        "2": "The requirement is met and the relevant evidence or check is recorded."
+        "0": "The example cannot run and has no dependency or command information.",
+        "1": "Code and some setup are present but a dependency, command or expected result is missing.",
+        "2": "Dependencies, commands and expected output support reproduction."
       }
     }
   ],

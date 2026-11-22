@@ -1,9 +1,18 @@
 import { execFile } from "node:child_process";
 import { createInterface, type Interface } from "node:readline/promises";
-import { run as init } from "./commands/init.ts";
+import { run as accept } from "./commands/accept.ts";
+import { run as brief } from "./commands/brief.ts";
+import { run as budget } from "./commands/budget.ts";
 import { run as doctor } from "./commands/doctor.ts";
+import { run as init } from "./commands/init.ts";
 import { run as installSkills } from "./commands/install-skills.ts";
+import { run as make } from "./commands/make.ts";
+import { run as newProject } from "./commands/new.ts";
+import { run as plan } from "./commands/plan.ts";
+import { run as render } from "./commands/render.ts";
 import { run as renderPreview } from "./commands/render-preview.ts";
+import { run as review } from "./commands/review.ts";
+import { run as revise } from "./commands/revise.ts";
 import { keychainGet } from "./keychain.ts";
 import type { Command, IO } from "./io.ts";
 import { UserError } from "./types.ts";
@@ -12,6 +21,18 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
   init: { summary: "initialize the private studio and global configuration", run: init },
   doctor: { summary: "check tools, providers and budget", run: doctor },
   "install-skills": { summary: "link studio skills [--with-hyperframes]", run: installSkills },
+  new: {
+    summary: "brief + plan + make + render + review: new <slug> --idea|--note|--url|--pr|--commit|--mb-brief …",
+    run: newProject,
+  },
+  brief: { summary: "collect evidence: brief <slug> --idea|--note|--url|--pr|--commit|--repo|--mb-brief …", run: brief },
+  plan: { summary: "choose post types, angles and hooks per platform: plan <slug>", run: plan },
+  make: { summary: "write posts and asset sources with the agent: make <slug>", run: make },
+  render: { summary: "render images, carousels, logos, diagrams and video: render <slug> [--regen]", run: render },
+  review: { summary: "gates + platform reviewer scores: review <slug> [--calibrate]", run: review },
+  revise: { summary: "apply review findings, re-render, re-review: revise <slug>", run: revise },
+  accept: { summary: "human override of scores (never gates): accept <slug> <platform> --reason …", run: accept },
+  budget: { summary: "paid generation caps: budget [show | set <usd> | set-project <usd>]", run: budget },
   "render-preview": {
     summary: "render one html/svg/mmd/d2 file offline: render-preview <file> --size WxH --out <png>",
     run: renderPreview,

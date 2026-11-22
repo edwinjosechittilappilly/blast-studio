@@ -106,9 +106,18 @@
       "id": "feedback-not-votes",
       "question": "Does the launch request genuine feedback without soliciting upvotes?",
       "anchors": {
-        "0": "The relevant requirement is absent or contradicted.",
-        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
-        "2": "The requirement is met and the relevant evidence or check is recorded."
+        "0": "The launch solicits or purchases upvotes.",
+        "1": "The request is ambiguous about votes versus feedback.",
+        "2": "The request invites genuine feedback without asking for votes."
+      }
+    },
+    {
+      "id": "asset-limits",
+      "question": "Are product name, tagline, description and logo requirements checked against the actual launch page?",
+      "anchors": {
+        "0": "A checked field or logo violates a known limit.",
+        "1": "Some fields or logo requirements remain unchecked.",
+        "2": "Name, tagline, description and logo requirements are checked against the current launch page."
       }
     }
   ],

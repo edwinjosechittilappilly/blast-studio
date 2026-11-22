@@ -102,9 +102,18 @@
       "id": "media-rights",
       "question": "Are music and footage rights and any Content ID claim checked?",
       "anchors": {
-        "0": "The relevant requirement is absent or contradicted.",
-        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
-        "2": "The requirement is met and the relevant evidence or check is recorded."
+        "0": "Footage or music rights are missing or an active claim blocks the Short.",
+        "1": "Rights or claim status are identified but remain unresolved.",
+        "2": "Rights and claim status are checked for the actual footage and music."
+      }
+    },
+    {
+      "id": "altered-content",
+      "question": "Was disclosure of realistic synthetic or altered content checked?",
+      "anchors": {
+        "0": "Required altered-content disclosure is omitted.",
+        "1": "The synthetic content is identified but the disclosure decision is unresolved.",
+        "2": "The disclosure decision is checked and any required label is applied."
       }
     }
   ],

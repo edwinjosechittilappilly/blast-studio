@@ -1,0 +1,34 @@
+# List prices observed 2026-11-22; check provider pricing before use.
+# Image upper bounds include a conservative allowance for text input.
+verified: 2026-11-22
+models:
+  gemini-nano-banana-2.1:
+    provider: gemini
+    kind: image
+    upperUsd: 0.10
+    source: https://ai.google.dev/gemini-api/docs/pricing
+  gemini-2.5-flash-image:
+    provider: gemini
+    kind: image
+    upperUsd: 0.10
+    source: https://ai.google.dev/gemini-api/docs/pricing
+  gpt-image-2.5-sunburst:
+    provider: openai
+    kind: image
+    upperUsd: 0.50
+    source: https://developers.openai.com/api/docs/pricing
+  gpt-image-2.5-flare:
+    provider: openai
+    kind: image
+    upperUsd: 0.50
+    source: https://developers.openai.com/api/docs/pricing
+  tts-1:
+    provider: openai
+    kind: voice
+    usdPerCharacter: 0.000015
+    source: https://developers.openai.com/api/docs/pricing
+  tts-1-hd:
+    provider: openai
+    kind: voice
+    usdPerCharacter: 0.000030
+    source: https://developers.openai.com/api/docs/pricing

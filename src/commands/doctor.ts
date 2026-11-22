@@ -46,6 +46,8 @@ export const run: Command = async (args, io) => {
     io.out("omp generate_image is disabled; enable generate_image.enabled in omp config");
     failed = true;
   }
-  io.out(`Budget: $${config.budget.monthlyUsd}/month, $${config.budget.perProjectUsd}/project${config.budget.monthlyUsd === 0 || config.budget.perProjectUsd === 0 ? " (paid calls disabled)" : ""}`);
+  const projectCap = config.budget.perProjectUsd === 0 ? "no per-project cap" : `$${config.budget.perProjectUsd}/project`;
+  const paidOff = config.budget.monthlyUsd === 0 ? " (paid calls disabled until you run: bstudio budget set <usd>)" : "";
+  io.out(`Budget: $${config.budget.monthlyUsd}/month, ${projectCap}${paidOff}`);
   return failed ? 1 : 0;
 };

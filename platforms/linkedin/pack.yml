@@ -109,9 +109,18 @@
       "id": "verifiable-example",
       "question": "Is one example traceable to an accessible source or demonstrated result?",
       "anchors": {
-        "0": "The relevant requirement is absent or contradicted.",
-        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
-        "2": "The requirement is met and the relevant evidence or check is recorded."
+        "0": "No example or source is supplied.",
+        "1": "An example is described but cannot be traced to evidence.",
+        "2": "An accessible source or demonstrated result supports the example."
+      }
+    },
+    {
+      "id": "partnership-disclosure",
+      "question": "Is any paid brand relationship identified with the required partnership label?",
+      "anchors": {
+        "0": "A required partnership label is missing.",
+        "1": "A relationship is acknowledged but its label is unresolved.",
+        "2": "The applicable partnership label is present or no relationship exists."
       }
     }
   ],

@@ -105,9 +105,9 @@
       "id": "traceable-claims",
       "question": "Can each quantitative claim be traced to a source?",
       "anchors": {
-        "0": "The relevant requirement is absent or contradicted.",
-        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
-        "2": "The requirement is met and the relevant evidence or check is recorded."
+        "0": "A number has no source or contradicts its source.",
+        "1": "A source is named but does not establish the number.",
+        "2": "Each quantitative claim links to evidence establishing it."
       }
     }
   ],

@@ -123,9 +123,9 @@
       "id": "relationship-label",
       "question": "Were applicable partnership and AI labels checked?",
       "anchors": {
-        "0": "The relevant requirement is absent or contradicted.",
-        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
-        "2": "The requirement is met and the relevant evidence or check is recorded."
+        "0": "A required label is omitted.",
+        "1": "The relevant relationship or AI labeling condition is identified but unresolved.",
+        "2": "Applicable relationship and AI label conditions were checked and met."
       }
     }
   ],

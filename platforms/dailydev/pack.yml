@@ -92,9 +92,18 @@
       "id": "human-authored-substance",
       "question": "Is the article’s substance and voice human-authored, not generated from the outline?",
       "anchors": {
-        "0": "The relevant requirement is absent or contradicted.",
-        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
-        "2": "The requirement is met and the relevant evidence or check is recorded."
+        "0": "The submitted article’s substance is generated rather than human-authored.",
+        "1": "Authorship is asserted but the substance and source of the draft are unclear.",
+        "2": "The human authored the substance and voice; AI assistance stayed within policy."
+      }
+    },
+    {
+      "id": "preview-metadata",
+      "question": "Were the article title and preview image checked against the source page?",
+      "anchors": {
+        "0": "The title or preview image is missing or misleading.",
+        "1": "One of title or preview image remains unchecked.",
+        "2": "The title and preview image match the actual source page."
       }
     }
   ],

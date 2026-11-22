@@ -92,9 +92,18 @@
       "id": "subreddit-rules",
       "question": "Were the selected subreddit’s rules, flair and self-promotion policy checked?",
       "anchors": {
-        "0": "The relevant requirement is absent or contradicted.",
-        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
-        "2": "The requirement is met and the relevant evidence or check is recorded."
+        "0": "The named subreddit prohibits the post or its rules were not checked.",
+        "1": "The subreddit is named but flair or self-promotion rules remain unchecked.",
+        "2": "Current rules, flair and self-promotion conditions for the named subreddit were checked."
+      }
+    },
+    {
+      "id": "ownership-disclosed",
+      "question": "Does the human author disclose ownership or affiliation when relevant?",
+      "anchors": {
+        "0": "A relevant ownership relationship is concealed.",
+        "1": "Ownership is mentioned ambiguously.",
+        "2": "Relevant ownership or affiliation is stated clearly."
       }
     }
   ],

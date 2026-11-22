@@ -92,9 +92,9 @@
       "id": "publication-policy",
       "question": "Were the actual publication’s submission and AI policies checked?",
       "anchors": {
-        "0": "The relevant requirement is absent or contradicted.",
-        "1": "The requirement is acknowledged but its evidence or check is incomplete.",
-        "2": "The requirement is met and the relevant evidence or check is recorded."
+        "0": "The applicable publication policy is violated or not identified.",
+        "1": "The publication is named but its submission or AI policy remains unchecked.",
+        "2": "The named publication’s current submission and AI policy is checked."
       }
     }
   ],
