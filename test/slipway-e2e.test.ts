@@ -8,9 +8,21 @@ import test from 'node:test';
 import { parse, stringify } from 'yaml';
 import { unzipSync, strFromU8 } from 'fflate';
 import { startDashboard } from '../src/dashboard/server.ts';
+import { findJob } from '../src/jobs/runner.ts';
+import { exactProcess } from '../src/jobs/process.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 const cli = fileURLToPath(new URL('../bin/bstudio.mjs', import.meta.url));
+
+// Bound external process readiness and cancellation so failures cannot strand the test servers.
+async function within<T>(promise: Promise<T>, label: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([promise, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Timed out waiting for ${label}`)), 20_000);
+    })]);
+  } finally { clearTimeout(timer); }
+}
 
 test('Slipway: shared evidence through feedback, exports, dashboard jobs and renames', { timeout: 60_000 }, async () => {
   const root = tempStudio(), target = join(root, 'market-blaster');
@@ -20,7 +32,7 @@ test('Slipway: shared evidence through feedback, exports, dashboard jobs and ren
 const prompt = process.argv.at(-1);
 if (prompt.includes('Write plan.yml') || prompt.includes('Write plan.scoped.yml')) {
   const name = prompt.includes('Write plan.scoped.yml') ? 'plan.scoped.yml' : 'plan.yml';
-  fs.writeFileSync(name, JSON.stringify([{platform:'bluesky', type:'text', angle:'Useful', hooks:['One','Two','Three'], assets:[]}]));
+  fs.writeFileSync(name, JSON.stringify(['bluesky', 'linkedin'].map(platform => ({platform, type:'text', angle:'Useful', hooks:['One','Two','Three'], assets:[]}))));
 } else if (prompt.includes('OWNER INSTRUCTION')) {
   const file = 'posts/bluesky.md';
   fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('Original', 'Revised'));
@@ -28,12 +40,12 @@ if (prompt.includes('Write plan.yml') || prompt.includes('Write plan.scoped.yml'
   fs.mkdirSync('posts', {recursive:true});
   const first = !fs.existsSync(${JSON.stringify(join(root, 'made'))});
   fs.writeFileSync(${JSON.stringify(join(root, 'made'))}, 'yes');
-  fs.writeFileSync('posts/bluesky.md', '---\\nplatform: bluesky\\ntitle: Useful\\nevidence: [E1]\\nmedia: []\\n' + (first ? 'blockers: [Need owner confirmation]\\n' : '') + '---\\nOriginal\\n');
+  for (const platform of ['bluesky', 'linkedin']) fs.writeFileSync('posts/' + platform + '.md', '---\\nplatform: ' + platform + '\\ntitle: Useful\\nevidence: [E1]\\nmedia: []\\n' + (first && platform === 'bluesky' ? 'blockers: [Need owner confirmation]\\n' : '') + '---\\nOriginal\\n');
 }
 `);
   writeFileSync(reviewer, `const prompt = process.argv.at(-1); const data = JSON.parse(prompt.match(/<untrusted>\\n([\\s\\S]*?)\\n<\\/untrusted>/)[1]); console.log(JSON.stringify({scores:data.rubric.map(c => ({criterion:c.id,score:2,evidence:'Supported',fix:'None'})),hookComparison:{preferred:0,evidence:'Clear'}}));`);
   writeFileSync(mb, `require('node:fs').appendFileSync('calls.jsonl', JSON.stringify(process.argv.slice(2)) + '\\n'); console.log('ok');`);
-  const config = (agentScript: string) => stringify({ brand: { name: 'Demo' }, platforms: ['bluesky'], agent: { command: [process.execPath, agentScript], sandbox: 'off' }, reviewer: { command: [process.execPath, reviewer] }, marketBlaster: { command: [process.execPath, mb] } });
+  const config = (agentScript: string) => stringify({ brand: { name: 'Demo' }, platforms: ['bluesky', 'linkedin'], agent: { command: [process.execPath, agentScript], sandbox: 'off' }, reviewer: { command: [process.execPath, reviewer] }, marketBlaster: { command: [process.execPath, mb] } });
   writeFileSync(join(root, 'studio.yml'), config(agent));
   const env = { ...process.env, HOME: root, BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') };
   const run = (...args: string[]) => {
@@ -60,11 +72,21 @@ if (prompt.includes('Write plan.yml') || prompt.includes('Write plan.scoped.yml'
   assert.deepEqual(feedback.map(item => [item.note, item.status]), [['Make it clearer', 'applied'], ['Use a direct opening', 'applied']]);
   assert.match(readFileSync(join(campaign, 'posts/bluesky.md'), 'utf8'), /Revised/);
   run('make', 'slipway/launch', '--platforms', 'bluesky');
-  run('restore', 'slipway/launch', '1');
+  const saved = readdirSync(join(campaign, 'history')).find(name => name.startsWith('2-')); assert.ok(saved);
+  const savedPost = readFileSync(join(campaign, 'history', saved, 'posts/bluesky.md'), 'utf8');
+  run('restore', 'slipway/launch', '2');
+  assert.equal(readFileSync(join(campaign, 'posts/bluesky.md'), 'utf8'), savedPost);
+  assert.match(savedPost, /Need owner confirmation/);
+  const otherPost = readFileSync(join(campaign, 'posts/linkedin.md'), 'utf8');
   run('make', 'slipway/launch', '--platforms', 'bluesky');
   run('render', 'slipway/launch', '--platforms', 'bluesky');
+  assert.equal(readFileSync(join(campaign, 'posts/linkedin.md'), 'utf8'), otherPost);
+  run('review', 'slipway/launch');
+  const otherReview = readFileSync(join(campaign, 'reviews/linkedin.json'), 'utf8');
   run('review', 'slipway/launch', '--platforms', 'bluesky');
+  assert.equal(readFileSync(join(campaign, 'reviews/linkedin.json'), 'utf8'), otherReview);
   run('accept', 'slipway/launch', 'bluesky', '--reason', 'Reviewed by owner');
+  run('accept', 'slipway/launch', 'linkedin', '--reason', 'Reviewed by owner');
   run('export', 'slipway/launch', '--local');
   run('export', 'slipway/launch', '--mb', target);
   const calls = readFileSync(join(target, 'calls.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[]);
@@ -82,14 +104,16 @@ if (prompt.includes('Write plan.yml') || prompt.includes('Write plan.scoped.yml'
   const ready = Promise.withResolvers<void>();
   const signal = createServer((_req, res) => { res.end('ok'); ready.resolve(); });
   await new Promise<void>(resolve => signal.listen(0, '127.0.0.1', resolve));
-  const address = signal.address(); assert.ok(address && typeof address !== 'string');
-  const holding = join(root, 'holding.cjs');
-  writeFileSync(holding, `require('node:net').createServer().listen(0, '127.0.0.1', () => { console.log('streamed output'); require('node:http').get('http://127.0.0.1:${address.port}/'); });`);
-  writeFileSync(join(root, 'studio.yml'), config(holding));
-  const dashboard = await startDashboard(fakeIO({ cwd: root, env }), { port: 0 });
-  const base = `http://127.0.0.1:${dashboard.port}`;
+  let dashboard: Awaited<ReturnType<typeof startDashboard>> | undefined;
   let id = '', cookie = '';
+  let watcher: ReturnType<typeof watch> | undefined, logWatcher: ReturnType<typeof watch> | undefined;
   try {
+    const address = signal.address(); assert.ok(address && typeof address !== 'string');
+    const holding = join(root, 'holding.cjs');
+    writeFileSync(holding, `require('node:net').createServer().listen(0, '127.0.0.1', () => { console.log('streamed output'); require('node:http').get('http://127.0.0.1:${address.port}/'); });`);
+    writeFileSync(join(root, 'studio.yml'), config(holding));
+    dashboard = await startDashboard(fakeIO({ cwd: root, env }), { port: 0 });
+    const base = `http://127.0.0.1:${dashboard.port}`;
     const exchange = await fetch(dashboard.url, { redirect: 'manual' });
     assert.equal(exchange.status, 302); cookie = exchange.headers.get('set-cookie') ?? ''; assert.ok(cookie);
     const headers = { cookie, origin: base, 'x-requested-with': 'bstudio', 'content-type': 'application/json' };
@@ -101,21 +125,55 @@ if (prompt.includes('Write plan.yml') || prompt.includes('Write plan.scoped.yml'
     assert.equal(download.status, 200); assert.ok((await download.arrayBuffer()).byteLength > 0);
     const started = await fetch(`${base}/api/jobs`, { method: 'POST', headers, body: JSON.stringify({ op: 'plan', campaign: 'slipway/followup', args: {} }) });
     assert.equal(started.status, 202); id = (await started.json() as { id: string }).id;
-    await ready.promise;
-    const log = await fetch(`${base}/api/jobs/${id}/log`, { headers });
-    assert.match((await log.json() as { log: string }).log, /streamed output/);
     const finished = Promise.withResolvers<void>();
-    const check = async () => { try { const res = await fetch(`${base}/api/jobs/${id}`, { headers }); if ((await res.json() as { state: string }).state === 'cancelled') finished.resolve(); } catch (error) { finished.reject(error); } };
-    const watcher = watch(join(root, 'projects/slipway/campaigns/followup/logs/jobs'), () => { void check(); });
-    try {
-      assert.equal((await fetch(`${base}/api/jobs/${id}/cancel`, { method: 'POST', headers })).status, 200);
-      await check(); await finished.promise;
-    } finally { watcher.close(); }
+    const streamed = Promise.withResolvers<void>();
+    let lastLog = '';
+    // Attach a handler immediately: the job may fail before the readiness signal.
+    void finished.promise.catch(() => {});
+    const check = async () => {
+      try {
+        const res = await fetch(`${base}/api/jobs/${id}`, { headers });
+        if (!res.ok) throw new Error(`Job status returned ${res.status}`);
+        const { state } = await res.json() as { state: string };
+        if (state === 'cancelled') finished.resolve();
+        else if (state === 'failed' || state === 'succeeded') finished.reject(new Error(`Job ended ${state} instead of cancelled`));
+        if (state === 'running') {
+          const response = await fetch(`${base}/api/jobs/${id}/log`, { headers });
+          if (!response.ok) throw new Error(`Job log returned ${response.status}`);
+          lastLog = (await response.json() as { log: string }).log;
+          if (lastLog.includes('streamed output')) streamed.resolve();
+        }
+      } catch (error) { finished.reject(error); }
+    };
+    watcher = watch(join(root, 'projects/slipway/campaigns/followup/logs/jobs'), () => { void check(); });
+    logWatcher = watch(join(root, 'projects/slipway/campaigns/followup/logs/jobs', `${id}.log`), () => { void check(); });
+    await check();
+    await within(Promise.race([ready.promise, finished.promise.then(() => { throw new Error('Job cancelled before streaming'); })]), 'agent output');
+    try { await within(Promise.race([streamed.promise, finished.promise.then(() => { throw new Error('Job cancelled before log output'); })]), 'streamed job log'); }
+    catch (error) { throw new Error(`${error instanceof Error ? error.message : String(error)}; last log: ${lastLog}`); }
+    assert.equal((await fetch(`${base}/api/jobs/${id}/cancel`, { method: 'POST', headers })).status, 200);
+    await check();
+    await within(finished.promise, 'job cancellation');
+    watcher.close(); watcher = undefined;
+    logWatcher.close(); logWatcher = undefined;
     id = '';
   } finally {
-    if (id && cookie) await fetch(`${base}/api/jobs/${id}/cancel`, { method: 'POST', headers: { cookie, origin: base, 'x-requested-with': 'bstudio' } });
-    await new Promise<void>(resolve => dashboard.server.close(() => resolve()));
-    await new Promise<void>(resolve => signal.close(() => resolve()));
+    watcher?.close();
+    logWatcher?.close();
+    try {
+      if (id) {
+        const job = findJob(root, id);
+        for (const [pid, started] of [...(job.childPids ?? []).map(pid => [pid, job.childStarted?.[pid]] as const), ...(job.pid ? [[job.pid, job.processStarted] as const] : [])]) {
+          if (exactProcess(pid, started)) {
+            try { process.kill(process.platform === 'win32' ? pid : -pid, 'SIGKILL'); }
+            catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; }
+          }
+        }
+      }
+    } finally {
+      try { if (dashboard) { dashboard.server.closeAllConnections(); await new Promise<void>(resolve => dashboard!.server.close(() => resolve())); } }
+      finally { signal.closeAllConnections(); await new Promise<void>(resolve => signal.close(() => resolve())); }
+    }
   }
   const historyBefore = run('history', 'slipway/launch'); assert.doesNotMatch(historyBefore, /No snapshots/);
   run('project', 'rename', 'slipway', 'voyage');

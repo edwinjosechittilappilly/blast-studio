@@ -1,10 +1,10 @@
 # Dashboard
 
-Run `bstudio dashboard` and open the printed URL, or use `bstudio dashboard --open` to open it automatically. In a source checkout, run `npm install` and `npm run build:ui` first. The default port is 4848; use `bstudio dashboard --port 5000` to choose another if it is occupied. The server binds to `127.0.0.1` only. Stop the process to close it.
+Run `bstudio dashboard` and open the printed URL. In a source checkout, run `npm install` and `npm run build:ui` first. The default port is 4848; use `bstudio dashboard --port 5000` to choose another if it is occupied. The server binds to `127.0.0.1` only. Stop the process to close it.
 
 The printed URL contains a one-use token. Opening it exchanges the token for an HttpOnly, SameSite=Strict session cookie and redirects to the dashboard. Keep the URL private. Sessions last 12 hours with activity extending the expiry and survive server restarts. The signing key is stored in `<studio root>/.dashboard-key` with owner-only permissions. To invalidate existing sessions, stop all dashboard instances, delete the key, and restart the dashboard.
 
-An expired or unauthenticated browser session needs a fresh launch URL: run `bstudio dashboard` again. Campaign routes use `#/p/<project>/<campaign>/<platform>` and support refresh and browser navigation.
+An expired or unauthenticated browser session needs a fresh launch URL. Stop the existing dashboard and run `bstudio dashboard` again, or start another instance on an unused port with `--port`. Campaign routes use `#/p/<project>/<campaign>/<platform>` and support refresh and browser navigation.
 
 Use **New** in the header to create a project with shared evidence. Select a project in the library and choose **New campaign** to create its brief or run the full pipeline. The library supports search and sorting. Campaign tabs show the overview, destination posts and reviews, assets, actions, and export. Asset blockers appear on the overview and Assets tab. Use View for media previews and copy controls for post text, hooks, alt text and commands.
 

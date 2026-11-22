@@ -9,12 +9,14 @@ export async function collectNotesAndUrls(io: IO, add: AddEvidence, notes: strin
   for (const url of urls) add("URL", "claim", await fetchText(url, io), url);
 }
 
-export async function collectRepository(io: IO, add: AddEvidence, repo: string): Promise<void> {
-  const raw = repo === "local"
-    ? await io.run("git", ["log", "-1", "--format=%H%n%s%n%b"], { cwd: io.cwd })
-    : await io.run("gh", ["repo", "view", repo, "--json", "nameWithOwner,description,url"], { cwd: io.cwd });
-  add("Repository", undefined, raw, repo);
-  if (repo !== "local") {
+export async function collectRepository(io: IO, add: AddEvidence, repo: string, include: (title: string, source: string) => boolean = () => true): Promise<void> {
+  if (include("Repository", repo)) {
+    const raw = repo === "local"
+      ? await io.run("git", ["log", "-1", "--format=%H%n%s%n%b"], { cwd: io.cwd })
+      : await io.run("gh", ["repo", "view", repo, "--json", "nameWithOwner,description,url"], { cwd: io.cwd });
+    add("Repository", undefined, raw, repo);
+  }
+  if (repo !== "local" && include("Repository README", `https://github.com/${repo}#readme`)) {
     let readme: string | undefined;
     try {
       readme = await io.run("gh", ["api", `repos/${repo}/readme`, "-H", "Accept: application/vnd.github.raw"], { cwd: io.cwd });

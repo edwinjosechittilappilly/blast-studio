@@ -67,7 +67,13 @@ test("forcing a brief does not duplicate shared repository and URL evidence", as
   const { root, io } = setup();
   await project(["new", "acme", "--repo", "org/repo", "--url", "https://example.com/"], io);
   await brief(["acme/launch", "--idea", "Initial idea"], io);
+  const calls: string[] = [];
+  io.run = async (_cmd, args) => { calls.push(args.join(" ")); return args[0] === "api" ? "Other README" : '{"nameWithOwner":"other/repo"}'; };
+  io.fetch = async (input) => { calls.push(String(input)); return new Response("Other URL evidence", { headers: { "content-type": "text/plain" } }); };
   await brief(["acme/launch", "--force", "--repo", "org/repo", "--url", "https://example.com/", "--url", "https://example.org/", "--note", "Campaign note"], io);
+  assert.deepEqual(calls, ["https://example.org/"]);
+  assert.match(io.text(), /skip.*URL.*https:\/\/example\.com\//i);
+  assert.match(io.text(), /skip.*Repository.*org\/repo/i);
   const text = readFileSync(join(root, "projects/acme/campaigns/launch/brief.md"), "utf8");
   assert.deepEqual(
     parseBrief(text).map(section => section.title),
@@ -75,6 +81,37 @@ test("forcing a brief does not duplicate shared repository and URL evidence", as
   );
   assert.match(text, /Source: https:\/\/example\.org\//);
   assert.match(text, /Campaign note/);
+});
+
+test("brief fetches only missing repository sections and preserves distinct kinds and sources", async () => {
+  for (const sharedTitle of ["Repository", "Repository README"]) {
+    const { root, io } = setup();
+    await project(["new", "acme"], io);
+    const evidence = join(root, "projects/acme/evidence");
+    mkdirSync(evidence, { recursive: true });
+    const sharedSource = sharedTitle === "Repository" ? "org/repo" : "https://github.com/org/repo#readme";
+    writeFileSync(join(evidence, "sources.md"), `## [E1] ${sharedTitle}\n\nSource: ${sharedSource}\n\nShared section\n\n## [E2] Other kind\n\nSource: https://example.com/\n\nOther evidence\n`);
+    const calls: string[] = [];
+    io.run = async (_cmd, args) => { calls.push(args.join(" ")); return args[0] === "api" ? "Fetched README" : "Fetched repository"; };
+    io.fetch = async (input) => { calls.push(String(input)); return new Response("Fetched URL", { headers: { "content-type": "text/plain" } }); };
+    await brief(["acme/launch", "--repo", "org/repo", "--url", "https://example.com/"], io);
+    assert.deepEqual(calls, sharedTitle === "Repository"
+      ? ["https://example.com/", "api repos/org/repo/readme -H Accept: application/vnd.github.raw"]
+      : ["https://example.com/", "repo view org/repo --json nameWithOwner,description,url"]);
+    assert.match(io.text(), new RegExp(`skip.*${sharedTitle}`, "i"));
+    const sections = parseBrief(readFileSync(join(root, "projects/acme/campaigns/launch/brief.md"), "utf8"));
+    assert.deepEqual(sections.map(section => section.title).sort(), ["Other kind", "Repository", "Repository README", "URL"].sort());
+  }
+  const { root, io } = setup();
+  await project(["new", "acme", "--repo", "org/repo"], io);
+  const calls: string[] = [];
+  io.run = async (_cmd, args) => { calls.push(args.join(" ")); return "Distinct repository evidence"; };
+  await brief(["acme/launch", "--repo", "other/repo"], io);
+  assert.deepEqual(calls, [
+    "repo view other/repo --json nameWithOwner,description,url",
+    "api repos/other/repo/readme -H Accept: application/vnd.github.raw",
+  ]);
+  assert.equal(parseBrief(readFileSync(join(root, "projects/acme/campaigns/launch/brief.md"), "utf8")).length, 4);
 });
 
 test("shared evidence retains provenance, status and one outer untrusted fence", async () => {
