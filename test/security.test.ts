@@ -12,6 +12,7 @@ import { agentEnv, sandboxCommand } from '../src/agent-env.ts';
 import { spawnSync } from 'node:child_process';
 import { closeBrowser, renderHtml } from '../src/render/stills.ts';
 import { runTool } from '../src/render/ffmpeg.ts';
+import { run as renderPreview } from '../src/commands/render-preview.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 after(async () => { await closeBrowser(); });
@@ -31,17 +32,22 @@ test('maker and reviewer inherit only allowed environment and retain real HOME',
   assert.match(io.stderr.join('\n'), /CUSTOM_TOKEN/);
 });
 
-test('video tools receive temporary home and reject environment-printing tapes', async () => {
+test('provider keys are passed only for an API-billed role; publishing tokens remain forbidden', () => {
+  const io = fakeIO({ cwd: '/tmp', env: { OPENAI_API_KEY: 'openai', GEMINI_API_KEY: 'gemini', GH_TOKEN: 'github' } });
+  for (const key of ['OPENAI_API_KEY', 'GEMINI_API_KEY']) {
+    assert.throws(() => agentEnv(io, { temp: '/tmp', passEnv: [key] }), /Disallowed/);
+    assert.equal(agentEnv(io, { temp: '/tmp', billing: 'api', passEnv: [key] })[key], io.env[key]);
+  }
+  assert.throws(() => agentEnv(io, { temp: '/tmp', billing: 'api', passEnv: ['GH_TOKEN'] }), /Disallowed/);
+});
+
+test('video tools receive a temporary home without secrets', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-security-'));
   try {
     let env: Record<string, string | undefined> | undefined;
     const io = fakeIO({ cwd: dir, env: { HOME: '/real-home', PATH: '/bin', GH_TOKEN: 'secret', XDG_CONFIG_HOME: '/secret' }, run: async (_cmd, _args, opts) => { env = opts?.env; return ''; } });
     await runTool(io, 'hyperframes', 'hyperframes', []);
     assert.notEqual(env?.HOME, '/real-home'); assert.equal(env?.GH_TOKEN, undefined); assert.equal(env?.XDG_CONFIG_HOME, undefined);
-    for (const line of ['Type "env"', 'Type "printenv"', 'Type "echo $GH_TOKEN"', 'Env SECRET "printenv"']) {
-      writeFileSync(join(dir, 'demo.tape'), `${line}\n`);
-      await assert.rejects(runTool(io, 'vhs', 'vhs', ['demo.tape'], dir), /cannot print environment/);
-    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -51,10 +57,43 @@ test('OS sandbox denies reading the studio root and writes outside the workspace
   try {
     const io = fakeIO({ cwd: root, env: { HOME: process.env.HOME, PATH: process.env.PATH, BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml' } });
     const config = loadConfig(io), env = agentEnv(io, { temp });
-    const wrapped = sandboxCommand(io, config, work, temp, '/bin/sh', ['-c', `cat \"$1\" >/dev/null; echo $?; touch \"$2\" 2>/dev/null; echo $?`, 'sh', join(root, '.env'), join(root, 'write')]);
+    const outside = join(root, 'write'), secret = join(root, '.env');
+    const wrapped = sandboxCommand(io, config, work, temp, '/bin/sh', ['-c', 'echo x > "$1"; echo x 2>/dev/null; cat "$2"; touch "$3"; touch "$4"; touch "$5"', 'sh', join(work, 'ok'), secret, outside, join(process.env.HOME!, '.omp/agent/AGENTS.md'), join(process.env.HOME!, 'Library/Caches/ms-playwright')]);
     const result = spawnSync(wrapped.command, wrapped.args, { cwd: work, env, encoding: 'utf8' });
-    assert.equal(result.status, 0); assert.deepEqual(result.stdout.trim().split('\n'), ['1', '1']);
+    assert.equal(readFileSync(join(work, 'ok'), 'utf8'), 'x\n');
+    for (const target of [secret, outside, join(process.env.HOME!, '.omp/agent/AGENTS.md'), join(process.env.HOME!, 'Library/Caches/ms-playwright')]) {
+      assert.ok(result.stderr.split('\n').some(line => line.includes(target) && line.includes('Operation not permitted')), result.stderr);
+    }
+    assert.doesNotMatch(result.stderr, /\/dev\/null.*Operation not permitted/);
+    const render = sandboxCommand(io, config, work, temp, '/bin/cat', [secret], { render: true });
+    const denied = spawnSync(render.command, render.args, { cwd: work, env, encoding: 'utf8' });
+    assert.match(denied.stderr, /Operation not permitted/); assert.ok(denied.stderr.includes(secret));
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(work, { recursive: true, force: true }); rmSync(temp, { recursive: true, force: true }); }
+});
+
+test('preview permits neighboring files only inside a project asset', { timeout: 20000 }, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bstudio-preview-security-'));
+  try {
+    const asset = join(dir, 'projects/p/assets/a'), outside = join(dir, 'outside');
+    for (const path of [asset, outside]) {
+      mkdirSync(path, { recursive: true });
+      writeFileSync(join(path, 'red.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="red"/></svg>');
+      writeFileSync(join(path, 'index.html'), '<style>body{margin:0}</style><img src="red.svg">');
+      await renderPreview([join(path, 'index.html'), '--size', '20x20', '--out', join(path, 'result.png')], fakeIO({ cwd: dir }));
+    }
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage();
+      const pixel = async (file: string) => page.evaluate(async data => {
+        const image = new Image(); image.src = `data:image/png;base64,${data}`; await image.decode();
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 20;
+        const context = canvas.getContext('2d')!; context.drawImage(image, 0, 0);
+        return Array.from(context.getImageData(0, 0, 1, 1).data);
+      }, readFileSync(file).toString('base64'));
+      assert.deepEqual(await pixel(join(asset, 'result.png')), [255, 0, 0, 255]);
+      assert.notDeepEqual(await pixel(join(outside, 'result.png')), [255, 0, 0, 255]);
+    } finally { await browser.close(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('API-billed maker reserves and settles reported usage', async () => {

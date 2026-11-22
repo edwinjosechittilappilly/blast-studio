@@ -7,6 +7,10 @@ import { promisify } from "node:util";
 import { Resvg } from "@resvg/resvg-js";
 import { chromium } from "playwright";
 import type { Browser } from "playwright";
+import { agentEnv, sandboxCommand } from "../agent-env.ts";
+import { loadConfig } from "../config.ts";
+import type { IO } from "../io.ts";
+import type { StudioConfig } from "../types.ts";
 import { measureText } from "./metrics.ts";
 
 const exec = promisify(execFile);
@@ -76,28 +80,37 @@ export function renderSvg(svgPath: string, outPngs: { file: string; size: number
 }
 
 /** Render both SVG and PNG; `out` selects either artifact's basename. */
-export async function renderDiagram(sourcePath: string, out: string): Promise<{ svg: string; png: string }> {
+export async function renderDiagram(sourcePath: string, out: string, config?: StudioConfig, io?: IO): Promise<{ svg: string; png: string }> {
   const ext = extname(sourcePath).toLowerCase();
   if (!['.mmd', '.d2', '.json'].includes(ext)) throw new Error('Diagram source must be .mmd, .d2 or .json');
   const base = /\.(svg|png)$/i.test(out) ? out.slice(0, -4) : out;
   const svg = `${base}.svg`, png = `${base}.png`;
   mkdirSync(dirname(resolve(svg)), { recursive: true });
   const temp = mkdtempSync(join(tmpdir(), 'bstudio-diagram-'));
+  const toolIO = io ?? { cwd: process.cwd(), env: process.env, err: (message: string) => console.error(message) } as IO;
+  if (!config) {
+    try { config = loadConfig(toolIO); }
+    catch { config = { root: resolve(toolIO.env.HOME ?? temp, 'BlastStudio'), file: resolve(toolIO.env.HOME ?? temp, '.config/blast-studio/studio.yml'), agent: { sandbox: 'auto' } } as StudioConfig; }
+  }
+  const run = async (command: string, args: string[], extraReads: string[] = []) => {
+    const wrapped = sandboxCommand(toolIO, config!, dirname(resolve(svg)), temp, command, args, { render: true, readPaths: [resolve(sourcePath), ...extraReads] });
+    return exec(wrapped.command, wrapped.args, { timeout: 30000, env: agentEnv(toolIO, { temp, home: temp, minimal: true }) });
+  };
   try {
     if (ext === '.mmd') {
       const mmdc = fileURLToPath(new URL('../../node_modules/.bin/mmdc', import.meta.url));
-      const config = join(temp, 'puppeteer.json');
-      writeFileSync(config, JSON.stringify({ executablePath: chromium.executablePath(), args: ['--no-sandbox'] }));
+      const configPath = join(temp, 'puppeteer.json');
+      writeFileSync(configPath, JSON.stringify({ executablePath: chromium.executablePath(), pipe: true, args: ['--no-sandbox'] }));
       const mermaidConfig = join(temp, 'mermaid.json');
       writeFileSync(mermaidConfig, JSON.stringify({ htmlLabels: false, flowchart: { htmlLabels: false } }));
-      try { await exec(mmdc, ['-i', resolve(sourcePath), '-o', resolve(svg), '-p', config, '-c', mermaidConfig, '-b', 'white'], { timeout: 30000 }); }
+      try { await run(mmdc, ['-i', resolve(sourcePath), '-o', resolve(svg), '-p', configPath, '-c', mermaidConfig, '-b', 'white']); }
       catch (error) { throw new Error(`Mermaid rendering failed; install dependencies with npm install and Chromium with npx playwright install chromium: ${String(error)}`); }
     } else if (ext === '.json') {
       const script = fileURLToPath(new URL('../../../slipway/skills/arch-diagram/scripts/diagram.py', import.meta.url));
-      try { await exec('python3', [script, resolve(sourcePath), '-o', resolve(base), '--format', 'svg'], { timeout: 30000 }); }
+      try { await run('python3', [script, resolve(sourcePath), '-o', resolve(base), '--format', 'svg'], [script]); }
       catch (error) { throw new Error(`Architecture diagram rendering requires ../slipway/skills/arch-diagram/scripts/diagram.py: ${String(error)}`); }
     } else {
-      try { await exec('d2', [resolve(sourcePath), resolve(svg)], { timeout: 30000 }); }
+      try { await run('d2', [resolve(sourcePath), resolve(svg)]); }
       catch (error) { throw new Error(`D2 rendering failed; install D2 from https://d2lang.com/tour/install: ${String(error)}`); }
     }
     const rendered = new Resvg(readFileSync(svg)).render();

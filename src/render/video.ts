@@ -82,8 +82,7 @@ export async function renderVideo(assetDir: string, config: StudioConfig, io: IO
       if (isAbsolute(name) || relative(tapeDir, resolve(tapeDir, name)).startsWith("..") || ![".mp4", ".gif"].includes(extname(name).toLowerCase())) throw new UserError(`Unsafe or unsupported VHS Output: ${name}`);
     }
     if (new Set(names.map(name => basename(name))).size !== names.length) throw new UserError("VHS Output filenames must be unique");
-    io.err("Warning: VHS tapes execute terminal commands and may access the network; review demo.tape before rendering.");
-    await runTool(io, "vhs", "vhs", [basename(tape)], tapeDir);
+    await runTool(io, "vhs", "vhs", [basename(tape)], tapeDir, { config, workspace: assetDir });
     for (const name of names) {
       const from = resolve(tapeDir, name), target = join(out, basename(name));
       if (!existsSync(from)) throw new UserError(`VHS did not produce ${name}`);
@@ -124,7 +123,7 @@ export async function renderVideo(assetDir: string, config: StudioConfig, io: IO
         if (!/<\/body\s*>/i.test(html)) throw new UserError(`Composition source/${aspect}/index.html needs a closing body tag for captions`);
         writeFileSync(index, html.replace(/<\/body\s*>/i, `${captionScript(readFileSync(caption, "utf8"), aspect, config)}</body>`));
       }
-      await runTool(io, "hyperframes", hyperframes, ["render", project, "--output", raw, "--format", "mp4", "--workers", "1", "--refuse-outside-files"]);
+      await runTool(io, "hyperframes", hyperframes, ["render", project, "--output", raw, "--format", "mp4", "--workers", "1", "--refuse-outside-files"], undefined, { config, workspace: assetDir });
       await encodeVideo(raw, target, io, { captions: useFilter ? caption : undefined, voiceover: existsSync(voice) ? voice : undefined });
     } finally {
       rmSync(raw, { force: true });

@@ -14,7 +14,7 @@
 | `platforms` | `devto`, `linkedin`, `x`, `bluesky`, `mastodon`, `hn`, `reddit`, `github-discussion` | Enabled platform IDs; see [packs](platforms.md). |
 | `agent.command` | `[omp, -p]` | Authoring command and arguments. |
 | `agent.timeoutSeconds` | `900` | Authoring timeout. |
-| `agent.passEnv` | `[]` | Extra environment variable names passed to the agent (a warning is printed). Studio provider and publishing keys (`OPENAI_API_KEY`, `GEMINI_API_KEY`, Market Blaster destination keys, `GITHUB_TOKEN`, `GH_TOKEN`) are always refused. |
+| `agent.passEnv` | `[]` | Extra environment variable names passed to the agent (a warning is printed). `OPENAI_API_KEY` and `GEMINI_API_KEY` are allowed only for a role with `billing: api`; publishing keys, `GITHUB_TOKEN` and `GH_TOKEN` are always refused. |
 | `agent.sandbox` | `auto` | `auto` runs the agent under an OS sandbox (`sandbox-exec` on macOS, `bwrap` on Linux when installed); `off` disables it. |
 | `agent.billing` | `subscription` | `subscription` (the CLI's own login; runs are logged at $0) or `api` (each run reserves `maxUsdPerRun` from the budget and settles reported usage). |
 | `agent.maxUsdPerRun` | unset | Required when `billing: api`; the per-run reservation. |
@@ -40,8 +40,12 @@ Provider credentials can be set in the shell or `<studio.root>/.env`; a nonempty
 
 ## Agent isolation
 
-The maker and reviewer run in a temporary workspace with your real `HOME` (agent CLIs need their login) and an allowlisted environment. With `agent.sandbox: auto` the OS sandbox also denies reading the studio root (projects, `.env`, ledger) and writing outside the workspace and temp directory. Limits:
+The maker and reviewer use temporary workspaces and an allowlisted environment with the real `HOME`. With `agent.sandbox: auto`, the sandbox denies reading the studio root and other home files by default. It permits reads of `~/.omp`, `~/.claude`, `~/.codex`, `~/.config/omp`, `~/.local/bin`, `~/.local/share`, `~/.nvm` and `~/.npm-global`, as well as files outside the home directory. On macOS, home file metadata remains visible for path resolution.
+
+Writes are limited to the workspace and temporary directory, device streams `/dev/null`, `/dev/tty` and `/dev/fd/*`, plus `~/.omp/agent/sessions` and the OMP agent, history, models and skill-descriptions SQLite database files (including WAL and shared-memory files). OMP settings, hooks, instructions and skills, Claude and Codex configuration, and browser caches are not writable.
+
+VHS, HyperFrames, Mermaid, D2 and the Python diagram tool use a minimal environment and a separate sandbox denying external IP network access. On macOS, Unix sockets remain available, and VHS and HyperFrames may use loopback because they run local terminal and preview servers; an untrusted tape could contact other local services. On Linux, bubblewrap provides loopback in a separate network namespace. The asset output and temporary directories (including Chromium's temporary socket directories) are writable. The studio root is hidden except for the asset being rendered. Rendering can read the installed Blast Studio package, its ancestor `package.json` files, and the local Playwright Chromium installation.
 
 - **Keychain stays reachable.** The sandbox blocks file paths, not macOS Keychain services, because agent CLIs authenticate through it. A Keychain item you allow for "always" (including the `blast-studio` service) can be read by any process running as you. Click "Allow" (once) rather than "Always Allow" for Blast Studio items if that matters to you.
-- **Other same-user files** outside the studio root (for example other projects in your home directory) are not hidden from the agent.
-- **Linux without `bwrap`** runs with a warning and only the workspace and environment boundaries.
+- **Agent network access remains enabled** for model API calls. Files outside the home directory are not generally hidden.
+- **Linux without usable `bwrap`** runs with a warning and only the workspace and environment boundaries; rendering tools then also lack OS network isolation.

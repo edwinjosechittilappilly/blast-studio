@@ -1,12 +1,16 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, realpathSync, statSync } from 'node:fs';
-import { delimiter, join, resolve } from 'node:path';
+import { delimiter, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import type { IO } from './io.ts';
 import { UserError, type Env, type StudioConfig } from './types.ts';
-import { recordAgentRun, reserveAgentRun, settleAgentRun } from './budget/ledger.ts';
-const protectedEnv = new Set(['DEV_API_KEY', 'HASHNODE_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'BLUESKY_IDENTIFIER', 'BLUESKY_APP_PASSWORD', 'BLUESKY_HOST', 'MASTODON_TOKEN', 'MASTODON_HOST', 'LINKEDIN_ACCESS_TOKEN', 'LINKEDIN_CLIENT_ID', 'LINKEDIN_CLIENT_SECRET', 'LINKEDIN_TOKEN_ISSUED', 'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET', 'NOSTR_PRIVATE_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY']);
+import { parseAgentOutput, recordAgentRun, reserveAgentRun, settleAgentRun } from './budget/ledger.ts';
+const protectedEnv = new Set(['DEV_API_KEY', 'HASHNODE_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'BLUESKY_IDENTIFIER', 'BLUESKY_APP_PASSWORD', 'BLUESKY_HOST', 'MASTODON_TOKEN', 'MASTODON_HOST', 'LINKEDIN_ACCESS_TOKEN', 'LINKEDIN_CLIENT_ID', 'LINKEDIN_CLIENT_SECRET', 'LINKEDIN_TOKEN_ISSUED', 'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET', 'NOSTR_PRIVATE_KEY']);
+const providerKeys = new Set(['GEMINI_API_KEY', 'OPENAI_API_KEY']);
 
 /** Build a subprocess environment without inheriting arbitrary credentials. */
-export function agentEnv(io: IO, options: { temp: string; home?: string; bin?: string; passEnv?: string[]; minimal?: boolean }): Env {
+export function agentEnv(io: IO, options: { temp: string; home?: string; bin?: string; passEnv?: string[]; minimal?: boolean; billing?: 'subscription' | 'api' }): Env {
   const env: Env = { PATH: io.env.PATH ?? '/usr/bin:/bin', HOME: options.home ?? io.env.HOME ?? options.temp, TMPDIR: options.temp };
   if (options.bin) env.PATH = `${options.bin}${process.platform === 'win32' ? ';' : ':'}${env.PATH}`;
   for (const [key, value] of Object.entries(io.env)) {
@@ -14,7 +18,7 @@ export function agentEnv(io: IO, options: { temp: string; home?: string; bin?: s
   }
   const passed: string[] = [];
   for (const key of new Set(options.passEnv ?? [])) {
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || ['PATH', 'HOME', 'TMPDIR'].includes(key.toUpperCase()) || protectedEnv.has(key.toUpperCase())) throw new UserError(`Disallowed agent environment variable: ${key}`);
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || ['PATH', 'HOME', 'TMPDIR'].includes(key.toUpperCase()) || protectedEnv.has(key.toUpperCase()) || (providerKeys.has(key.toUpperCase()) && options.billing !== 'api')) throw new UserError(`Disallowed agent environment variable: ${key}`);
     if (io.env[key] !== undefined) { env[key] = io.env[key]; passed.push(key); }
   }
   if (passed.length) io.err(`Warning: explicitly passing environment variables to agent: ${passed.join(', ')}`);
@@ -22,28 +26,63 @@ export function agentEnv(io: IO, options: { temp: string; home?: string; bin?: s
 }
 
 let warnedSandbox = false;
-/** Wrap agent processes in the OS sandbox where available. */
-export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, temp: string, command: string, args: string[]): { command: string; args: string[] } {
-  if (config.agent.sandbox === 'off') return { command, args };
+let bwrapProbe: { path: string; available: boolean } | undefined;
+/** Wrap subprocesses in the OS sandbox where available. */
+export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, temp: string, command: string, args: string[], options: { render?: boolean; loopback?: boolean; readPaths?: string[] } = {}): { command: string; args: string[] } {
+  if (!options.render && config.agent.sandbox === 'off') return { command, args };
   const home = io.env.HOME;
-  const hidden = [config.root, config.file, ...(home ? [join(home, '.ssh'), join(home, '.aws'), join(home, '.config/gh')] : []), ...(io.env.XDG_CONFIG_HOME ? [join(io.env.XDG_CONFIG_HOME, 'gh')] : [])];
   const canonical = (path: string) => { try { return realpathSync(path); } catch { return resolve(path); } };
-  const writable = [workspace, temp, ...(home ? ['.omp', '.claude', '.codex', 'Library/Caches'].map(p => join(home, p)) : [])].map(canonical);
+  const writable = [workspace, temp].map(canonical);
+  const readable = home && !options.render ? ['.omp', '.claude', '.codex', '.local/bin', '.local/share', '.nvm', '.npm-global', '.config/omp'].map(p => canonical(join(home, p))) : home ? ['.local/bin', '.local/share', '.nvm', '.npm-global', 'Library/Caches/ms-playwright'].map(p => canonical(join(home, p))) : [];
+  if (options.render) readable.push(canonical(fileURLToPath(new URL('..', import.meta.url))));
+  const packageMetadata: string[] = [];
+  if (options.render) {
+    let dir = canonical(fileURLToPath(new URL('..', import.meta.url)));
+    while (dir !== dirname(dir)) { packageMetadata.push(join(dir, 'package.json')); dir = dirname(dir); }
+  }
+  const readPaths = (options.readPaths ?? []).map(canonical);
+  const stateDirs = home && !options.render ? [canonical(join(home, '.omp/agent/sessions'))] : [];
+  const stateFiles = home && !options.render ? ['agent.db', 'agent.db-wal', 'agent.db-shm', 'history.db', 'history.db-wal', 'history.db-shm', 'models.db', 'models.db-wal', 'models.db-shm', 'skill-descriptions.db', 'skill-descriptions.db-wal', 'skill-descriptions.db-shm'].map(p => canonical(join(home, '.omp/agent', p))) : [];
   if (process.platform === 'darwin') {
     const profile = ['(version 1)', '(allow default)', '(deny file-write*)',
-      ...writable.map(p => `(allow file-write* (subpath ${JSON.stringify(p)}))`),
-      ...hidden.map(p => `(deny file-read* file-write* (subpath ${JSON.stringify(canonical(p))}))`)].join('\n');
+      ...(options.render ? [tmpdir(), '/tmp'].map(p => `(allow file-write* (regex #${JSON.stringify(`^${canonical(p).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/[.]?com[.]google[.](Chrome|chrome[.]for[.]testing)[.]`)}))`) : []),
+      '(allow file-write* (literal "/dev/null") (literal "/dev/tty") (regex #"^/dev/fd/"))',
+      ...(home ? [`(deny file-read* (subpath ${JSON.stringify(canonical(home))}))`] : []),
+      ...(home ? [`(allow file-read-metadata (subpath ${JSON.stringify(canonical(home))}))`] : []),
+      ...packageMetadata.map(p => `(allow file-read* (literal ${JSON.stringify(p)}))`),
+      ...readable.map(p => `(allow file-read* (subpath ${JSON.stringify(p)}))`),
+      ...stateDirs.map(p => `(allow file-write* (subpath ${JSON.stringify(p)}))`),
+      ...stateFiles.map(p => `(allow file-write* (literal ${JSON.stringify(p)}))`),
+      ...[config.root, config.file].map(p => `(deny file-read* file-write* (subpath ${JSON.stringify(canonical(p))}))`),
+      ...readPaths.map(p => `(allow file-read* (literal ${JSON.stringify(p)}))`),
+      ...writable.map(p => `(allow file-read* file-write* (subpath ${JSON.stringify(p)}))`),
+      ...(options.render ? ['(deny network*)', '(allow network* (local unix-socket))', ...(options.loopback ? ['(allow network-bind (local ip "localhost:*"))', '(allow network-inbound (local ip "localhost:*"))', '(allow network-outbound (remote ip "localhost:*"))'] : [])] : [])].join('\n');
     return { command: '/usr/bin/sandbox-exec', args: ['-p', profile, command, ...args] };
   }
   if (process.platform === 'linux') {
     const bwrap = (io.env.PATH ?? '/usr/bin:/bin').split(delimiter).map(p => join(p, 'bwrap')).find(existsSync);
-    if (bwrap) {
-      const mounts = ['--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'];
-      for (const path of writable) if (existsSync(path)) mounts.push('--bind', path, path);
-      for (const path of hidden.map(canonical)) if (existsSync(path)) mounts.push(...(statSync(path).isDirectory() ? ['--tmpfs', path] : ['--ro-bind', '/dev/null', path]));
+    if (bwrap && (!bwrapProbe || bwrapProbe.path !== bwrap)) bwrapProbe = { path: bwrap, available: spawnSync(bwrap, ['--ro-bind', '/', '/', '--', '/bin/true'], { stdio: 'ignore' }).status === 0 };
+    // Bubblewrap brings up loopback in the isolated network namespace for local renderer servers.
+    if (bwrap && bwrapProbe?.available) {
+      const mounts = ['--unshare-pid', '--die-with-parent', ...(options.render ? ['--unshare-net'] : []), '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'];
+      if (home && existsSync(home)) mounts.push('--tmpfs', canonical(home));
+      const bind = (path: string, write: boolean) => {
+        if (!existsSync(path)) return;
+        if (home && path.startsWith(canonical(home) + '/')) {
+          const parents: string[] = []; let dir = dirname(path);
+          while (dir !== canonical(home) && dir.startsWith(canonical(home) + '/')) { parents.unshift(dir); dir = dirname(dir); }
+          for (const parent of parents) mounts.push('--dir', parent);
+        }
+        mounts.push(write ? '--bind' : '--ro-bind', path, path);
+      };
+      for (const path of readable) bind(path, false);
+      for (const path of [...stateDirs, ...stateFiles]) bind(path, true);
+      for (const path of [config.root, config.file].map(canonical)) if (existsSync(path)) mounts.push(...(statSync(path).isDirectory() ? ['--tmpfs', path] : ['--ro-bind', '/dev/null', path]));
+      for (const path of readPaths) bind(path, false);
+      for (const path of writable) bind(path, true);
       return { command: bwrap, args: [...mounts, '--', command, ...args] };
     }
-    if (!warnedSandbox) { io.err('Warning: bwrap is unavailable; agent is running without an OS sandbox.'); warnedSandbox = true; }
+    if (!warnedSandbox) { io.err('Warning: bwrap is unavailable or unusable; process is running without an OS sandbox.'); warnedSandbox = true; }
   }
   return { command, args };
 }
@@ -65,13 +104,8 @@ export async function runBilledAgent(io: IO, config: StudioConfig, settings: { b
     return report;
   } finally {
     if (id) {
-      let usd = maxUsd!, usage: unknown;
-      try {
-        const value = JSON.parse(report) as { total_cost_usd?: unknown; cost_usd?: unknown; usage?: unknown };
-        const cost = value.total_cost_usd ?? value.cost_usd;
-        if (typeof cost === 'number' && Number.isFinite(cost) && cost >= 0) usd = cost;
-        usage = value.usage;
-      } catch { /* no structured usage; retain the reservation */ }
+      const parsed = parseAgentOutput(report);
+      const usd = parsed.usd ?? maxUsd!, usage = parsed.usage;
       await settleAgentRun(config, id, { usd, usage });
     } else await recordAgentRun(config, { model, ms: Date.now() - started, usd: null, projectSlug });
   }

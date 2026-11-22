@@ -26,7 +26,7 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
     const shim = join(bin, 'bstudio');
     const cli = fileURLToPath(new URL('../bin/bstudio.mjs', import.meta.url));
     writeFileSync(shim, `#!/bin/sh\nif [ "$1" != render-preview ]; then echo 'Only render-preview is available' >&2; exit 1; fi\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(cli)} "$@"\n`); chmodSync(shim, 0o755);
-    const env = agentEnv(io, { temp, bin, passEnv: [...(config.agent.passEnv ?? []), ...passEnv] });
+    const env = agentEnv(io, { temp, bin, billing: config.agent.billing, passEnv: [...(config.agent.passEnv ?? []), ...passEnv] });
     for (let attempt = 0; attempt < 2; attempt++) {
       const report = await runBilledAgent(io, config, config.agent, basename(projectDir), config.agent.command, prompt, dir, temp, env, timeoutMs);
       if (report.trim()) io.out(report.trim());

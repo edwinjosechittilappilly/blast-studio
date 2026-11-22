@@ -1,5 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { dirname, extname, resolve } from 'node:path';
+import { readFileSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 import type { Command } from '../io.ts';
@@ -16,7 +17,14 @@ export const run: Command = async (args, io) => {
     const html = readFileSync(input, 'utf8');
     const base = pathToFileURL(`${dirname(input)}/`).href;
     const withBase = /<head(?:\s[^>]*)?>/i.test(html) ? html.replace(/<head(?:\s[^>]*)?>/i, `$&<base href="${base}">`) : `<base href="${base}">${html}`;
-    try { await renderHtml({ html: withBase, width: +match[1], height: +match[2], out, pdf: extname(out).toLowerCase() === '.pdf', assetDir: dirname(input) }); }
+    const realInput = realpathSync(input), parts = realInput.split(sep);
+    const assets = parts.lastIndexOf('assets');
+    const assetDir = assets >= 2 && parts[assets - 2] === 'projects' && parts.length > assets + 2
+      ? parts.slice(0, assets + 2).join(sep) || sep : undefined;
+    const tempRelative = relative(realpathSync(tmpdir()), realInput);
+    const workspace = !isAbsolute(tempRelative) && !tempRelative.startsWith(`..${sep}`) && /^bstudio-agent-[^/\\]+$/.test(tempRelative.split(sep)[0])
+      ? join(realpathSync(tmpdir()), tempRelative.split(sep)[0]) : undefined;
+    try { await renderHtml({ html: withBase, width: +match[1], height: +match[2], out, pdf: extname(out).toLowerCase() === '.pdf', assetDir: assetDir ?? workspace }); }
     finally { await closeBrowser(); }
   } else if (ext === '.svg') {
     renderSvg(input, [{ file: out, size: +match[1] }]);
