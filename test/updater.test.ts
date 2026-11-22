@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, rmdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { check, extractText, repoRoot } from '../src/updater/check.ts';
@@ -36,6 +36,55 @@ test('checks snapshots, selector, report, failures and git paths', async () => {
   assert.match(called, /path=some\+file/); assert.match(called, /sha=main/);
   assert.equal(extractText('<body><article><p class="pick">one <b>two</b></p></article></body>', '.pick'), 'one two');
   assert.equal(extractText('<body><div data-id="yes">fine</div></body>', '[data-id=yes]'), 'fine');
+});
+
+test('source checks write reports in the studio rather than the installation', async () => {
+  const root = tempStudio();
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') }, fetch: async () => new Response('<main id="content">new text</main>') });
+  const result = await check(io, { sources: [source], packs, date: '2098-12-31' });
+  assert.equal(result.code, 1);
+  assert.match(readFileSync(join(root, 'updates/2098-12-31.md'), 'utf8'), /URL: https:\/\/example.org\/page/);
+  assert.equal(existsSync(join(root, 'platforms/snapshots/s.txt')), false);
+});
+
+test('read-only source checks work without a studio config', async () => {
+  const root = tempStudio(), updates = join(repoRoot, 'updates'), existed = existsSync(updates), date = '9998-12-30';
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'missing.yml') }, fetch: async () => new Response('<main id="content">new text</main>') });
+  try {
+    const result = await check(io, { sources: [source], packs, date });
+    assert.equal(result.results[0].status, 'new');
+    assert.match(readFileSync(join(updates, `${date}.md`), 'utf8'), /URL: https:\/\/example.org\/page/);
+    await assert.rejects(check(io, { sources: [source], packs, date, write: true }), /Run bstudio init first/);
+    writeFileSync(join(root, 'invalid.yml'), 'agent: { command: [] }');
+    await assert.rejects(check(fakeIO({ ...io, env: { BSTUDIO_CONFIG: join(root, 'invalid.yml') } }), { sources: [source], packs, date }), /agent.command/);
+  } finally {
+    for (const ext of ['md', 'json']) rmSync(join(updates, `${date}.${ext}`), { force: true });
+    if (!existed && existsSync(updates) && readdirSync(updates).length === 0) rmdirSync(updates);
+  }
+});
+
+test('propose selects the most recently written report on equal dates', async () => {
+  const root = tempStudio(), updates = join(repoRoot, 'updates'), existed = existsSync(updates), date = '9998-12-31';
+  const studioUpdates = join(root, 'updates'), checkoutReport = join(updates, `${date}.json`), studioReport = join(studioUpdates, `${date}.json`);
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root } });
+  mkdirSync(updates, { recursive: true }); mkdirSync(studioUpdates);
+  try {
+    writeFileSync(studioReport, JSON.stringify([{ id: 's', status: 'unchanged', fields: [] }]));
+    writeFileSync(checkoutReport, JSON.stringify([{ id: 's', status: 'changed', fields: [] }]));
+    utimesSync(studioReport, 1000, 1000); utimesSync(checkoutReport, 2000, 2000);
+    await propose(io);
+    assert.match(io.text(), /no proposal needed/);
+    await assert.rejects(propose(io, { root }), /Latest report has no changed sources/);
+    utimesSync(studioReport, 3000, 3000);
+    await assert.rejects(propose(io), /Latest report has no changed sources/);
+    writeFileSync(join(studioUpdates, '9999-01-01.json'), JSON.stringify([{ id: 's', status: 'unchanged', fields: [] }]));
+    utimesSync(checkoutReport, 4000, 4000);
+    utimesSync(join(studioUpdates, '9999-01-01.json'), 500, 500);
+    await assert.rejects(propose(io), /Latest report has no changed sources/);
+  } finally {
+    rmSync(checkoutReport, { force: true });
+    if (!existed && readdirSync(updates).length === 0) rmdirSync(updates);
+  }
 });
 
 test('propose ignores changes with no governed fields', async () => {

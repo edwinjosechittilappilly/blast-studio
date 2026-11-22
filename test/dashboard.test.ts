@@ -32,6 +32,17 @@ function fixture() {
 async function raw(port: number, path: string, host: string, cookie = '') {
   return await new Promise<number>((resolve, reject) => { const req = request({ host: '127.0.0.1', port, path, headers: { Host: host, cookie } }, res => { res.resume(); resolve(res.statusCode ?? 0); }); req.on('error', reject); req.end(); });
 }
+test('credential status requires authentication and never exposes values', async t => {
+  const root = tempStudio({ '.env': 'OPENAI_API_KEY=dotenv-secret\n' });
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml'), GEMINI_API_KEY: 'shell-secret' }, keychain: () => 'keychain-secret' });
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  assert.equal((await fetch(`http://127.0.0.1:${started.port}/api/secrets/status`)).status, 401);
+  const login = await fetch(started.url, { redirect: 'manual' });
+  const response = await fetch(`http://127.0.0.1:${started.port}/api/secrets/status`, { headers: { cookie: login.headers.get('set-cookie')! } });
+  const text = await response.text();
+  assert.deepEqual(JSON.parse(text), { GEMINI_API_KEY: { set: true, source: 'env' }, OPENAI_API_KEY: { set: true, source: '.env' } });
+  assert.doesNotMatch(text, /secret/);
+});
 test('library and status derive live project data', async () => {
   const { root, io } = fixture(), config = loadConfig(io);
   assert.equal(loadLibrary(config, 'HELLO')[0].slug, 'acme/launch');
@@ -95,6 +106,58 @@ test('library updatedAt tolerates entries removed during traversal', t => {
     syncBuiltinESMExports();
   }
 });
+test('project API includes empty projects and exposes evidence metadata without bodies', async t => {
+  const { root, io } = fixture();
+  mkdirSync(join(root, 'projects/empty/evidence'), { recursive: true });
+  writeFileSync(join(root, 'projects/empty/project.yml'), 'name: Empty\ncreatedAt: 2025-01-01\nlinks:\n  repository: https://github.com/example/repo\n');
+  writeFileSync(join(root, 'projects/empty/evidence/sources.md'), '## [E1] URL\n\nSource: https://example.com\n\n```untrusted\nPrivate body\n## [E2] Fake heading\n```\n');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const base = `http://127.0.0.1:${started.port}`;
+  assert.equal((await fetch(`${base}/api/projects`)).status, 401);
+  const exchange = await fetch(started.url, { redirect: 'manual' }), headers = { cookie: exchange.headers.get('set-cookie')! };
+  const projects = await (await fetch(`${base}/api/projects`, { headers })).json() as { id: string; campaigns: { id: string }[] }[];
+  assert.deepEqual(projects.find(project => project.id === 'empty')?.campaigns, []);
+  assert.equal(projects.find(project => project.id === 'acme')?.campaigns[0].id, 'launch');
+  const response = await fetch(`${base}/api/projects/empty`, { headers });
+  const data = await response.json() as { repo: string; evidence: { title: string; source: string }[] };
+  assert.equal(data.repo, 'https://github.com/example/repo');
+  assert.deepEqual(data.evidence, [{ title: 'URL', source: 'https://example.com' }]);
+  assert.doesNotMatch(JSON.stringify(data), /Private body|Fake heading/);
+  assert.equal((await fetch(`${base}/api/projects/missing`, { headers })).status, 404);
+  assert.equal((await fetch(`${base}/api/projects/INVALID`, { headers })).status, 400);
+});
+test('export history downloads only authenticated contained zip entries', async t => {
+  const { root, io } = fixture();
+  const history = join(root, 'projects/acme/campaigns/launch/export/2025-01-02T03-04-05-000Z');
+  mkdirSync(history, { recursive: true });
+  writeFileSync(join(history, 'acme--launch.campaign.zip'), 'zip content');
+  writeFileSync(join(history, 'secret.txt'), 'secret');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const base = `http://127.0.0.1:${started.port}`, path = '/api/campaigns/acme/launch/exports';
+  assert.equal((await fetch(base + path)).status, 401);
+  const exchange = await fetch(started.url, { redirect: 'manual' }), cookie = exchange.headers.get('set-cookie')!;
+  const headers = { cookie };
+  const entries = await (await fetch(base + path, { headers })).json() as { name: string; kind: string }[];
+  assert.equal(entries.length, 1); assert.equal(entries[0].kind, 'zip');
+  const downloaded = await fetch(`${base}${path}/${encodeURIComponent(entries[0].name)}`, { headers });
+  assert.equal(downloaded.status, 200); assert.match(downloaded.headers.get('content-disposition')!, /^attachment;/);
+  assert.equal(await downloaded.text(), 'zip content');
+  assert.equal((await fetch(`${base}${path}/${encodeURIComponent('2025-01-02T03-04-05-000Z/secret.txt')}`, { headers })).status, 404);
+  unlinkSync(join(history, 'acme--launch.campaign.zip'));
+  const outside = join(root, 'outside.zip'); writeFileSync(outside, 'outside');
+  symlinkSync(outside, join(history, 'acme--launch.campaign.zip'));
+  assert.deepEqual(await (await fetch(base + path, { headers })).json(), []);
+  assert.equal((await fetch(`${base}${path}/${encodeURIComponent(entries[0].name)}`, { headers })).status, 404);
+});
+test('snapshot history requires a session and returns version metadata', async t => {
+  const { root, io } = fixture(), dir = join(root, 'projects/acme/campaigns/launch/history/3-make-2025-01-02T03-04-05.000Z');
+  mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, 'plan.yml'), 'test');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const base = `http://127.0.0.1:${started.port}`, path = '/api/campaigns/acme/launch/history';
+  assert.equal((await fetch(base + path)).status, 401);
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  assert.deepEqual(await (await fetch(base + path, { headers: { cookie } })).json(), [{ n: 3, step: 'make', time: '2025-01-02T03:04:05.000Z', size: 4 }]);
+});
 test('dashboard authenticates, contains media and validates settings', async t => {
   const { root, io } = fixture(); const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
   const base = `http://127.0.0.1:${started.port}`;
@@ -117,6 +180,11 @@ test('dashboard authenticates, contains media and validates settings', async t =
   assert.match(readFileSync(join(root, 'studio.yml'), 'utf8'), /# keep this comment/); assert.equal(loadConfig(io).budget.monthlyUsd, 25);
   assert.equal((await fetch(base + '/api/providers', { method: 'PUT', headers, body: JSON.stringify({ images: 'bogus', voice: 'none' }) })).status, 400);
   assert.equal((await fetch(base + '/api/providers', { method: 'PUT', headers, body: JSON.stringify({ images: 'gemini', voice: 'openai' }) })).status, 200);
+  assert.equal((await fetch(base + '/api/providers', { method: 'PUT', headers, body: JSON.stringify({ images: 'gemini', voice: 'openai', allowUpload: 'yes' }) })).status, 400);
+  assert.equal((await fetch(base + '/api/providers', { method: 'PUT', headers, body: JSON.stringify({ images: 'gemini', voice: 'openai', allowUpload: true }) })).status, 200);
+  assert.equal((await (await fetch(base + '/api/budget', { headers })).json()).providers.allowUpload, true);
+  assert.equal(loadConfig(io).providers.allowUpload, true);
+  assert.match(readFileSync(join(root, 'studio.yml'), 'utf8'), /# keep this comment/);
   assert.equal((await fetch(base + '/api/project/acme%2Flaunch', { method: 'PUT', headers, body: '{}' })).status, 404);
   symlinkSync(join(root, 'studio.yml'), join(root, 'projects/acme/campaigns/launch/leak'));
   assert.equal((await fetch(base + '/media/acme/launch/leak', { headers })).status, 403);

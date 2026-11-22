@@ -10,7 +10,7 @@ import { run as mark } from '../src/commands/mark.ts';
 import { run as accept, confirm } from '../src/commands/accept.ts';
 import { run as library } from '../src/commands/library.ts';
 import { run as status } from '../src/commands/status.ts';
-import { listExports, loadLibrary, projectDetails } from '../src/library.ts';
+import { listExports, loadLibrary, projectDetails, projectReview } from '../src/library.ts';
 import { loadConfig } from '../src/config.ts';
 import { mediaContentHash, reviewHash } from '../src/review-hash.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
@@ -38,6 +38,38 @@ function marketBlasterDir(): string {
 
 test('shared review hash vector', () => {
   assert.equal(reviewHash({ title: 'T', body: '  Hello\n', media: [{ path: 'a/img.png', alt: ' Alt ' }] }), '5d5491c0f7ae06bef68e9dabfd55f2e6c8152f8e6fdb96cd24d294cd203bc977');
+});
+
+test('local export ignores configured targets and rejects import options', async () => {
+  const f = fixture();
+  writeFileSync(join(f.root, 'projects/acme/project.yml'), 'marketBlaster:\n  project: /missing-market-blaster\n');
+  await exportCommand(['acme/demo', '--local'], f.io);
+  assert.equal(listExports(loadConfig(f.io), 'acme/demo')[0].kind, 'zip');
+  await assert.rejects(exportCommand(['acme/demo', '--local', '--mb', '/tmp'], f.io), /usage:/);
+  await assert.rejects(exportCommand(['acme/demo', '--local', '--force'], f.io), /usage:/);
+});
+test('home-relative export override expands and dashboard reports its configured target', async () => {
+  const f = fixture(), target = join(f.root, 'mb'); mkdirSync(target);
+  f.io.env.HOME = f.root;
+  const calls: string[] = []; f.io.run = async (_cmd, _args, options) => { calls.push(options?.cwd || ''); return ''; };
+  await exportCommand(['acme/demo', '--mb', '~/mb'], f.io);
+  assert.deepEqual(calls, [target, target]);
+  assert.equal(listExports(loadConfig(f.io), 'acme/demo')[0].target, target);
+  writeFileSync(join(f.root, 'projects/acme/project.yml'), 'marketBlaster:\n  project: ~/mb\n');
+  const project = projectReview(loadConfig(f.io), 'acme/demo', { cwd: f.root, home: f.root });
+  assert.equal(project.mbTarget, target); assert.equal(project.platforms.bluesky.delivery, 'marketBlaster');
+});
+test('dashboard review freshness follows post and media changes', () => {
+  const f = fixture(), config = loadConfig(f.io);
+  const stale = () => projectReview(config, 'acme/demo').reviews.find(review => review.platform === 'bluesky')?.stale;
+  assert.equal(stale(), false);
+  f.review.postHash = 'stale'; f.save();
+  assert.equal(stale(), true);
+  f.review.postHash = reviewHash({ title: 'T', body: 'Hello', media: [{ path: 'image.png', alt: 'Alt' }] }); f.save();
+  writeFileSync(join(f.project, 'assets/a/out/image.png'), 'changed');
+  assert.equal(stale(), true);
+  unlinkSync(join(f.project, 'assets/a/out/image.png'));
+  assert.equal(stale(), true);
 });
 
 test('refuses nonpassing, failed gates and stale reviews', async () => {

@@ -44,8 +44,8 @@ test('preferred hook uses its text, combines evidence, and retains unmatched com
   const content = section.children[1].children[1].children[0];
   assert.equal(content.children.filter(child => child.textContent === 'Preferred').length, 1);
   assert.deepEqual(content.children.slice(2).map(child => child.textContent), ['Clearer', 'More specific']);
-  assert.deepEqual(section.children.slice(2).map(child => child.textContent), ['No preference', 'Unmatched']);
-  assert.equal(hookComparison([], [{ preferred: null, evidence: 'No hooks' }]).children[2].textContent, 'No hooks');
+  assert.deepEqual(section.children.slice(2).map(child => child.textContent), ['No preferred hook — No preference', 'Preferred: A different hook — Unmatched']);
+  assert.equal(hookComparison([], [{ preferred: null, evidence: 'No hooks' }]).children[2].textContent, 'No preferred hook — No hooks');
 });
 
 test('rubric scores carry distinct status classes and readable values', () => {

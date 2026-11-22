@@ -10,7 +10,7 @@ import { buildOperation, campaignRef } from '../src/jobs/registry.ts';
 import { acquireCampaignLock, campaignDirectory, campaignLockStatus, cancelJob, findJob, finishSpawnedJob, jobLog, jobLogTail, JobConflict, JobNotFound, JobNotRunning, listJobs, processGroupRunning, startCliJob, startJob } from '../src/jobs/runner.ts';
 import { processStarted } from '../src/jobs/process.ts';
 import { saveSecret } from '../src/jobs/secrets.ts';
-import { main, realIO } from '../src/cli.ts';
+import { main, realIO, withCampaignLock } from '../src/cli.ts';
 import { run as jobsCommand } from '../src/commands/jobs.ts';
 import { runBilledAgent } from '../src/agent-env.ts';
 import { loadConfig } from '../src/config.ts';
@@ -25,6 +25,8 @@ test('registry validates campaign addresses and constructs an argument vector', 
   assert.throws(() => buildOperation('sh -c', { campaign: 'acme/launch' }));
   assert.throws(() => buildOperation('render', { campaign: 'acme/launch', shell: 'touch /tmp/x' }));
   assert.throws(() => buildOperation('mark', { campaign: 'acme/launch', platform: 'x', url: 'javascript:alert(1)' }));
+  assert.throws(() => buildOperation('export', { campaign: 'acme/launch', local: true, force: true }), /Local export/);
+  assert.throws(() => buildOperation('export', { campaign: 'acme/launch', local: true, mb: '/tmp' }), /Local export/);
 });
 
 test('project operations use global structured arguments', () => {
@@ -264,6 +266,28 @@ test('a finished global job is recovered without trusting a reused PID', () => {
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('global job findings require a normal diagnostic command return', async () => {
+  const root = tempStudio(), dir = join(root, 'logs/jobs');
+  mkdirSync(dir, { recursive: true });
+  const cases = [
+    { operation: 'doctor', code: 1, findings: true },
+    { operation: 'sources check', code: 1, findings: true },
+    { operation: 'sources check', code: 2, findings: true },
+    { operation: 'doctor', code: 0, findings: false },
+    { operation: 'sources check', code: 1, findings: false, throws: true },
+    { operation: 'doctor', code: 1, findings: false, throws: true },
+  ];
+  for (const [index, entry] of cases.entries()) {
+    const id = `a0000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+    writeFileSync(join(dir, `${id}.json`), JSON.stringify({ id, operation: entry.operation, state: 'running', createdAt: '2026-01-01', updatedAt: '2026-01-01', command: `bstudio ${entry.operation}` }));
+    const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_JOB_ID: id } });
+    const run = async () => { if (entry.throws) throw new Error('check failed'); return entry.code; };
+    if (entry.throws) await assert.rejects(withCampaignLock(entry.operation, [], io, run), /check failed/);
+    else assert.equal(await withCampaignLock(entry.operation, [], io, run), entry.code);
+    assert.equal(findJob(root, id).findings, entry.findings, entry.operation);
+  }
+});
+
 test('unverified child identities neither keep jobs running nor receive cancellation signals', { timeout: 10000 }, async () => {
   const root = tempStudio(), dir = join(root, 'logs/jobs');
   const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: process.platform !== 'win32', stdio: 'ignore' });
@@ -358,6 +382,31 @@ test('job lookup and cancellation expose distinct not-found and not-running erro
     assert.throws(() => cancelJob(root, job.id), JobNotRunning);
     assert.equal(findJob(root, job.id).state, 'succeeded');
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('permission denied while cancelling preserves the running job and suggests elevated privileges', () => {
+  const root = tempStudio(), id = 'a0000000-0000-4000-8000-000000000000', dir = join(root, 'logs/jobs'), originalKill = process.kill;
+  const started = processStarted(process.pid); assert.ok(started);
+  mkdirSync(dir, { recursive: true });
+  const record = { id, operation: 'doctor', state: 'running', createdAt: '2026-01-01', updatedAt: '2026-01-01', pid: process.pid, processStarted: started, command: 'bstudio doctor' };
+  writeFileSync(join(dir, `${id}.json`), JSON.stringify(record));
+  process.kill = ((pid: number, signal?: string | number) => { if (signal === 'SIGTERM') throw Object.assign(new Error('denied'), { code: 'EPERM' }); return originalKill(pid, signal); }) as typeof process.kill;
+  try {
+    assert.throws(() => cancelJob(root, id), /another user.*elevated privileges/);
+    const after = findJob(root, id); assert.equal(after.state, 'running'); assert.equal(after.cancelRequested, undefined); assert.equal(after.updatedAt, record.updatedAt);
+  } finally { process.kill = originalKill; rmSync(root, { recursive: true, force: true }); }
+});
+test('partial signal delivery keeps cancellation requested when a child is denied', async () => {
+  if (process.platform === 'win32') return;
+  const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' });
+  await once(child, 'spawn');
+  const root = tempStudio(), id = 'b0000000-0000-4000-8000-000000000000', dir = join(root, 'logs/jobs'), originalKill = process.kill;
+  const started = processStarted(process.pid), childStart = processStarted(child.pid!); assert.ok(started); assert.ok(childStart);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${id}.json`), JSON.stringify({ id, operation: 'doctor', state: 'running', createdAt: '2026-01-01', updatedAt: '2026-01-01', pid: process.pid, processStarted: started, childPids: [child.pid], childStarted: { [child.pid!]: childStart }, command: 'bstudio doctor' }));
+  process.kill = ((pid: number, signal?: string | number) => { if (signal === 'SIGTERM') { if (pid === process.pid) return true; throw Object.assign(new Error('denied'), { code: 'EPERM' }); } return originalKill(pid, signal); }) as typeof process.kill;
+  try { assert.equal(cancelJob(root, id).cancelRequested, true); assert.equal(findJob(root, id).cancelRequested, true); }
+  finally { process.kill = originalKill; originalKill(-child.pid!, 'SIGKILL'); await once(child, 'exit'); rmSync(root, { recursive: true, force: true }); }
 });
 
 test('an aged malformed campaign lock can be recovered', () => {

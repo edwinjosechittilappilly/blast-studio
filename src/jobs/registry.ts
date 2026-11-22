@@ -28,7 +28,7 @@ export const operations: Readonly<Record<string, Operation>> = {
   revise: operation('revise', { campaign, note: inputs.note, asset: option('id', '--asset'), platform: option('id', '--platform'), feedbackOnly: option('bool', '--feedback-only') }, true),
   accept: operation('accept', { campaign, platform: id(true), reason: { ...option('text', '--reason'), required: true } }),
   confirm: operation('confirm', { campaign, asset: id(true), trademarkChecked: option('bool', '--trademark-checked'), license: option('text', '--license') }),
-  export: operation('export', { campaign, mb: option('path', '--mb'), force: inputs.force, dir: option('bool', '--dir') }),
+  export: operation('export', { campaign, mb: option('path', '--mb'), force: inputs.force, local: option('bool', '--local'), dir: option('bool', '--dir') }),
   mark: operation('mark', { campaign, platform: id(true), url: { ...inputs.url, required: true } }),
   status: operation('status', { campaign: { ...campaign, required: false }, verbose: option('bool', '--verbose') }, false, false),
   library: operation('library', {}, false, false),
@@ -78,6 +78,7 @@ export function buildOperation(name: string, raw: unknown, options: { imageProvi
   if (!op || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new UserError('Unknown operation or invalid arguments');
   const values = raw as Record<string, unknown>;
   if (Object.keys(values).some(k => !Object.hasOwn(op.fields, k))) throw new UserError('Unknown argument');
+  if (name === 'export' && values.local === true && (values.force === true || values.mb !== undefined)) throw new UserError('Local export cannot be combined with force or a Market Blaster path');
   const [cmd, ...sub] = name.split(' '), positional: string[] = [], flags: string[] = [];
   let ref: string | undefined;
   for (const [key, field] of Object.entries(op.fields)) {

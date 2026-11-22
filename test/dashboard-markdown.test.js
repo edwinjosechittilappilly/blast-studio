@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseMarkdown, parseInline, renderMarkdown } from '../src/dashboard/static/markdown.js';
 import { campaignPath } from '../src/dashboard/ui/components/api.js';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { runInNewContext } from 'node:vm';
 
@@ -57,8 +59,11 @@ test('markdown DOM rendering creates only safe links and text', () => {
 });
 
 test('built dashboard assets contain no external HTTPS references', () => {
-  execFileSync(process.execPath, ['src/dashboard/ui/build.mjs']);
-  for (const file of ['src/dashboard/build/app.css', 'src/dashboard/build/app.js']) assert.doesNotMatch(readFileSync(file, 'utf8'), /https:\/\//);
+  const dir = mkdtempSync(join(tmpdir(), 'bstudio-ui-build-'));
+  try {
+    execFileSync(process.execPath, ['src/dashboard/ui/build.mjs'], { env: { ...process.env, BSTUDIO_UI_OUTDIR: dir } });
+    for (const file of ['app.css', 'app.js']) assert.doesNotMatch(readFileSync(join(dir, file), 'utf8'), /https:\/\//);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 function dashboardHarness() {
@@ -78,10 +83,11 @@ function dashboardHarness() {
   const nodes = { '#project': { hidden: false, contains: () => false }, '#message': new Node('message') };
   const calls = [], timers = [], toasts = [], focused = new Node('button');
   const context = {
-    Map, Set, JSON, encodeURIComponent, Date, Error, campaignPath, timer: undefined, dismissedJobFailures: new Set(), document: { activeElement: focused }, window: { scrollY: 42, scrollTo() {} },
+    Map, Set, JSON, encodeURIComponent, Date, Error, campaignPath, timer: undefined, dismissedJobFailures: new Set(), sessionStorage: { setItem() {} }, document: { activeElement: focused }, window: { scrollY: 42, scrollTo() {} },
     displayName: name => ({ linkedin: 'LinkedIn' }[name] || name),
     el: (tag, text) => Object.assign(new Node(tag), { textContent: text || '' }),
     button: text => Object.assign(new Node('button'), { textContent: text }),
+    renderFeedbackHistory: () => {},
     $: selector => nodes[selector], headers: {}, activeProject: 'a', activeTab: 'overview', feedbackDrafts: new Map(),
     api: (...args) => context.request(...args), feedbackJobStatus: (...args) => context.statusRequest(...args),
     message: text => { nodes['#message'].textContent = text; },
@@ -172,8 +178,8 @@ test('failed revision remains visible with log, retry and dismiss actions', asyn
   context.statusRequest = async () => ({ id: 'failed-1', state: 'failed', running: false, exitCode: 1, lines: ['failed'] });
   await context.jobStatus(project, region, apply);
   assert.equal(announcement.children[0].attributes.kind, 'error');
-  assert.equal(announcement.children[1].textContent, 'View log');
-  announcement.children[2].listeners.click(); assert.equal(retried, true);
+  assert.equal(announcement.children[0].children[0].textContent, 'View log');
+  announcement.children[0].children[1].listeners.click(); assert.equal(retried, true);
   announcement.children[0].listeners['cds-notification-closed']();
   await context.jobStatus(project, region, apply); assert.equal(announcement.children.length, 0);
 });

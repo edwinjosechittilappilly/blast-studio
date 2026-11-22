@@ -49,6 +49,13 @@ test("Market Blaster source text remains inside the untrusted boundary", async (
   assert.equal(readBrief(dir)[0].status, "planned");
 });
 
+test("Market Blaster brief expands a home-relative path using the configured home", async () => {
+  const { root, io, dir } = setup();
+  writeFileSync(join(root, "brief.md"), "## [E1] Imported\n\nEvidence from home\n");
+  await run(["demo/launch", "--mb-brief", "~/brief.md"], io);
+  assert.match(readBrief(dir)[0].body, /Evidence from home/);
+});
+
 test("open PR is planned, and local commit and repository inputs are supported", async () => {
   const { io, dir } = setup();
   io.run = async (cmd, args) => cmd === "gh" && args[0] === "pr" ? JSON.stringify({ title: "Next", state: "OPEN" }) : "local evidence";

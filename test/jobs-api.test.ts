@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { ChildProcess, spawnSync } from 'node:child_process';
 import { createServer, request } from 'node:http';
 import { rmSync, watch, writeFileSync } from 'node:fs';
 import type { FSWatcher } from 'node:fs';
@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { handleJobsApi } from '../src/dashboard/jobs-api.ts';
 import { startDashboard } from '../src/dashboard/server.ts';
-import { findJob } from '../src/jobs/runner.ts';
+import { findJob, startJob } from '../src/jobs/runner.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 test('jobs API enforces host, session, origin, header and argument schemas', async () => {
@@ -86,6 +86,13 @@ test('jobs API enforces host, session, origin, header and argument schemas', asy
     assert.equal(cli.status, 1); assert.match(cli.stderr, /locked by/);
     assert.equal((await call('POST', '/api/jobs', headers, payload)).status, 409);
     assert.match((await call('GET', `/api/jobs/${id}/log`, headers)).body, /READY/);
+    const originalKill = process.kill;
+    process.kill = ((pid: number, signal?: string | number) => { if (signal === 'SIGTERM') throw Object.assign(new Error('denied'), { code: 'EPERM' }); return originalKill(pid, signal); }) as typeof process.kill;
+    try {
+      const denied = await call('POST', `/api/jobs/${id}/cancel`, headers);
+      assert.equal(denied.status, 403); assert.match(JSON.parse(denied.body).error, /another user.*elevated privileges/);
+      const current = findJob(root, id); assert.equal(current.state, 'running'); assert.notEqual(current.cancelRequested, true);
+    } finally { process.kill = originalKill; }
     const finished = Promise.withResolvers<void>();
     const watcher = watch(join(root, 'projects/demo/campaigns/launch/logs/jobs'), () => {
       try { if (findJob(root, id).state === 'cancelled') { watcher.close(); finished.resolve(); } } catch { /* record replacement in progress */ }
@@ -129,6 +136,13 @@ test('dashboard starts, polls, reads and cancels a job over HTTP', { timeout: 15
   let id = '';
   let watcher: FSWatcher | undefined;
   let cookie = '';
+  let childPid: number | undefined;
+  const childExited = Promise.withResolvers<void>(), originalEmit = ChildProcess.prototype.emit;
+  ChildProcess.prototype.emit = function (this: ChildProcess, event: string | symbol, ...args: unknown[]) {
+    const result = Reflect.apply(originalEmit, this, [event, ...args]);
+    if (event === 'exit' && this.pid === childPid) childExited.resolve();
+    return result;
+  } as typeof originalEmit;
   try {
     const exchange = await fetch(dashboard.url, { redirect: 'manual' });
     assert.equal(exchange.status, 302);
@@ -138,8 +152,8 @@ test('dashboard starts, polls, reads and cancels a job over HTTP', { timeout: 15
       method: 'POST', headers, body: JSON.stringify({ op: 'plan', campaign: 'demo/launch', args: {} }),
     });
     assert.equal(started.status, 202);
-    const job = await started.json() as { id: string; state: string; campaign: string };
-    id = job.id;
+    const job = await started.json() as { id: string; state: string; campaign: string; pid: number };
+    id = job.id; childPid = job.pid;
     assert.equal(job.campaign, 'demo/launch');
     await ready.promise;
     const poll = await fetch(`${base}/api/jobs/${id}`, { headers });
@@ -172,6 +186,8 @@ test('dashboard starts, polls, reads and cancels a job over HTTP', { timeout: 15
     assert.equal(cancelled.status, 200);
     await check();
     await finished.promise;
+    await childExited.promise;
+    assert.equal((await (await fetch(`${base}/api/jobs/${id}`, { headers })).json() as { state: string }).state, 'cancelled');
     watcher.close(); watcher = undefined;
     assert.equal((await fetch(`${base}/api/jobs/${id}/cancel`, { method: 'POST', headers })).status, 409);
     id = '';
@@ -180,8 +196,30 @@ test('dashboard starts, polls, reads and cancels a job over HTTP', { timeout: 15
     if (id) {
       if (cookie) await fetch(`${base}/api/jobs/${id}/cancel`, { method: 'POST', headers: { cookie, origin: base, 'x-requested-with': 'bstudio' } });
     }
+    if (childPid) await childExited.promise;
+    ChildProcess.prototype.emit = originalEmit;
     await new Promise<void>(resolve => dashboard.server.close(() => resolve()));
     await new Promise<void>(resolve => signal.close(() => resolve()));
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a late job exit tolerates a removed record directory', { timeout: 15000 }, async () => {
+  const root = tempStudio(), exited = Promise.withResolvers<void>(), originalEmit = ChildProcess.prototype.emit, originalError = console.error;
+  let pid: number | undefined; const errors: unknown[][] = [];
+  console.error = (...args: unknown[]) => { errors.push(args); };
+  ChildProcess.prototype.emit = function (this: ChildProcess, event: string | symbol, ...args: unknown[]) {
+    if (event === 'exit' && this.pid === pid) rmSync(join(root, 'logs', 'jobs'), { recursive: true, force: true });
+    const result = Reflect.apply(originalEmit, this, [event, ...args]);
+    if (event === 'exit' && this.pid === pid) exited.resolve();
+    return result;
+  } as typeof originalEmit;
+  try {
+    const job = startJob(root, 'doctor', {}, { cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') } });
+    pid = job.pid; assert.ok(pid); await exited.promise;
+    assert.deepEqual(errors, []);
+  } finally {
+    ChildProcess.prototype.emit = originalEmit; console.error = originalError;
     rmSync(root, { recursive: true, force: true });
   }
 });

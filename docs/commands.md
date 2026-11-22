@@ -52,6 +52,7 @@ bstudio brief acme/launch --commit abcd1234 --repo local --mb-brief brief.md
 ## Handoff and records
 
 - `bstudio export <address> [--mb <project>] [--force] [--dir]` writes `export/<project>--<campaign>.campaign.zip` with reviewed content and handoffs. Each export is also preserved under `export/<timestamp>/`; `bstudio export <address> --list` lists zip and directory exports with their sizes and times. Without a Market Blaster project, the package is local only; import later by rerunning with `--mb <project>`. The target is selected from `--mb`, then `marketBlaster.project` in the project's `project.yml`, then the studio configuration. Relative project metadata paths are resolved from the project's directory; `--mb` and studio configuration paths are resolved from the current working directory. When a target is configured, export imports and checks it under the composite `<project>--<campaign>` slug. `--dir` writes the legacy v1 directory instead; `--force` is passed to the import. Market Blaster warns before overwriting unapproved drafts; approved drafts require `--force`. See [package identity and collisions](design/campaign-package.md).
+  Use `--local` to skip Market Blaster import even when a project is configured; it cannot be combined with `--mb` or `--force`.
 - `bstudio mark <address> <platform> --url <https-url>` records a publication URL for `youtube-shorts`, `instagram`, `tiktok`, or `dailydev`. The URL host must match the destination and the post must exist.
 - `bstudio status [<address>] [--verbose]` shows campaign verdicts, monthly spend, and source health. `--verbose` lists unverified pack fields.
 - `bstudio library [search <query>]` lists campaigns or searches the library.
@@ -60,6 +61,6 @@ bstudio brief acme/launch --commit abcd1234 --repo local --mb-brief brief.md
 ## Budget and platform sources
 
 - `bstudio budget [show]` displays spend and caps. `bstudio budget set <usd>` sets the monthly cap; `bstudio budget set-project <usd>` sets the per-project cap. See [budget](budget.md).
-- `bstudio sources check [--only id,...] [--write]` checks monitored sources. `--write` is accepted but snapshots are written by default.
+- `bstudio sources check [--only id,...] [--write]` checks monitored sources and stores reports in the studio root. `--write` updates snapshots; in a source checkout it writes snapshots and reports there for review. See [source updates](updater.md).
 - `bstudio sources propose [--branch]` proposes pack updates from the latest report, optionally creating an update branch.
 - `bstudio sources verify <id>...` stamps cited pack fields with today's verification date after human review. See [source updates](updater.md).

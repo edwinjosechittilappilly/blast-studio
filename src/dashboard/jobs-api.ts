@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { StudioConfig } from '../types.ts';
 import { UserError } from '../types.ts';
 import { buildOperation, campaignRef, operationRequiresTTY, operations } from '../jobs/registry.ts';
-import { cancelJob, findJob, JobConflict, JobNotFound, JobNotRunning, jobLog, listJobs, startJob } from '../jobs/runner.ts';
+import { cancelJob, findJob, JobConflict, JobNotFound, JobNotRunning, JobSignalDenied, jobLog, listJobs, startJob } from '../jobs/runner.ts';
 import { saveSecret } from '../jobs/secrets.ts';
 
 export interface JobsApiOptions { config: StudioConfig; port: number; sessionCheck: (req: IncomingMessage) => boolean; allowedHosts?: string[]; cwd?: string; env?: NodeJS.ProcessEnv }
@@ -60,7 +60,8 @@ export async function handleJobsApi(req: IncomingMessage, res: ServerResponse, o
     if (match && req.method === 'POST' && match[2] === 'cancel') { send(res, 200, cancelJob(options.config.root, match[1])); return true; }
     send(res, 404, { error: 'Not found' }); return true;
   } catch (error) {
-    const code = error instanceof JobConflict || error instanceof JobNotRunning ? 409 : error instanceof JobNotFound ? 404 : error instanceof RequestTooLarge ? 413 : error instanceof UserError ? 400 : 500;
+    const code = error instanceof JobSignalDenied ? 403 : error instanceof JobConflict || error instanceof JobNotRunning ? 409 : error instanceof JobNotFound ? 404 : error instanceof RequestTooLarge ? 413 : error instanceof UserError ? 400 : 500;
+    if (code === 500) { if (raw === '/api/secrets') console.error('Credential request failed unexpectedly'); else console.error('Job request failed:', error); }
     send(res, code, { error: code === 500 ? 'Job request failed' : (error as Error).message }); return true;
   }
 }
