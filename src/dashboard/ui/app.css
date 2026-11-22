@@ -20,3 +20,4 @@
 .gates,.checks{list-style:none;padding-left:0}.gates li,.checks li{padding:.25rem 0}.status-fail strong{color:var(--cds-support-error,#da1e28)}.status-pass strong{color:var(--cds-support-success,#198038)}
 .status-pass svg,.status-fail svg{vertical-align:middle;margin-right:.375rem}.status-pass svg{color:var(--cds-support-success,#198038)}.status-fail svg{color:var(--cds-support-error,#da1e28)}
 .hooks li{position:relative;padding-right:7.5rem}.hooks li>.copy-control{position:absolute;right:0;top:0;margin:0}
+.media-actions cds-overflow-menu svg{fill:var(--cds-icon-primary,#161616)}.media-details{padding-right:2.5rem}.media-toast{z-index:9001}.viewer-body img:not(.actual-size){max-height:calc(65vh - 12rem)}.viewer-body video{max-height:calc(65vh - 6rem)}

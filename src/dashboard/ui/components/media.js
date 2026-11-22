@@ -1,5 +1,7 @@
 import { el, button } from './review.js';
 import { copyText } from '../../static/clipboard.js';
+import zoomIn from '@carbon/icons/es/zoom--in/16.js';
+if (typeof window !== 'undefined') import('@carbon/web-components/es/components/icon-button/index.js');
 export const mediaUrl = (slug, path) => `/media/${encodeURIComponent(slug)}/${path.split('/').map(encodeURIComponent).join('/')}`;
 function kindOf(path, kind) { return /\.(mp4|webm)$/i.test(path) ? 'video' : /\.pdf$/i.test(path) ? 'pdf' : /\.(png|jpe?g|gif|webp|svg)$/i.test(path) ? 'image' : kind === 'video' ? 'video' : kind === 'document' ? 'pdf' : kind === 'image' || kind === 'gif' ? 'image' : 'file'; }
 function filename(item) { return item.file.split('/').pop(); }
@@ -12,7 +14,7 @@ function details(item, kind) {
   return parts.join(' · ');
 }
 function notify(text, failed = false) {
-  const notice = el('cds-toast-notification', null, 'job-toast');
+  const notice = el('cds-toast-notification', null, 'job-toast media-toast');
   notice.setAttribute('kind', failed ? 'error' : 'success'); notice.setAttribute('timeout', '5000');
   const title = el('span', text); title.slot = 'title'; notice.append(title);
   notice.addEventListener('cds-notification-closed', () => notice.remove());
@@ -41,9 +43,16 @@ export function mediaViewer(slug, item, captions, trigger) {
   header.append(label, heading, close);
   const body = el('cds-modal-body', null, 'viewer-body'), display = visual(slug, item, captions);
   if (kind === 'image') {
-    const toolbar = el('div', null, 'viewer-toolbar'), zoom = el('button', '100%', 'viewer-zoom');
-    zoom.type = 'button'; zoom.title = 'View at 100%'; zoom.setAttribute('aria-label', 'View at 100%'); zoom.setAttribute('aria-pressed', 'false');
-    zoom.addEventListener('click', () => { const full = display.classList.toggle('actual-size'); zoom.textContent = full ? 'Fit' : '100%'; zoom.title = full ? 'Fit to window' : 'View at 100%'; zoom.setAttribute('aria-label', zoom.title); zoom.setAttribute('aria-pressed', String(full)); });
+    const toolbar = el('div', null, 'viewer-toolbar'), zoom = el('cds-icon-button', null, 'viewer-zoom');
+    zoom.setAttribute('kind', 'ghost'); zoom.setAttribute('align', 'left'); zoom.setAttribute('aria-pressed', 'false');
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    for (const [key, value] of Object.entries(zoomIn.attrs)) icon.setAttribute(key, String(value));
+    icon.setAttribute('slot', 'icon'); icon.setAttribute('aria-hidden', 'true');
+    for (const part of zoomIn.content) { const child = document.createElementNS('http://www.w3.org/2000/svg', part.elem); for (const [key, value] of Object.entries(part.attrs)) child.setAttribute(key, String(value)); icon.append(child); }
+    const tooltip = el('span', 'View at 100%'); tooltip.slot = 'tooltip-content'; zoom.append(icon, tooltip);
+    const syncPressed = async full => { zoom.setAttribute('aria-pressed', String(full)); zoom.isSelected = full; await zoom.updateComplete; zoom.shadowRoot?.querySelector('button')?.setAttribute('aria-pressed', String(full)); };
+    syncPressed(false);
+    zoom.addEventListener('click', () => { syncPressed(display.classList.toggle('actual-size')); });
     toolbar.append(zoom); body.append(toolbar);
   }
   body.append(display);
