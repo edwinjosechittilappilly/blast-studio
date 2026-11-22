@@ -31,7 +31,7 @@ Projects are stored in the studio root and copied into temporary agent workspace
 
 `render` creates outputs under each asset's `out/` directory and updates `asset.yml`. Paid image and voice generation uses cached results; use `bstudio render release-note --regen` when a new generation is intended. See [formats](formats.md) for source and tool requirements.
 
-`review` writes `reviews/<platform>.json` and `review.md`. Address findings yourself or run `bstudio revise release-note`, which uses the author agent, re-renders and re-reviews for up to the configured number of rounds. A blocked rights finding needs human resolution. See [review](review.md) for gates, scores and acceptance.
+`review` writes `reviews/<platform>.json` and `review.md`. Address findings yourself or run `bstudio revise release-note`, which applies pending owner feedback and uses the author agent to address failing reviews, re-render and re-review. Add feedback directly with `bstudio revise release-note --note "Make the headline shorter" --platform bluesky`, or target an asset with `--asset <id>`; omit both targets for the whole project. Dashboard feedback is picked up by plain `revise`. Owner feedback rounds do not count against `review.maxRounds`, which limits automatic review-finding rounds. A blocked rights finding needs human resolution. See [review](review.md) for gates, scores and acceptance.
 
 ## Export and publish
 

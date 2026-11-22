@@ -37,7 +37,7 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
   make: { summary: "write posts and asset sources with the agent: make <slug>", run: make },
   render: { summary: "render images, carousels, logos, diagrams and video: render <slug> [--regen] [--assets=id,...] [--platforms=id,...]", run: render },
   review: { summary: "gates + platform reviewer scores: review [<slug>] [--calibrate] [--platforms=id,...] (slug required unless calibrating)", run: review },
-  revise: { summary: "apply review findings, re-render, re-review: revise <slug>", run: revise },
+  revise: { summary: "apply review findings or owner feedback: revise <slug> [--note text] [--asset id] [--platform id]", run: revise },
   accept: { summary: "human override of scores (never gates): accept <slug> <platform> --reason <reason>", run: accept },
   confirm: { summary: "record human asset rights checks: confirm <slug> <asset-id> [--trademark-checked] [--license <license>]", run: confirm },
   budget: { summary: "paid generation caps: budget [show | set <usd> | set-project <usd>]", run: budget },

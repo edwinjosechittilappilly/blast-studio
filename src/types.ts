@@ -240,6 +240,15 @@ export interface Review {
   acceptedReason?: string;
 }
 
+export interface FeedbackEntry {
+  id: string;
+  target: { platform?: string; asset?: string };
+  note: string;
+  at: string;
+  status: 'pending' | 'applied';
+  appliedAt?: string;
+}
+
 export type Env = Record<string, string | undefined>;
 
 export class UserError extends Error {
