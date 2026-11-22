@@ -115,10 +115,6 @@ export function loadConfig(io: IO): StudioConfig {
     marketBlaster: { command: command(market.command, ["mblast"], "marketBlaster.command"), ...(typeof market.project === "string" ? { project: market.project } : {}) },
   };
 }
-export function projectDir(config: StudioConfig, slug: string): string {
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new UserError("Project slug must contain lowercase letters, numbers and single hyphens");
-  return join(config.root, "projects", slug);
-}
 export function projectRoot(config: StudioConfig, project: string): string {
   return containedPath(config.root, "projects", validateId(project));
 }
