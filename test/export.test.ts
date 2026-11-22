@@ -334,3 +334,71 @@ test('retained history counts as exported when the stable zip is removed', async
   await status(['acme/demo'], f.io);
   assert.ok(f.io.stdout.includes(`  exported: ${history.time}`));
 });
+
+
+test('status requires the latest Market Blaster export to have been imported', async () => {
+  const f = fixture(), config = loadConfig(f.io);
+  writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+  const next = async () => {
+    const start = f.io.stdout.length;
+    await status(['acme/demo'], f.io);
+    return f.io.stdout.slice(start).find(line => line.includes('next:'))!;
+  };
+  await exportCommand(['acme/demo'], f.io);
+  assert.match(await next(), /bstudio export acme\/demo --mb <path>/);
+  f.io.run = async () => '';
+  await exportCommand(['acme/demo', '--mb', f.root], f.io);
+  const imported = listExports(config, 'acme/demo')[0];
+  const receipt = JSON.parse(readFileSync(join(f.project, 'export', imported.name.split('/')[0], 'imported.json'), 'utf8'));
+  assert.equal(receipt.project, f.root);
+  assert.equal(receipt.slug, 'acme--demo');
+  assert.ok(Number.isFinite(Date.parse(receipt.at)));
+  assert.match(await next(), /next: done/);
+  f.io.run = async () => { throw new Error('cannot replace approved drafts'); };
+  await assert.rejects(exportCommand(['acme/demo', '--mb', f.root], f.io), /approved drafts/);
+  const refused = listExports(config, 'acme/demo')[0];
+  assert.notEqual(refused.name, imported.name);
+  assert.equal(existsSync(join(f.project, 'export', refused.name.split('/')[0], 'imported.json')), false);
+  assert.match(await next(), /bstudio export acme\/demo --mb <path>/);
+  f.io.run = async () => '';
+  await exportCommand(['acme/demo', '--mb', f.root, '--dir'], f.io);
+  assert.match(await next(), /next: done/);
+  await exportCommand(['acme/demo', '--dir'], f.io);
+  assert.match(await next(), /bstudio export acme\/demo --mb <path>/);
+});
+
+test('successful import is recorded even when the subsequent check fails', async () => {
+  const f = fixture(), config = loadConfig(f.io);
+  writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+  f.io.run = async (_cmd, args) => { if (args.includes('check')) throw new Error('invalid destination'); return ''; };
+  await assert.rejects(exportCommand(['acme/demo', '--mb', f.root], f.io), /check failed/);
+  const latest = listExports(config, 'acme/demo')[0];
+  assert.ok(existsSync(join(f.project, 'export', latest.name.split('/')[0], 'imported.json')));
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.text(), /next: done/);
+});
+
+test('a manual-only campaign is complete once its publications are marked', async () => {
+  const f = fixture('instagram');
+  writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+  await exportCommand(['acme/demo'], f.io);
+  await mark(['acme/demo', 'instagram', '--url', 'https://instagram.com/p/1'], f.io);
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.text(), /next: done/);
+});
+
+test('mixed campaigns require both a manual publication mark and an import', async () => {
+  const f = fixture(), manual = fixture('instagram');
+  cpSync(join(manual.project, 'posts/instagram.md'), join(f.project, 'posts/instagram.md'));
+  cpSync(join(manual.project, 'reviews/instagram.json'), join(f.project, 'reviews/instagram.json'));
+  writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+  await exportCommand(['acme/demo'], f.io);
+  await mark(['acme/demo', 'instagram', '--url', 'https://instagram.com/p/1'], f.io);
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.text(), /next: import: bstudio export acme\/demo --mb <path>/);
+  f.io.run = async () => '';
+  await exportCommand(['acme/demo', '--mb', f.root], f.io);
+  const before = f.io.stdout.length;
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.stdout.slice(before).join('\n'), /next: done/);
+});

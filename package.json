@@ -7,7 +7,7 @@
   "author": "Edwin Jose Chittilappilly",
   "repository": {
     "type": "git",
-    "url": "https://github.com/edwinjosechittilappilly/blast-studio.git"
+    "url": "git+https://github.com/edwinjosechittilappilly/blast-studio.git"
   },
   "homepage": "https://edwinjosechittilappilly.github.io/blast-studio/",
   "bugs": "https://github.com/edwinjosechittilappilly/blast-studio/issues",

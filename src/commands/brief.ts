@@ -37,6 +37,20 @@ function explicitlyConfigured(io: IO, file: string): boolean {
   return typeof data?.studio?.root === "string" && data.studio.root.length > 0;
 }
 
+export const briefOptions = "[--idea text] [--note text] [--url URL] [--pr number] [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force] [-h|--help]";
+
+export function briefHelp(command: "brief" | "new"): string {
+  return `usage: bstudio ${command} <project>/<campaign> ${briefOptions}
+At least one input or shared project evidence is required. --note and --url can be repeated.
+--repo alone collects repository information; --pr and --commit require --repo.
+PRs require a GitHub owner/repo; commits can also use local. --mb-brief imports
+evidence from a Market Blaster brief. --force overwrites an existing brief.
+Examples:
+  bstudio ${command} acme/launch --idea 'Announcing launch' --note 'Available today'
+  bstudio ${command} acme/launch --pr 12 --repo acme/app
+  bstudio ${command} acme/launch --commit abcd1234 --repo local --mb-brief brief.md`;
+}
+
 
 export const run: Command = async (args, io) => {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: {
@@ -44,7 +58,7 @@ export const run: Command = async (args, io) => {
     pr: { type: "string" }, commit: { type: "string" }, repo: { type: "string" },
     "mb-brief": { type: "string" }, force: { type: "boolean" }, help: { type: "boolean", short: "h" },
   } });
-  if (values.help) { io.out("usage: bstudio brief <project>/<campaign> [--idea text] [--note text] [--url URL] [--repo owner/repo] [--force]\nExample: bstudio brief acme/launch --idea 'Announcing launch'"); return 0; }
+  if (values.help) { io.out(briefHelp("brief")); return 0; }
   if (positionals.length !== 1) throw new UserError("usage: bstudio brief <project>/<campaign> [--idea text] [--note text] [--url url] [--pr N --repo owner/repo] [--commit sha --repo owner/repo|local] [--mb-brief path] [--force]");
   if (values.pr && !/^\d+$/.test(values.pr)) throw new UserError("--pr must be a number");
   if ((values.pr || values.commit) && !values.repo) throw new UserError("--pr and --commit require --repo");

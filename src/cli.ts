@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createInterface, type Interface } from "node:readline/promises";
 import { run as accept, confirm } from "./commands/accept.ts";
 import { run as auth } from "./commands/auth.ts";
-import { run as brief } from "./commands/brief.ts";
+import { briefOptions, run as brief } from "./commands/brief.ts";
 import { run as budget } from "./commands/budget.ts";
 import { run as campaign } from "./commands/campaign.ts";
 import { run as dashboard } from "./commands/dashboard.ts";
@@ -43,10 +43,10 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
   doctor: { summary: "check tools, providers and budget", run: doctor },
   "install-skills": { summary: "link studio skills [--with-hyperframes]", run: installSkills },
   new: {
-    summary: "brief + plan + make + render + review: new <project>/<campaign> [brief options]",
+    summary: `brief + plan + make + render + review: new <project>/<campaign> ${briefOptions}`,
     run: newProject,
   },
-  brief: { summary: "collect evidence: brief <project>/<campaign> [brief options]", run: brief },
+  brief: { summary: `collect evidence: brief <project>/<campaign> ${briefOptions}`, run: brief },
   plan: { summary: "choose post types, angles and hooks: plan <project>/<campaign> [--platforms=id,...] [--assets=id,...]", run: plan },
   make: { summary: "write posts and assets: make <project>/<campaign> [--platforms=id,...] [--assets=id,...]", run: make },
   render: { summary: "render assets: render <project>/<campaign> [--regen] [--assets=id,...] [--platforms=id,...]", run: render },

@@ -30,7 +30,7 @@ export function reserveExportHistory(dir: string): string {
   }
 }
 
-export function writeCampaignZip(project: string, identity: CampaignRef, prepared: Prepared[], sourceFile: (project: string, path: string) => string): string {
+export function writeCampaignZip(project: string, identity: CampaignRef, prepared: Prepared[], sourceFile: (project: string, path: string) => string): { path: string; history: string } {
   const slug = compositeSlug(identity);
   const files: Record<string, Uint8Array> = {};
   let total = 0;
@@ -100,7 +100,7 @@ export function writeCampaignZip(project: string, identity: CampaignRef, prepare
     linkSync(temp, join(history, `${slug}.campaign.zip`));
     const path = join(dir, `${slug}.campaign.zip`);
     renameSync(temp, path);
-    return path;
+    return { path, history };
   } catch (error) {
     if (history) rmSync(history, { recursive: true, force: true });
     throw error;
