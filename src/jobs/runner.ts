@@ -14,7 +14,7 @@ export interface Job { id: string; operation: string; campaign?: string; state: 
 export class JobConflict extends Error { owner: string; constructor(owner: string) { super(`Campaign is locked by ${owner}`); this.owner = owner; } }
 export class JobNotFound extends UserError { constructor() { super('Job not found'); } }
 export class JobNotRunning extends UserError { constructor() { super('Job is not running'); } }
-export class JobSignalDenied extends UserError { constructor(id: string) { super(`Not permitted to signal this job's processes; cancel it from the terminal: bstudio jobs cancel ${id}`); } }
+export class JobSignalDenied extends UserError { constructor(_id: string) { super('Cannot cancel this job: a process may belong to another user. Use elevated privileges to cancel it.'); } }
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const bin = fileURLToPath(new URL('../../bin/bstudio.mjs', import.meta.url));
 export function processGroupRunning(pid: number): boolean {
@@ -293,17 +293,20 @@ export function cancelJob(root: string, id: string): Job {
     previous = { cancelRequested: current.cancelRequested, updatedAt: current.updatedAt };
     current.cancelRequested = true; current.updatedAt = new Date().toISOString();
   });
+  let delivered = false;
   const signal = (pid: number, group: boolean, started?: string) => {
     if (!(group ? sameGroup(pid, started) : exactProcess(pid, started))) return;
-    try { process.kill(group ? -pid : pid, 'SIGTERM'); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e; }
+    try { process.kill(group ? -pid : pid, 'SIGTERM'); delivered = true; } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e; }
   };
   try {
     signal(current.pid!, Boolean(current.processGroup), current.processStarted);
     for (const pid of current.childPids ?? []) signal(pid, process.platform !== 'win32', current.childStarted?.[pid]);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
-    updateJob(root, dir, id, job => { if (job.state === 'running' && previous) { job.cancelRequested = previous.cancelRequested; job.updatedAt = previous.updatedAt; } });
-    throw new JobSignalDenied(id);
+    if (!delivered) {
+      updateJob(root, dir, id, job => { if (job.state === 'running' && previous) { job.cancelRequested = previous.cancelRequested; job.updatedAt = previous.updatedAt; } });
+      throw new JobSignalDenied(id);
+    }
   }
   return current;
 }

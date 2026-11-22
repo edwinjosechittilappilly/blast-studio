@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync, realpathSync, statSync, lstatSync, createReadStream, mkdirSync, unlinkSync, linkSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync, realpathSync, statSync, lstatSync, createReadStream, mkdirSync, unlinkSync, linkSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { addFeedback } from '../feedback.ts';
@@ -12,6 +12,7 @@ import type { IO } from '../io.ts';
 import { handleJobsApi } from './jobs-api.ts';
 import { buildOperation } from '../jobs/registry.ts';
 import { campaignLockStatus, JobConflict, jobLogTail, listJobs, startJob } from '../jobs/runner.ts';
+import { historyEntries } from '../history.ts';
 
 const staticDir = join(dirname(fileURLToPath(import.meta.url)), 'static');
 const buildDir = join(dirname(fileURLToPath(import.meta.url)), 'build');
@@ -122,6 +123,23 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
         }
       }
       if (req.method === 'GET') {
+        const historyApi = /^\/api\/campaigns\/([^/]+)\/([^/]+)\/history$/.exec(pathname);
+        if (historyApi) {
+          const dir = campaignDir(config, { project: decodeURIComponent(historyApi[1]), campaign: decodeURIComponent(historyApi[2]) });
+          if (!existsSync(dir)) { send(res, 404, { error: 'Campaign not found' }); return; }
+          const root = join(dir, 'history');
+          if (!existsSync(root) || lstatSync(root).isSymbolicLink()) { send(res, 200, []); return; }
+          const sizeOf = (path: string): number => readdirSync(path, { withFileTypes: true }).reduce((sum, entry) => {
+            const child = join(path, entry.name);
+            return sum + (entry.isDirectory() ? sizeOf(child) : entry.isFile() ? lstatSync(child).size : 0);
+          }, 0);
+          const entries = historyEntries(dir).flatMap(name => {
+            const match = /^(\d+)-([a-z]+)-(\d{4}-\d{2}-\d{2}T\d{2})-(\d{2})-(\d{2}\.\d{3}Z)$/.exec(name), path = join(root, name);
+            if (!match || !lstatSync(path).isDirectory()) return [];
+            return [{ n: Number(match[1]), step: match[2], time: `${match[3]}:${match[4]}:${match[5]}`, size: sizeOf(path) }];
+          });
+          send(res, 200, entries); return;
+        }
         const exportsApi = /^\/api\/campaigns\/([^/]+)\/([^/]+)\/exports(?:\/(.+))?$/.exec(pathname);
         if (exportsApi) {
           const project = decodeURIComponent(exportsApi[1]), campaign = decodeURIComponent(exportsApi[2]);
@@ -132,7 +150,10 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
             const rel = relative(campaignBase, realpathSync(exportDir));
             if (!rel || rel === '..' || rel.startsWith(`..${sep}`)) { send(res, 403, { error: 'Forbidden' }); return; }
           }
-          const entries = listExports(config, { project, campaign });
+          const entries = listExports(config, { project, campaign }).filter(entry => {
+            let path = exportDir;
+            try { for (const segment of entry.name.split('/').filter(Boolean)) { path = join(path, segment); if (lstatSync(path).isSymbolicLink()) return false; } return true; } catch { return false; }
+          });
           if (!exportsApi[3]) { send(res, 200, entries); return; }
           const name = decodeURIComponent(exportsApi[3]);
           if (!entries.some(entry => entry.kind === 'zip' && entry.name === name)) { send(res, 404, { error: 'Export not found' }); return; }
@@ -145,7 +166,7 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
         if (pathname === '/api/library') { send(res, 200, loadLibrary(config, url.searchParams.get('q') ?? '')); return; }
         if (pathname === '/api/budget') { send(res, 200, { cap: config.budget.monthlyUsd, perProject: config.budget.perProjectUsd, mtd: monthToDate(config.root), providerTotals: providerTotals(config.root), projects: Object.fromEntries(loadLibrary(config).map(p => [p.slug, projectTotal(config.root, p.slug)])), providers: { images: config.images.provider, voice: config.voice.provider, allowUpload: config.providers.allowUpload }, brand: config.brand }); return; }
         if (pathname === '/api/sources') { send(res, 200, latestSources(config)); return; }
-        if (pathname.startsWith('/api/project/')) { const slug = decodeURIComponent(pathname.slice(13)); const dir = campaignDir(config, slug); if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; } send(res, 200, projectReview(config, slug)); return; }
+        if (pathname.startsWith('/api/project/')) { const slug = decodeURIComponent(pathname.slice(13)); const dir = campaignDir(config, slug); if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; } send(res, 200, projectReview(config, slug, { cwd: io.cwd, home: io.env.HOME || process.env.HOME || '' })); return; }
         if (pathname.startsWith('/media/')) {
           const parts = pathname.slice(7).split('/').map(decodeURIComponent), project = parts.shift() ?? '', campaign = parts.shift() ?? '';
           if (parts.some(p => !p || p === '..' || p === '.' || p.includes('/') || p.includes('\\'))) { send(res, 403, { error: 'Forbidden' }); return; }
