@@ -67,7 +67,7 @@ export function exportProject(project: string, identity: CampaignRef, config: St
     if (review.mediaHash !== mediaContentHash(project, post.media)) throw new UserError(`${post.platform}: review media is stale; re-run review`);
     const pack = packs.get(post.platform);
     if (!pack) throw new UserError(`${post.platform}: pack missing`);
-    if (runGates(post, pack, assets, briefSections, config, project, slug).some(g => !g.pass)) throw new UserError(`${post.platform}: current gates failed; re-run review`);
+    if (runGates(post, pack, assets, briefSections, config, project, `${identity.project}/${identity.campaign}`).some(g => !g.pass)) throw new UserError(`${post.platform}: current gates failed; re-run review`);
     for (const m of post.media as ExtraMedia[]) {
       if ((m.cover !== undefined && typeof m.cover !== 'boolean') || (m.lang !== undefined && (typeof m.lang !== 'string' || !/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test(m.lang))) || (m.captions !== undefined && (m.kind !== 'video' || typeof m.captions !== 'string' || !/\.vtt$/i.test(m.captions)))) throw new UserError(`${post.platform}: invalid media metadata`);
       sourceFile(project, m.file);

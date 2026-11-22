@@ -36,7 +36,7 @@ export const run: Command = async (args, io) => {
     const path = join(assetsDir, id, 'asset.yml');
     return existsSync(path) ? [parse(readFileSync(path, 'utf8')) as AssetMeta] : [];
   }) : [];
-  const currentGates = runGates(post, loadPack(post.platform), assets, readBrief(dir), config, dir, args[0]);
+  const currentGates = runGates(post, loadPack(post.platform), assets, readBrief(dir), config, dir, address);
   if (currentGates.some(g => !g.pass)) throw new UserError('Cannot accept a failed gate; run review again');
   review.verdict = 'accepted'; review.acceptedReason = reason; review.at = new Date().toISOString();
   writeFileSync(file, JSON.stringify(review, null, 2) + '\n'); io.out(`${platform}: accepted`); return 0;

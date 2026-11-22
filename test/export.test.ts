@@ -165,7 +165,7 @@ test('campaign commands support help, option forms and early address validation'
   await assert.rejects(exportCommand(['demo'], f.io), /Campaign address/);
   await confirm(['acme/demo', 'a', '--license=CC0', '--trademark-checked'], f.io);
   assert.match(readFileSync(join(f.project, 'assets/a/asset.yml'), 'utf8'), /license: CC0/);
-  await accept(['acme/demo', 'bluesky', '--reason=Reviewed'], f.io);
+  await accept(['--reason=Reviewed', 'acme/demo', 'bluesky'], f.io);
   assert.equal(JSON.parse(readFileSync(join(f.project, 'reviews/bluesky.json'), 'utf8')).acceptedReason, 'Reviewed');
 });
 

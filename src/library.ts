@@ -26,7 +26,7 @@ export function projectDetails(config: StudioConfig, slug: string) {
 }
 let cachedPacks: Map<PlatformId, PlatformPack> | undefined;
 export function projectReview(config: StudioConfig, slug: string) {
-  const dir = join(config.root, 'projects', slug), project = projectDetails(config, slug);
+  const dir = campaignDir(config, slug), project = projectDetails(config, slug);
   const plan = existsSync(join(dir, 'plan.yml')) ? readPlan(dir) : [];
   const packs = cachedPacks ??= loadPacks();
   const rubric = Object.fromEntries(project.posts.map(post => { const pack = packs.get(post.platform); return [post.platform, pack?.ai === 'outline' ? pack.outlineRubric ?? [] : pack?.rubric ?? []]; }));

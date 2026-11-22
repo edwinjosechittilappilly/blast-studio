@@ -21,7 +21,7 @@ function metrics(text: string): { token: string; key: string; metric: boolean }[
 }
 
 
-export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], brief: BriefSection[], config: StudioConfig, projectDir?: string, address = '<slug>'): GateResult[] & { warnings: string[] } {
+export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], brief: BriefSection[], config: StudioConfig, projectDir?: string, address = '<project>/<campaign>'): GateResult[] & { warnings: string[] } {
   const failures: Record<GateResult['id'], string[]> = { policy: [], disclosure: [], specs: [], accessibility: [], 'fabricated-metrics': [], rights: [] };
   const warnings: string[] = [...(pack.notes ?? [])];
   const policySources: { source?: string; lastVerified?: string }[] = [{ source: pack.aiSource, lastVerified: pack.aiLastVerified }, ...Object.values(pack.disclosure).filter((rule): rule is Extract<typeof rule, object> => typeof rule === 'object'), ...(typeof pack.sponsorship === 'object' ? [pack.sponsorship] : [])];

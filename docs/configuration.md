@@ -36,7 +36,7 @@ Historical ledger entries remain attributed to the migrated `<slug>/<slug>` camp
 | `voice.provider` | `none` | `none` or `openai`. |
 | `voice.model`, `voice.voice` | `tts-1`, `alloy` | Optional speech model and voice; the model needs a matching voice price in `providers/prices.yml`. |
 | `budget.monthlyUsd` | `0` | Monthly cap for reserved API calls; zero disables them, not separately billed subscription or OMP usage. |
-| `budget.perProjectUsd` | `0` | Lifetime per-project cap; zero means no additional project limit. |
+| `budget.perProjectUsd` | `0` | Lifetime per-campaign cap, keyed by `<project>/<campaign>`; zero means no additional campaign limit. |
 | `providers.allowUpload` | `false` | Reference-image upload consent flag. Reference-image uploads are not supported by the current adapter even when enabled; this flag does not prevent text prompts being sent to selected providers. |
 | `grounding.waive` | `[]` | Strings whose numeric metrics are waived from the fabricated-metrics grounding check. |
 | `marketBlaster.command` | `[mblast]` | Market Blaster executable and arguments. |
