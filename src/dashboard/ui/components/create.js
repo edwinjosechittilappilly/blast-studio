@@ -4,6 +4,7 @@ import '@carbon/web-components/es/components/checkbox/index.js';
 import '@carbon/web-components/es/components/select/index.js';
 import '@carbon/web-components/es/components/modal/index.js';
 import '@carbon/web-components/es/components/notification/index.js';
+import { copyText } from '../../static/clipboard.js';
 import { api, headers } from './api.js';
 import { el, button, copyButton } from './review.js';
 
@@ -36,7 +37,7 @@ function validateField(input, value, spec, key, project) {
   else if (spec.kind === 'repo' && (value === 'local' ? project : !/^[\w.-]+\/[\w.-]+$/.test(value))) error = project ? 'Enter a repository as owner/name.' : 'Enter owner/name or local.';
   else if (spec.kind === 'number' && !(key === 'pr' ? /^\d+$/.test(value) : /^(?:\d+(?:\.\d+)?|\.\d+)$/.test(value))) error = 'Enter a valid number.';
   else if (spec.kind === 'sha' && !/^[a-f\d]{4,64}$/i.test(value)) error = 'Enter a commit SHA (4–64 hexadecimal characters).';
-  else if (spec.kind === 'path' && (value.startsWith('-') || value.split(/[\\/]/).includes('..'))) error = 'Enter a path without parent-directory segments.';
+  else if (spec.kind === 'path' && (!(/^(?:\/|~\/)/.test(value)) || value.split(/[\\/]/).includes('..'))) error = 'Enter an absolute path or a path starting with ~/, without parent-directory segments.';
   else if (spec.kind === 'url') {
     try { const url = new URL(value); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error(); }
     catch { error = 'Enter an HTTP or HTTPS URL without credentials.'; }
@@ -77,7 +78,24 @@ function confirmPaid(budget, start) {
   modal.addEventListener('cds-modal-closed', () => modal.remove()); modal.open = true;
 }
 
-async function monitor(region, job, success, submit) {
+function markFailure(log, inputs, args, evidence) {
+  let key, message;
+  if (args.url && /fetch failed|fetching .+ failed|request timed out|operation was aborted/i.test(log)) {
+    key = 'url'; message = 'URL unreachable. Check the address and try again.';
+  } else if (args.repo && /could not resolve to a repository|repository.*not found|could not resolve to a node with the global id/i.test(log)) {
+    key = 'repo'; message = 'Repository not found or inaccessible. Check owner/name and your GitHub access.';
+  } else if (args.pr && /no pull requests found|pull request.*not found|could not resolve to a pullrequest/i.test(log)) {
+    key = 'pr'; message = 'Pull request not found. Check the number and repository.';
+  } else if (args.commit && /no commit found|commit.*not found|bad object|unknown revision|ambiguous argument/i.test(log)) {
+    key = 'commit'; message = 'Commit not found. Check the SHA and repository.';
+  }
+  if (!key || !inputs[key]) return false;
+  if (evidence) evidence.open = true;
+  inputs[key].setAttribute('invalid-text', message); inputs[key].setAttribute('invalid', '');
+  return true;
+}
+
+async function monitor(region, job, success, submit, inputs, args, evidence) {
   const status = el('div'), cancelError = el('div'), log = el('pre', '', 'job-log'), cancel = button('Cancel job', 'secondary');
   const details = el('details'); details.open = true; details.append(el('summary', 'Job log'), log);
   status.setAttribute('role', 'status'); log.style.whiteSpace = 'pre-wrap'; log.style.overflowWrap = 'anywhere';
@@ -94,7 +112,8 @@ async function monitor(region, job, success, submit) {
       if (!region.isConnected) return;
       log.textContent = output.log || 'Waiting for output…';
       const running = current.state === 'queued' || current.state === 'running';
-      status.replaceChildren(notification(current.state === 'failed' ? 'error' : current.state === 'succeeded' ? 'success' : 'info', current.cancelRequested && running ? 'Cancelling job…' : `Job ${current.state}`, current.state === 'failed' ? 'Review the log, correct the problem, and try again.' : ''));
+      const fieldError = current.state === 'failed' && markFailure(output.log || '', inputs, args, evidence);
+      status.replaceChildren(notification(current.state === 'failed' ? 'error' : current.state === 'succeeded' ? 'success' : 'info', current.cancelRequested && running ? 'Cancelling job…' : `Job ${current.state}`, current.state === 'failed' ? fieldError ? 'Check the highlighted field and try again.' : 'Review the log, correct the problem, and try again.' : ''));
       cancel.hidden = !running; cancel.disabled = !!current.cancelRequested;
       if (running) setTimeout(update, 2000);
       else if (current.state === 'succeeded') success();
@@ -123,7 +142,13 @@ async function render(container, ctx, projectMode) {
   const page = el('div', null, 'surface'); page.style.maxWidth = '48rem';
   const title = el('h1', projectMode ? 'New project' : 'New campaign');
   page.append(title, el('p', projectMode ? 'Create a project and add shared evidence for its campaigns.' : `Create a campaign in ${ctx.project}. Project evidence is included automatically.`, 'muted'));
-  const form = el('form'); form.noValidate = true;
+  const form = el('form', null, 'create-form cds--layer-one'); form.noValidate = true;
+  let mode, force;
+  if (!projectMode) {
+    mode = el('cds-select'); mode.setAttribute('label-text', 'Creation mode'); mode.value = 'brief'; mode.style.display = 'block'; mode.style.marginBlock = '1rem';
+    for (const [value, label] of [['brief', 'Brief only'], ['new', 'Full pipeline — paid']]) { const option = el('cds-select-item', label); option.setAttribute('value', value); mode.append(option); }
+    form.append(mode);
+  }
   const id = field(projectMode ? 'Project name / ID' : 'Campaign ID', false, 'Lowercase letters and numbers, separated by hyphens.');
   const preview = el('p', '', 'muted'); preview.setAttribute('aria-live', 'polite');
   function updatePreview() { preview.textContent = projectMode ? `Project address: ${id.value || 'project-id'}` : `Campaign address: ${ctx.project}/${id.value || 'campaign-id'}`; }
@@ -132,14 +157,15 @@ async function render(container, ctx, projectMode) {
   const definitions = projectMode ? [
     ['repo', 'Repository', false, 'GitHub owner/name (optional).'], ['url', 'URLs', true, 'One HTTP or HTTPS URL per line.'], ['note', 'Notes', true, 'One shared evidence note per line.'],
   ] : [
-    ['idea', 'Idea', true, 'Optional campaign idea.'], ['note', 'Notes', true, 'Optional campaign evidence.'], ['url', 'URL', false, 'Optional HTTP or HTTPS source.'], ['pr', 'Pull request number', false, 'Requires a GitHub repository.'], ['commit', 'Commit SHA', false, 'Requires a repository.'], ['repo', 'Repository', false, 'GitHub owner/name, or local for a commit.'], ['mbBrief', 'Market Blaster brief path', false, 'Path to an existing brief.'],
+    ['idea', 'Idea', true, 'Optional campaign idea.'], ['note', 'Notes', true, 'Optional campaign evidence.'], ['url', 'URL', false, 'Optional HTTP or HTTPS source.'], ['pr', 'Pull request number', false, 'Requires a GitHub repository.'], ['commit', 'Commit SHA', false, 'Requires a repository.'], ['repo', 'Repository', false, 'GitHub owner/name, or local for a commit.'], ['mbBrief', 'Market Blaster brief path', false, 'Absolute path or a path starting with ~/ to an existing brief.'],
   ];
-  for (const [key, label, multiline, helper] of definitions) { inputs[key] = field(label, multiline, helper); form.append(inputs[key]); }
-  let mode, force;
+  const evidence = el('details', null, 'create-evidence'); evidence.append(el('summary', 'Evidence sources (optional)'));
+  for (const [key, label, multiline, helper] of definitions) {
+    inputs[key] = field(label, multiline, helper);
+    (projectMode || key !== 'idea' ? evidence : form).append(inputs[key]);
+  }
+  form.append(evidence);
   if (!projectMode) {
-    mode = el('cds-select'); mode.setAttribute('label-text', 'Creation mode'); mode.value = 'brief'; mode.style.display = 'block'; mode.style.marginBlock = '1rem';
-    for (const [value, label] of [['brief', 'Brief only'], ['new', 'Run full pipeline']]) { const option = el('cds-select-item', label); option.setAttribute('value', value); mode.append(option); }
-    form.append(mode);
     force = el('cds-checkbox'); force.setAttribute('label-text', 'Replace an existing brief (--force)'); force.setAttribute('helper-text', 'The existing brief will be overwritten.'); form.append(force);
   }
   const tty = el('div'), errors = el('div'), progress = el('section'); errors.setAttribute('role', 'alert');
@@ -155,8 +181,13 @@ async function render(container, ctx, projectMode) {
     return args;
   };
   function updateTTY() {
-    const op = mode?.value || 'brief', schema = operations[op];
-    if (!projectMode && schema?.requiresTTY) commandNotice(tty, command(op, schema, argsFor())); else tty.replaceChildren();
+    const op = mode?.value || 'brief', schema = operations[op], terminal = !projectMode && schema?.requiresTTY;
+    const validId = slug.test(id.value?.trim() || '');
+    submit.textContent = terminal ? 'Copy command' : projectMode ? 'Create project' : 'Create campaign';
+    submit.disabled = !!terminal && !validId;
+    if (terminal && validId) tty.replaceChildren(notification('info', 'Run this operation in a terminal', 'The configured image provider requires an interactive terminal.'), el('code', command(op, schema, argsFor()), 'create-command'));
+    else if (terminal) tty.replaceChildren(notification('info', 'Run this operation in a terminal', 'Enter a valid campaign ID to prepare the command.'));
+    else tty.replaceChildren();
   }
   form.addEventListener('input', () => { errors.replaceChildren(); updateTTY(); }); mode?.addEventListener('cds-select-selected', updateTTY); force?.addEventListener('cds-checkbox-changed', updateTTY); updateTTY();
   form.addEventListener('submit', event => event.preventDefault());
@@ -170,14 +201,18 @@ async function render(container, ctx, projectMode) {
     }
     if (!projectMode && (args.pr || args.commit) && !args.repo) { inputs.repo.setAttribute('invalid-text', 'A repository is required for a pull request or commit.'); inputs.repo.setAttribute('invalid', ''); valid = false; }
     if (!projectMode && args.pr && args.repo === 'local') { inputs.repo.setAttribute('invalid-text', 'A pull request requires a GitHub owner/name.'); inputs.repo.setAttribute('invalid', ''); valid = false; }
-    if (!valid) { errors.append(notification('error', 'Check the highlighted fields')); return; }
-    if (schema.requiresTTY) { updateTTY(); return; }
+    if (!valid) { evidence.open = true; errors.append(notification('error', 'Check the highlighted fields')); return; }
+    if (schema.requiresTTY) {
+      const copied = await copyText(command(op, schema, args));
+      errors.replaceChildren(notification(copied ? 'success' : 'error', copied ? 'Command copied' : 'Could not copy command', copied ? 'Paste it into a terminal to run the pipeline.' : 'Select the command above and copy it manually.'));
+      return;
+    }
     const start = async () => {
       submit.disabled = true; errors.replaceChildren();
       try {
         const body = projectMode ? { op, args } : { op, campaign: args.campaign, args: Object.fromEntries(Object.entries(args).filter(([key]) => key !== 'campaign')) };
         const job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify(body) });
-        await monitor(progress, job, () => { location.hash = projectMode ? `#/p/${route(args.project)}` : `#/p/${args.campaign.split('/').map(route).join('/')}/overview`; }, submit);
+        await monitor(progress, job, () => { location.hash = projectMode ? `#/p/${route(args.project)}` : `#/p/${args.campaign.split('/').map(route).join('/')}/overview`; }, submit, inputs, args, evidence);
       } catch (error) { errors.replaceChildren(notification('error', 'Could not start job', error.message)); if (error.command) { const terminal = el('div'); commandNotice(terminal, error.command); errors.append(terminal); } submit.disabled = false; }
     };
     if (schema.paid) {
