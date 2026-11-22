@@ -1,6 +1,6 @@
 // A deliberately small Markdown subset. The parser returns data, never HTML.
 export function parseInline(text) {
-  const nodes = [], pattern = /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|\[[^\]]+\]\([^)]+\))/g;
+  const nodes = [], pattern = /(`[^`]+`|\*\*[^*]+\*\*|(?<![\p{L}\p{N}_])__[^_]+__(?![\p{L}\p{N}_])|\*[^*]+\*|(?<![\p{L}\p{N}_])_[^_]+_(?![\p{L}\p{N}_])|\[[^\]]+\]\([^)]+\))/gu;
   let last = 0, match;
   while ((match = pattern.exec(text))) {
     if (match.index > last) nodes.push({ type: 'text', text: text.slice(last, match.index) });

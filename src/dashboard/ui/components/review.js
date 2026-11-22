@@ -6,7 +6,7 @@ export async function copyText(value) {
   const area = el('textarea'); area.value = value; area.style.position = 'fixed'; area.style.opacity = '0'; document.body.append(area); area.select(); const ok = document.execCommand('copy'); area.remove(); return ok;
 }
 export function copyButton(label, value) {
-  const wrapper = el('span', null, 'copy-control'), b = el('cds-copy-button'); b.setAttribute('aria-label', label); b.setAttribute('feedback', 'Copied'); wrapper.append(b, el('span', label));
+  const wrapper = el('span', null, 'copy-control'), b = el('cds-copy-button', label); b.setAttribute('feedback', 'Copied'); wrapper.append(b, el('span', label));
   b.addEventListener('click', async () => {
     if (!await copyText(value)) b.setAttribute('feedback', 'Copy failed'); else b.setAttribute('feedback', 'Copied');
   }); return wrapper;
@@ -23,11 +23,12 @@ export function rubricTable(rubric, scores) {
   const entries = rubric.map(criterion => ({ criterion, score: scores.find(s => s.criterion === criterion.id) }));
   function render() {
     tbody.replaceChildren(); na.length = 0;
+    for (const cell of row.children) { cell.removeAttribute('aria-sort'); if (cell.dataset.sort === sortKey) cell.setAttribute('aria-sort', ascending ? 'ascending' : 'descending'); }
     const sorted = [...entries].sort((a, b) => { const left = sortKey === 'weight' ? a.criterion.weight ?? 1 : sortKey === 'score' ? a.score?.score ?? -1 : a.criterion.question, right = sortKey === 'weight' ? b.criterion.weight ?? 1 : sortKey === 'score' ? b.score?.score ?? -1 : b.criterion.question; return (typeof left === 'number' && typeof right === 'number' ? left - right : String(left).localeCompare(String(right))) * (ascending ? 1 : -1); });
     for (const { criterion, score } of sorted) { const r = el('cds-table-row'); for (const value of [criterion.question, criterion.weight ?? 1, score?.score == null ? 'N/A' : `${score.score} / 2`, score?.evidence || '—', score?.fix || '—']) r.append(el('cds-table-cell', String(value))); if (score?.score == null) na.push(r); else tbody.append(r); }
     otherBody.replaceChildren(...na); details.hidden = !na.length; summary.textContent = `Not applicable or unscored (${na.length})`;
   }
-  for (const [name, key] of [['Criterion', 'question'], ['Weight', 'weight'], ['Score', 'score'], ['Evidence', ''], ['Fix', '']]) { const cell = el('cds-table-header-cell'); if (key) { const control = el('button', name, 'sort-button'); control.type = 'button'; control.setAttribute('aria-label', `Sort by ${name}`); control.addEventListener('click', () => { ascending = sortKey === key ? !ascending : true; sortKey = key; render(); }); cell.append(control); } else cell.textContent = name; row.append(cell); }
+  for (const [name, key] of [['Criterion', 'question'], ['Weight', 'weight'], ['Score', 'score'], ['Evidence', ''], ['Fix', '']]) { const cell = el('cds-table-header-cell'); if (key) { cell.dataset.sort = key; const control = el('button', name, 'sort-button'); control.type = 'button'; control.setAttribute('aria-label', `Sort by ${name}`); control.addEventListener('click', () => { ascending = sortKey === key ? !ascending : true; sortKey = key; render(); }); cell.append(control); } else cell.textContent = name; row.append(cell); }
   head.append(row); table.append(head, tbody); const wrap = el('div', null, 'table-scroll'), details = el('details'), summary = el('summary'), other = el('cds-table'), otherBody = el('cds-table-body'); other.append(otherBody); details.append(summary, other); wrap.append(table, details); render(); return wrap;
 }
 export function gateList(gates) { const list = el('ul', null, 'gates'); for (const gate of gates || []) list.append(el('li', `${gate.pass ? '✓ Pass' : '✕ Fail'} · ${gate.id} — ${gate.message}`)); return list; }

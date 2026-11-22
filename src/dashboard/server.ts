@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync, realpathSync, statSync, createReadStream, mkdirSync, openSync, closeSync, readSync, readdirSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, realpathSync, statSync, lstatSync, createReadStream, mkdirSync, openSync, closeSync, readSync, readdirSync, unlinkSync, linkSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -11,6 +11,7 @@ import { loadConfig, projectDir, writeConfigField } from '../config.ts';
 import { loadLibrary, projectReview, latestSources } from '../library.ts';
 import { monthToDate, projectTotal, providerTotals } from '../budget/ledger.ts';
 import type { IO } from '../io.ts';
+import { revisionLockStatus } from '../revise-lock.ts';
 
 const staticDir = join(dirname(fileURLToPath(import.meta.url)), 'static');
 const buildDir = join(dirname(fileURLToPath(import.meta.url)), 'build');
@@ -46,7 +47,7 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 function serveFile(req: IncomingMessage, res: ServerResponse, path: string, media = false) {
   const size = statSync(path).size, type = types[extname(path).toLowerCase()] ?? 'application/octet-stream';
-  const headers: Record<string, string | number> = { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store', ...(media ? { 'Content-Security-Policy': "sandbox; default-src 'none'" } : {}) };
+  const headers: Record<string, string | number> = { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store', ...(media ? { 'Content-Security-Policy': "sandbox; default-src 'none'" } : type.startsWith('text/html') ? { 'Content-Security-Policy': "default-src 'self'; font-src 'self' data:; img-src 'self' data:; media-src 'self'; frame-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'" } : {}) };
   const range = req.headers.range;
   if (range && type.startsWith('video/')) {
     const m = /^bytes=(\d*)-(\d*)$/.exec(range);
@@ -65,8 +66,15 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
   const token = randomBytes(32).toString('hex');
   const root = loadConfig(io).root, keyFile = join(root, '.dashboard-key');
   mkdirSync(root, { recursive: true });
-  try { writeFileSync(keyFile, randomBytes(32).toString('hex'), { mode: 0o600, flag: 'wx' }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-  const key = readFileSync(keyFile, 'utf8');
+  if (!existsSync(keyFile)) {
+    const temp = join(root, `.dashboard-key-${randomBytes(16).toString('hex')}.tmp`);
+    try {
+      writeFileSync(temp, randomBytes(32).toString('hex'), { mode: 0o600, flag: 'wx' });
+      try { linkSync(temp, keyFile); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+    } finally { if (existsSync(temp)) unlinkSync(temp); }
+  }
+  const metadata = lstatSync(keyFile), key = readFileSync(keyFile, 'utf8');
+  if (!metadata.isFile() || (metadata.mode & 0o077) !== 0 || !/^[a-f0-9]{64}$/.test(key)) throw new Error(`Invalid dashboard signing key or permissions: ${keyFile}`);
   const signature = (payload: string) => createHmac('sha256', key).update(payload).digest('hex');
   const sessionCookie = () => { const payload = `${Date.now() + 12 * 60 * 60 * 1000}.${randomBytes(16).toString('hex')}`; return `bs=${payload}.${signature(payload)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`; };
   const validSession = (value: string) => { const parts = value.split('.'); if (parts.length !== 3 || !/^\d+$/.test(parts[0]) || !/^[a-f0-9]{32}$/.test(parts[1])) return false; const expiry = Number(parts[0]); return Number.isSafeInteger(expiry) && expiry > Date.now() && equal(parts[2], signature(`${parts[0]}.${parts[1]}`)); };
@@ -94,9 +102,11 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
         const slug = decodeURIComponent(projectApi[1]), dir = projectDir(config, slug), action = projectApi[2];
         if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; }
         if (req.method === 'GET' && action === 'status') {
-          const run = runs.get(slug);
-          const lines = run && existsSync(run.log) ? tailLog(run.log) : [];
-          send(res, 200, { running: run?.running ?? false, exitCode: run?.exitCode ?? null, lines }); return;
+          const run = runs.get(slug), lock = revisionLockStatus(dir), logs = join(dir, 'logs');
+          const latest = existsSync(logs) ? readdirSync(logs).filter(name => /^revise-.*\.log$/.test(name)).sort().at(-1) : undefined;
+          const log = run?.log ?? (latest ? join(logs, latest) : undefined);
+          const lines = log && existsSync(log) ? tailLog(log) : [];
+          send(res, 200, { running: !!run?.running || lock === 'running', staleLock: lock === 'stale', exitCode: run?.exitCode ?? null, lines }); return;
         }
         if (req.method === 'POST' && (action === 'feedback' || action === 'revise')) {
           if (req.headers['x-requested-with'] !== 'bstudio') { send(res, 403, { error: 'Missing request header' }); return; }
@@ -107,7 +117,7 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
             if ((selection.platform !== undefined && typeof selection.platform !== 'string') || (selection.asset !== undefined && typeof selection.asset !== 'string') || (selection.platform !== undefined && selection.asset !== undefined)) { send(res, 400, { error: 'Invalid feedback target' }); return; }
             send(res, 201, addFeedback(dir, selection as { platform?: string; asset?: string }, data.note.trim())); return;
           }
-          if (runs.get(slug)?.running || existsSync(join(dir, '.revise.lock'))) { send(res, 409, { error: 'Revision already running' }); return; }
+          if (runs.get(slug)?.running || revisionLockStatus(dir) !== 'absent') { send(res, 409, { error: revisionLockStatus(dir) === 'stale' ? `Stale revision lock at ${join(dir, '.revise.lock')}; remove it after confirming no revision is running` : 'Revision already running' }); return; }
           const logs = join(dir, 'logs'); mkdirSync(logs, { recursive: true });
           const oldLogs = readdirSync(logs).filter(name => /^revise-.*\.log$/.test(name)).sort().reverse();
           for (const name of oldLogs.slice(9)) unlinkSync(join(logs, name));
@@ -136,7 +146,11 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
           serveFile(req, res, file, true); return;
         }
         const staticFile = pathname === '/' ? 'index.html' : pathname === '/app.js' ? 'app.js' : pathname === '/app.css' ? 'app.css' : '';
-        if (staticFile) { const built = join(buildDir, staticFile); serveFile(req, res, staticFile !== 'index.html' && existsSync(built) ? built : join(staticDir, staticFile)); return; }
+        if (staticFile) {
+          const built = join(buildDir, staticFile), file = staticFile !== 'index.html' && existsSync(built) ? built : join(staticDir, staticFile);
+          if (staticFile === 'index.html' && !existsSync(join(buildDir, 'app.js')) && !existsSync(join(staticDir, 'app.js'))) { res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end('<!doctype html><html lang="en"><meta charset="utf-8"><title>Dashboard assets missing</title><h1>Dashboard assets missing</h1><p>Run <code>npm run build:ui</code> in the source checkout, then reload.</p></html>'); return; }
+          serveFile(req, res, file); return;
+        }
       }
       if (req.method === 'PUT' && (pathname === '/api/budget' || pathname === '/api/providers')) {
         if (req.headers['x-requested-with'] !== 'bstudio') { send(res, 403, { error: 'Missing request header' }); return; }

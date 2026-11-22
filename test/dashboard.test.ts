@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { request } from 'node:http';
 import { EventEmitter } from 'node:events';
@@ -61,6 +61,7 @@ test('dashboard authenticates, contains media and validates settings', async t =
   assert.equal((await fetch(started.url, { redirect: 'manual' })).status, 401);
   const headers = { cookie, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
   assert.equal((await fetch(base + '/api/library', { headers })).status, 200);
+  const html = await fetch(base + '/', { headers }); assert.match(html.headers.get('content-security-policy') ?? '', /font-src 'self' data:/);
   assert.equal((await fetch(base + '/api/budget', { method: 'PUT', headers, body: JSON.stringify({ monthlyUsd: -1, perProjectUsd: 0 }) })).status, 400);
   assert.equal((await fetch(base + '/api/budget', { method: 'PUT', headers, body: JSON.stringify({ monthlyUsd: 25, perProjectUsd: 5 }) })).status, 200);
   assert.match(readFileSync(join(root, 'studio.yml'), 'utf8'), /# keep this comment/); assert.equal(loadConfig(io).budget.monthlyUsd, 25);
@@ -124,6 +125,11 @@ test('dashboard sessions survive restarts and reject tampering and expiration', 
   assert.equal((await fetch(url, { headers: { cookie: cookie.replace(/bs=./, 'bs=x') } })).status, 401);
   const payload = `1.${'a'.repeat(32)}`, key = readFileSync(join(root, '.dashboard-key'), 'utf8'), signature = createHmac('sha256', key).update(payload).digest('hex');
   assert.equal((await fetch(url, { headers: { cookie: `bs=${payload}.${signature}` } })).status, 401);
+  assert.equal(statSync(join(root, '.dashboard-key')).mode & 0o777, 0o600);
+  const future = `${Date.now() + 60000}.${'b'.repeat(32)}`;
+  assert.equal((await fetch(url, { headers: { cookie: `bs=${future}.${'0'.repeat(64)}` } })).status, 401);
+  const goodSignature = createHmac('sha256', key).update(future).digest('hex'), altered = `${Date.now() + 120000}.${'b'.repeat(32)}`;
+  assert.equal((await fetch(url, { headers: { cookie: `bs=${altered}.${goodSignature}` } })).status, 401);
 });
 
 test('project review selects outline rubric and finds asset captions', async t => {
@@ -135,4 +141,27 @@ test('project review selects outline rubric and finds asset captions', async t =
   const result = await (await fetch(`http://127.0.0.1:${started.port}/api/project/launch`, { headers: { cookie } })).json();
   assert.deepEqual(result.rubric.reddit, loadPack('reddit').outlineRubric ?? []);
   assert.equal(result.captions['assets/card/out/9x16.mp4'], 'assets/card/out/captions.vtt');
+});
+
+test('dashboard rejects weak or malformed persistent keys', async () => {
+  const { root, io } = fixture(), path = join(root, '.dashboard-key');
+  writeFileSync(path, 'a'.repeat(64), { mode: 0o600 });
+  chmodSync(path, 0o644);
+  await assert.rejects(startDashboard(io, { port: 0 }), /Invalid dashboard signing key/);
+  chmodSync(path, 0o600); writeFileSync(path, '');
+  await assert.rejects(startDashboard(io, { port: 0 }), /Invalid dashboard signing key/);
+});
+
+test('dashboard reports revisions and stale locks after restart', async t => {
+  const { root, io } = fixture(), lock = join(root, 'projects/launch/.revise.lock');
+  writeFileSync(lock, String(process.pid));
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const url = `http://127.0.0.1:${started.port}/api/projects/launch/status`;
+  const active = await (await fetch(url, { headers: { cookie } })).json();
+  assert.equal(active.running, true); assert.equal(active.staleLock, false);
+  writeFileSync(lock, '2147483647');
+  const stale = await (await fetch(url, { headers: { cookie } })).json();
+  assert.equal(stale.running, false); assert.equal(stale.staleLock, true);
+  unlinkSync(lock);
 });

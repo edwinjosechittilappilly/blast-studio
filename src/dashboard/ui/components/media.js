@@ -5,7 +5,7 @@ function visual(slug, item, captions) {
   const kind = kindOf(item.file, item.kind), url = mediaUrl(slug, item.file); let node;
   if (kind === 'image') { node = el('img'); node.src = url; node.alt = item.alt || ''; }
   else if (kind === 'video') { node = el('video'); node.controls = true; node.src = url; node.setAttribute('aria-label', item.alt || 'Video'); if (captions[item.file]) { const track = el('track'); track.kind = 'captions'; track.label = 'Captions'; track.src = mediaUrl(slug, captions[item.file]); track.default = true; node.append(track); } }
-  else if (kind === 'pdf') { node = el('iframe'); node.src = url; node.title = item.alt || 'PDF preview'; }
+  else if (kind === 'pdf') { node = el('a', 'Open PDF in new tab'); node.href = url; node.target = '_blank'; node.rel = 'noopener noreferrer'; }
   else { node = el('p', 'Preview not available. Download the file to view it.'); }
   return node;
 }
