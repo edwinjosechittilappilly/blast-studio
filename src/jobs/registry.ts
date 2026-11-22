@@ -1,4 +1,6 @@
-import { parseCampaignRef } from '../campaigns.ts';
+import { existsSync } from 'node:fs';
+import { containedPath, parseCampaignRef } from '../campaigns.ts';
+import { readPlan } from '../plan.ts';
 import { UserError } from '../types.ts';
 
 type Kind = 'id' | 'campaign' | 'ids' | 'text' | 'url' | 'path' | 'number' | 'bool' | 'repo' | 'sha';
@@ -42,8 +44,14 @@ export const operations: Readonly<Record<string, Operation>> = {
   'feedback add': operation('feedback', { campaign, note: { ...inputs.note, required: true }, asset: option('id', '--asset'), platform: option('id', '--platform') }),
   'feedback rm': operation('feedback', { campaign, id: id(true) }),
 };
-export function operationRequiresTTY(name: string, operation: Operation, imageProvider?: string): boolean {
-  return operation.requiresTTY || (['render', 'new', 'revise'].includes(name) && imageProvider === 'omp');
+export function operationRequiresTTY(name: string, operation: Operation, imageProvider?: string, root?: string, ref?: string): boolean {
+  if (operation.requiresTTY || (name === 'new' && imageProvider === 'omp')) return true;
+  if (!['render', 'make', 'revise'].includes(name) || imageProvider !== 'omp' || !root || !ref) return false;
+  const { project, campaign } = parseCampaignRef(ref);
+  const projectDir = containedPath(root, 'projects', project);
+  const dir = containedPath(projectDir, 'campaigns', campaign);
+  const plan = containedPath(dir, 'plan.yml');
+  return existsSync(plan) && readPlan(dir).some(entry => entry.assets.some(asset => asset.kind === 'illustration'));
 }
 const slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export function campaignRef(value: unknown): string {
@@ -65,7 +73,7 @@ function validate(value: unknown, kind: Kind, key: string): string | boolean {
   if (kind === 'path' && (value.startsWith('-') || value.split(/[\\/]/).includes('..'))) throw new UserError(`Invalid ${key}`);
   return value;
 }
-export function buildOperation(name: string, raw: unknown, options: { imageProvider?: string } = {}): { operation: Operation; args: string[]; campaign?: string; command: string; requiresTTY: boolean } {
+export function buildOperation(name: string, raw: unknown, options: { imageProvider?: string; root?: string } = {}): { operation: Operation; args: string[]; campaign?: string; command: string; requiresTTY: boolean } {
   const op = Object.hasOwn(operations, name) ? operations[name] : undefined;
   if (!op || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new UserError('Unknown operation or invalid arguments');
   const values = raw as Record<string, unknown>;
@@ -91,5 +99,5 @@ export function buildOperation(name: string, raw: unknown, options: { imageProvi
   // Feedback syntax places the action after its campaign.
   const args = cmd === 'feedback' ? [cmd, ...positional.slice(0, 1), ...sub, ...positional.slice(1), ...flags] : [cmd, ...sub, ...positional, ...flags];
   const quote = (s: string) => /^[a-zA-Z0-9_./:=,-]+$/.test(s) ? s : `'${s.replaceAll("'", "'\\''")}'`;
-  return { operation: op, args, campaign: ref, command: ['bstudio', ...args].map(quote).join(' '), requiresTTY: operationRequiresTTY(name, op, options.imageProvider) };
+  return { operation: op, args, campaign: ref, command: ['bstudio', ...args].map(quote).join(' '), requiresTTY: operationRequiresTTY(name, op, options.imageProvider, options.root, ref) };
 }

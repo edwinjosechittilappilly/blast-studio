@@ -175,7 +175,7 @@ export function updateJobProcesses(root: string, ref: string | undefined, id: st
   }
 }
 export function startJob(root: string, name: string, values: unknown, options: { imageProvider?: string; env?: NodeJS.ProcessEnv; cwd?: string } = {}): Job {
-  const built = buildOperation(name, values, options);
+  const built = buildOperation(name, values, { ...options, root });
   if (built.requiresTTY) throw new UserError(`Requires a terminal; run ${built.command}`);
   if (built.campaign && (name === 'new' || name === 'brief')) campaignDirectory(root, built.campaign, true);
   const id = randomUUID(), dir = logDir(root, built.campaign), release = built.campaign && built.operation.campaign ? acquireCampaignLock(root, built.campaign, id) : () => {};

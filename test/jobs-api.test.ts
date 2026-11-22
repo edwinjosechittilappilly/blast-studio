@@ -12,7 +12,7 @@ import { findJob } from '../src/jobs/runner.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 test('jobs API enforces host, session, origin, header and argument schemas', async () => {
-  const root = tempStudio({ 'projects/demo/project.yml': 'name: Demo\ncreatedAt: 2025-01-01\n', 'projects/demo/campaigns/launch/brief.md': '# Brief' }), io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml', PATH: process.env.PATH } }), config = loadConfig(io);
+  const root = tempStudio({ 'projects/demo/project.yml': 'name: Demo\ncreatedAt: 2025-01-01\n', 'projects/demo/campaigns/launch/brief.md': '# Brief', 'projects/demo/campaigns/plain/plan.yml': '- platform: bluesky\n  type: text\n  angle: Demo\n  hooks: [one, two, three]\n  assets: []\n' }), io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml', PATH: process.env.PATH } }), config = loadConfig(io);
   let port = 0;
   const ready = Promise.withResolvers<void>();
   const server = createServer(async (req, res) => {
@@ -55,11 +55,21 @@ test('jobs API enforces host, session, origin, header and argument schemas', asy
     assert.equal(secret.status, 400); assert.doesNotMatch(secret.body, /sensitive-value/);
     assert.equal((await call('GET', '/api/jobs/a0000000-0000-4000-8000-000000000000', headers)).status, 404);
     config.images.provider = 'omp';
-    const ompMetadata = JSON.parse((await call('GET', '/api/operations', { cookie: 'bs=valid' })).body);
-    for (const name of ['new', 'render', 'revise']) {
+    const unscoped = JSON.parse((await call('GET', '/api/operations', { cookie: 'bs=valid' })).body);
+    assert.equal(unscoped.revise.requiresTTY, false);
+    assert.equal(unscoped.new.requiresTTY, true);
+    assert.equal((await call('GET', '/api/operations?campaign=..%2Fescape', { cookie: 'bs=valid' })).status, 400);
+    const plain = JSON.parse((await call('GET', '/api/operations?campaign=demo%2Fplain', { cookie: 'bs=valid' })).body);
+    for (const name of ['make', 'render', 'revise']) assert.equal(plain[name].requiresTTY, false, name);
+    assert.equal(plain.new.requiresTTY, true);
+    assert.equal((await call('POST', '/api/jobs', headers, JSON.stringify({ op: 'revise', campaign: 'demo/plain', args: {} }))).status, 202);
+    writeFileSync(join(root, 'projects/demo/campaigns/launch/plan.yml'), '- platform: bluesky\n  type: image\n  angle: Demo\n  hooks: [one, two, three]\n  assets:\n    - id: hero\n      kind: illustration\n      brief: Hero image\n');
+    const ompMetadata = JSON.parse((await call('GET', '/api/operations?campaign=demo%2Flaunch', { cookie: 'bs=valid' })).body);
+    for (const name of ['new', 'make', 'render', 'revise']) {
       assert.equal(ompMetadata[name].requiresTTY, true, name);
       const response = await call('POST', '/api/jobs', headers, JSON.stringify({ op: name, campaign: 'demo/launch', args: {} }));
       assert.equal(response.status, 422, name);
+      assert.equal(JSON.parse(response.body).command, `bstudio ${name} demo/launch`);
     }
     assert.equal(ompMetadata.plan.requiresTTY, false);
     const tty = await call('POST', '/api/jobs', headers, JSON.stringify({ op: 'render', campaign: 'demo/launch', args: {} }));

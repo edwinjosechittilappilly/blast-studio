@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildOperation, campaignRef } from '../src/jobs/registry.ts';
-import { acquireCampaignLock, campaignDirectory, campaignLockStatus, cancelJob, findJob, finishSpawnedJob, jobLog, jobLogTail, JobConflict, JobNotFound, JobNotRunning, listJobs, processGroupRunning, startCliJob } from '../src/jobs/runner.ts';
+import { acquireCampaignLock, campaignDirectory, campaignLockStatus, cancelJob, findJob, finishSpawnedJob, jobLog, jobLogTail, JobConflict, JobNotFound, JobNotRunning, listJobs, processGroupRunning, startCliJob, startJob } from '../src/jobs/runner.ts';
 import { processStarted } from '../src/jobs/process.ts';
 import { saveSecret } from '../src/jobs/secrets.ts';
 import { main, realIO } from '../src/cli.ts';
@@ -70,10 +70,23 @@ test('jobs help describes each command without loading configuration', async () 
   await assert.rejects(jobsCommand(['list', '--unknown'], io));
 });
 
-test('terminal-only provider gives a copyable command', () => {
-  const job = buildOperation('render', { campaign: 'acme/launch' }, { imageProvider: 'omp' });
-  assert.equal(job.requiresTTY, true);
-  assert.equal(job.command, 'bstudio render acme/launch');
+test('terminal-only provider follows campaign illustration plans', () => {
+  const root = tempStudio({
+    'projects/acme/project.yml': 'name: Acme\ncreatedAt: 2025-01-01\n',
+    'projects/acme/campaigns/launch/plan.yml': '- platform: bluesky\n  type: image\n  angle: Demo\n  hooks: [one, two, three]\n  assets:\n    - id: hero\n      kind: illustration\n      brief: Hero\n',
+    'projects/acme/campaigns/plain/plan.yml': '- platform: bluesky\n  type: text\n  angle: Demo\n  hooks: [one, two, three]\n  assets: []\n',
+  });
+  try {
+    const options = { imageProvider: 'omp', root };
+    const job = buildOperation('render', { campaign: 'acme/launch' }, options);
+    assert.equal(job.requiresTTY, true);
+    assert.equal(job.command, 'bstudio render acme/launch');
+    assert.equal(buildOperation('revise', { campaign: 'acme/plain' }, options).requiresTTY, false);
+    assert.equal(buildOperation('make', { campaign: 'acme/launch' }, options).requiresTTY, true);
+    assert.equal(buildOperation('new', { campaign: 'acme/plain' }, options).requiresTTY, true);
+    assert.equal(buildOperation('render', { campaign: 'acme/launch' }, { ...options, imageProvider: 'none' }).requiresTTY, false);
+    assert.throws(() => startJob(root, 'render', { campaign: 'acme/launch' }, options), /Requires a terminal; run bstudio render acme\/launch/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 test('campaign lock excludes concurrent owners but not other campaigns', () => {

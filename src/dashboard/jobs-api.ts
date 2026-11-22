@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { StudioConfig } from '../types.ts';
 import { UserError } from '../types.ts';
-import { buildOperation, operationRequiresTTY, operations } from '../jobs/registry.ts';
+import { buildOperation, campaignRef, operationRequiresTTY, operations } from '../jobs/registry.ts';
 import { cancelJob, findJob, JobConflict, JobNotFound, JobNotRunning, jobLog, listJobs, startJob } from '../jobs/runner.ts';
 import { saveSecret } from '../jobs/secrets.ts';
 
@@ -28,7 +28,8 @@ export async function handleJobsApi(req: IncomingMessage, res: ServerResponse, o
   try {
     const url = new URL(req.url ?? '/', `http://${host}`);
     if (raw === '/api/operations' && req.method === 'GET') {
-      send(res, 200, Object.fromEntries(Object.entries(operations).map(([name, operation]) => [name, { ...operation, requiresTTY: operationRequiresTTY(name, operation, options.config.images.provider) }]))); return true;
+      const campaign = url.searchParams.has('campaign') ? campaignRef(url.searchParams.get('campaign')) : undefined;
+      send(res, 200, Object.fromEntries(Object.entries(operations).map(([name, operation]) => [name, { ...operation, requiresTTY: operationRequiresTTY(name, operation, options.config.images.provider, options.config.root, campaign) }]))); return true;
     }
     if (raw === '/api/jobs' && req.method === 'GET') {
       const campaign = url.searchParams.get('campaign');
@@ -38,7 +39,7 @@ export async function handleJobsApi(req: IncomingMessage, res: ServerResponse, o
       const data = await body(req);
       if (Object.keys(data).some(key => !['op', 'campaign', 'args'].includes(key)) || typeof data.op !== 'string' || !data.args || typeof data.args !== 'object' || Array.isArray(data.args) || (data.campaign !== undefined && typeof data.campaign !== 'string')) throw new UserError('Invalid job request');
       const args = { ...data.args as Record<string, unknown>, ...(data.campaign !== undefined ? { campaign: data.campaign } : {}) };
-      const runnerOptions = { imageProvider: options.config.images.provider, cwd: options.cwd, env: options.env };
+      const runnerOptions = { imageProvider: options.config.images.provider, root: options.config.root, cwd: options.cwd, env: options.env };
       const built = buildOperation(data.op, args, runnerOptions);
       if (built.requiresTTY) { send(res, 422, { error: 'This operation requires a terminal', command: built.command }); return true; }
       send(res, 202, startJob(options.config.root, data.op, args, runnerOptions)); return true;
