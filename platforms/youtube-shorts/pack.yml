@@ -4,6 +4,10 @@
   "marketBlaster": null,
   "ai": "draft",
   "aiSource": "youtube-shorts-42",
+  "safeZones": {
+    "video": { "value": { "top": 0.15, "bottom": 0.35, "left": 0.044444444444444446, "right": 0.17777777777777778 }, "source": "youtube-shorts-safe-zone" },
+    "image": "unknown"
+  },
   "formats": [
     "video"
   ],
@@ -121,6 +125,7 @@
   "sources": [
     "youtube-shorts-40",
     "youtube-shorts-41",
+    "youtube-shorts-safe-zone",
     "youtube-shorts-42",
     "cross-platform-63",
     "cross-platform-64"

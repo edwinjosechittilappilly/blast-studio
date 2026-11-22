@@ -347,6 +347,14 @@
         "additionalProperties": false
       }
     },
+    "safeZones": {
+      "type": "object",
+      "properties": {
+        "video": { "$ref": "#/definitions/safeZone" },
+        "image": { "$ref": "#/definitions/safeZone" }
+      },
+      "additionalProperties": false
+    },
     "marketBlasterMedia": {
       "type": "object",
       "properties": {
@@ -525,6 +533,32 @@
     }
   },
   "definitions": {
+    "safeZone": {
+      "oneOf": [
+        { "const": "unknown" },
+        {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "object",
+              "properties": {
+                "top": { "type": "number", "minimum": 0, "maximum": 1 },
+                "bottom": { "type": "number", "minimum": 0, "maximum": 1 },
+                "left": { "type": "number", "minimum": 0, "maximum": 1 },
+                "right": { "type": "number", "minimum": 0, "maximum": 1 }
+              },
+              "required": ["top", "bottom", "left", "right"],
+              "additionalProperties": false
+            },
+            "source": { "type": "string", "minLength": 1 },
+            "verified": { "type": "string" },
+            "lastVerified": { "type": "string" }
+          },
+          "required": ["value", "source"],
+          "additionalProperties": false
+        }
+      ]
+    },
     "criterion": {
       "type": "object",
       "properties": {

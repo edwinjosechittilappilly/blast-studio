@@ -8,6 +8,7 @@ import { readPlan } from '../plan.ts';
 import { loadPosts, serializePost } from '../posts.ts';
 import { closeBrowser, renderDiagram, renderHtml, renderSvg } from '../render/stills.ts';
 import { renderVideo } from '../render/video.ts';
+import { combinedZone } from '../render/metrics.ts';
 import { generateImage } from '../providers/images.ts';
 import { generateVoice } from '../providers/voice.ts';
 import { UserError } from '../types.ts';
@@ -55,7 +56,7 @@ export const run: Command = async (args, io) => {
       const variants = [...new Map(dimensions.map(d => [`${d.width}x${d.height}`, d])).values()];
       const { width, height } = variants[0];
       const html = (file: string) => { const text = readFileSync(file, 'utf8'), base = `<base href="${pathToFileURL(`${dirname(file)}/`).href}">`; return /<head(?:\s[^>]*)?>/i.test(text) ? text.replace(/<head(?:\s[^>]*)?>/i, `$&${base}`) : base + text; };
-      const still = async (source: string, dest: string, width: number, height: number) => { const result = await renderHtml({ html: html(source), width, height, out: dest, assetDir: dir, projectDir: project }); add(dest, width, height); metrics.push({ file: `out/${basename(dest)}`, minFontPx: result.metrics.minFontPx, minContrast: result.metrics.minContrast, overflow: result.metrics.overflow, edge: result.metrics.edge, nodes: result.metrics.nodes, texts: result.metrics.nodes.map(n => n.text), unmeasurable: result.metrics.unmeasurable }); for (const file of result.loadedFiles) { const parts = relative(realpathSync(join(project, 'assets')), file).split(sep); if (parts.length >= 3 && parts[1] === 'out' && parts[0] !== '..' && parts[0] !== asset.id) raw.embeds = [...new Set([...(raw.embeds ?? []), parts[0]])]; } };
+      const still = async (source: string, dest: string, width: number, height: number) => { const safe = combinedZone(dimensions.filter(d => d.width === width && d.height === height).map(d => packs.get(d.platform)), 'image'); const result = await renderHtml({ html: html(source), width, height, out: dest, assetDir: dir, projectDir: project, safeZone: safe.zone }); add(dest, width, height); metrics.push({ file: `out/${basename(dest)}`, ...result.metrics, zoneDescription: safe.description, texts: result.metrics.nodes.map(n => n.text) }); for (const file of result.loadedFiles) { const parts = relative(realpathSync(join(project, 'assets')), file).split(sep); if (parts.length >= 3 && parts[1] === 'out' && parts[0] !== '..' && parts[0] !== asset.id) raw.embeds = [...new Set([...(raw.embeds ?? []), parts[0]])]; } };
       if (asset.kind === 'video' || asset.kind === 'terminal-demo') {
         const voiceId = (raw as AssetMeta & { voiceover?: string }).voiceover;
         let voice: string | undefined;
@@ -66,7 +67,7 @@ export const run: Command = async (args, io) => {
           const wav = join(embedded.dir, 'out', 'voiceover.wav');
           if (!embedded.meta.skipped && existsSync(wav)) { voice = wav; raw.embeds = [...new Set([...(raw.embeds ?? []), voiceId])]; raw.voiceGenerated = true; }
         }
-        outputs.push(...await renderVideo(dir, config, io, voice));
+        outputs.push(...await renderVideo(dir, config, io, voice, (aspect) => combinedZone(uses.filter(use => !use.asset.aspect || use.asset.aspect === aspect).map(use => packs.get(use.platform)), 'video', aspect === '9:16'), metrics, project));
       }
       else if (asset.kind === 'illustration' && config.images.provider === 'none') {
         skipped.push(`${asset.id}: illustration needs images.provider (now none); set one and a budget, or replace it with a template card`);

@@ -46,3 +46,16 @@ test("knownValue preserves sourced values and exposes unknown as undefined", () 
   assert.equal(knownValue(undefined), undefined);
   assert.equal(knownValue({ value: 0, source: "example" }), 0);
 });
+
+test("safe zones retain official provenance and unknown values", () => {
+  const zone = loadPack("youtube-shorts").safeZones?.video;
+  assert.notEqual(zone, "unknown");
+  assert.ok(zone && zone !== "unknown");
+  assert.deepEqual(zone.value, { top: .15, bottom: .35, left: 48 / 1080, right: 192 / 1080 });
+  assert.equal(zone.source, "youtube-shorts-safe-zone");
+  assert.deepEqual(knownValue(loadPack("instagram").safeZones?.video), { top: .14, bottom: .35, left: .06, right: .06 });
+  assert.equal(loadPack("instagram").safeZones?.image, "unknown");
+  for (const id of ["tiktok", "threads", "linkedin", "x"] as const) {
+    assert.deepEqual(loadPack(id).safeZones, { video: "unknown", image: "unknown" });
+  }
+});

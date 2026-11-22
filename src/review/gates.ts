@@ -120,7 +120,7 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
         else if (metric.minContrast < (metric.minFontPx >= (pack.accessibility?.largeTextPx ?? 24) ? pack.accessibility?.minContrastLarge ?? 3 : pack.accessibility?.minContrast ?? 4.5)) add('accessibility', `Insufficient contrast in ${metric.file}`);
       }
       if (metric.overflow) add('accessibility', `Text is cut off in ${metric.file}`);
-      if (metric.edge) warnings.push(`Text sits within 5% of the edge in ${metric.file}; feeds may crop it`);
+      if (metric.edge) warnings.push(`Text enters the ${metric.zoneDescription ?? 'default 5% margin'} in ${metric.file}; overlays or cropping may cover it`);
     }
   }
   const measured = new Set(selected.filter(a => a.kind === 'video' || a.kind === 'terminal-demo').flatMap(a => a.outputs.flatMap(o => o.seconds ? [Math.floor(o.seconds), Math.ceil(o.seconds), Number(o.seconds.toFixed(1))].map(s => `${s}:second`) : [])));

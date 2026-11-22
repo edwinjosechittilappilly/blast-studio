@@ -4,6 +4,7 @@
   "marketBlaster": null,
   "ai": "draft",
   "aiSource": "tiktok-51",
+  "safeZones": { "video": "unknown", "image": "unknown" },
   "formats": [
     "video"
   ],

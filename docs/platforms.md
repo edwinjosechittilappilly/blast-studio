@@ -11,6 +11,7 @@ Pack fields worth knowing:
 - **`disclosure`** covers AI-generated text, media and voice. A rule may list **`accepts`**: the exact labels a post must use (DEV's AI-assistance tiers, for example).
 - **`sponsorship`** holds paid-partnership rules, kept apart from AI disclosure. It applies only to posts with `sponsored: true` in their frontmatter.
 - **`accessibility`** overrides the review thresholds: `minFontPx`, `minContrast` (4.5 by default), `minContrastLarge` (3 by default, WCAG large text) and `largeTextPx`.
+- **`safeZones`** gives sourced per-edge frame fractions for video or image overlays; unknown or omitted zones use a 5% inset. The YouTube and Instagram zones are conservative 9:16 ad guidance, not guarantees for every organic surface. Shared outputs use the strictest applicable insets; video timelines are sampled when seekable, and VHS text is not measured.
 
 | Platform and guide | AI policy | Pack formats | Market Blaster |
 | --- | --- | --- | --- |

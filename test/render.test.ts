@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { closeBrowser, renderDiagram, renderHtml, renderSvg } from '../src/render/stills.ts';
 import { fillTemplate } from '../src/render/template.ts';
+import { combinedZone } from '../src/render/metrics.ts';
+import { loadPack } from '../src/packs.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'bstudio-test-render-'));
 after(async () => { await closeBrowser(); rmSync(dir, { recursive: true, force: true }); });
@@ -40,6 +42,25 @@ test('metrics separate cut-off text from text near the edge, and report contrast
   assert.ok(node('low contrast').contrast! < 4.5);
   assert.equal(node('unknown').contrast, null);
   assert.equal(result.metrics.minContrast, null);
+});
+
+test('sourced vertical zone detects text beyond the default bottom margin', { timeout: 20000 }, async () => {
+  const html = '<style>body{margin:0;font:24px sans-serif}.label{position:absolute;left:100px;bottom:150px}</style><div class="label">Overlay</div>';
+  const safe = combinedZone([loadPack('youtube-shorts'), loadPack('tiktok')], 'video');
+  const normal = await renderHtml({ html, width: 1080, height: 1920, out: join(dir, 'default-zone.png') });
+  const protectedResult = await renderHtml({ html, width: 1080, height: 1920, out: join(dir, 'platform-zone.png'), safeZone: safe.zone });
+  assert.equal(normal.metrics.edge, false);
+  assert.equal(protectedResult.metrics.edge, true);
+  assert.match(safe.description, /youtube-shorts-safe-zone/);
+  assert.equal(safe.zone.left, .05);
+  assert.equal(combinedZone([loadPack('youtube-shorts')], 'video', false).zone.bottom, .05);
+});
+
+test('video timeline samples detect text that enters a zone later', { timeout: 20000 }, async () => {
+  const html = `<style>body{margin:0;font:24px sans-serif}#label{position:absolute;left:100px;top:100px}</style><div id="label">Moving</div><script>window.__timelines={root:{duration:()=>4,pause:()=>{},seek:t=>document.getElementById('label').style.top=t>=2?'800px':'100px'}}</script>`;
+  const result = await renderHtml({ html, width: 400, height: 1000, out: join(dir, 'timeline.png'), safeZone: { top: .05, bottom: .3, left: .05, right: .05 }, sampleTimeline: true });
+  assert.equal(result.metrics.edge, true);
+  assert.equal(result.metrics.unmeasurable.length, 0);
 });
 
 test('render metrics include subframe and pseudo-element text and warn about unmeasurable graphics', { timeout: 20000 }, async () => {

@@ -20,6 +20,13 @@ const pack: PlatformPack = { id: 'x', name: 'X', ai: 'draft', formats: ['text'],
 const image: AssetMeta = { id: 'a', kind: 'illustration', provider: 'openai', outputs: [{ file: 'image.png', width: 1080, bytes: 4 }], license: 'licensed', aiGenerated: true };
 const brief = [{ anchor: 'E1', title: 'Evidence', body: 'A clear update.' }];
 const gate = (id: string, p = post, pk = pack, assets: AssetMeta[] = []) => runGates(p, pk, assets, brief, config).find(g => g.id === id)!;
+
+test('edge warnings identify the zone used for shared outputs', () => {
+  const measured: AssetMeta = { ...image, metrics: [{ file: 'image.png', minFontPx: null, minContrast: null, overflow: false, edge: true, zoneDescription: 'YouTube Shorts zone (youtube-shorts-safe-zone), X default 5% margin' }] };
+  const withMedia: Post = { ...post, media: [{ asset: 'a', file: 'assets/a/image.png', kind: 'image', alt: 'Example' }] };
+  const result = runGates(withMedia, pack, [measured], brief, config);
+  assert.ok(result.warnings.some(warning => warning.includes('YouTube Shorts zone (youtube-shorts-safe-zone)') && warning.includes('X default 5% margin')));
+});
 test('policy, disclosure, specs, accessibility, grounding and rights gates', () => {
   for (const id of ['policy', 'disclosure', 'specs', 'accessibility', 'fabricated-metrics', 'rights']) assert.equal(gate(id).pass, true);
   assert.equal(gate('policy', post, { ...pack, ai: 'none' }).pass, false);

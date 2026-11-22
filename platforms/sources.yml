@@ -1,5 +1,21 @@
 [
   {
+    "id": "instagram-reels-safe-zone",
+    "platform": "instagram",
+    "url": "https://www.facebook.com/business/ads-guide/update/video/instagram-reels",
+    "scope": "9:16 Instagram Reels ad safe zone: 14% top, 35% bottom, 6% each side",
+    "detector": { "kind": "page-hash" },
+    "governs": ["safeZones"]
+  },
+  {
+    "id": "youtube-shorts-safe-zone",
+    "platform": "youtube-shorts",
+    "url": "https://support.google.com/google-ads/answer/9128498?hl=en",
+    "scope": "9:16 vertical video ads including Shorts; diagram specifies 48/192 horizontal and 288/672 vertical pixels at 1080x1920",
+    "detector": { "kind": "page-hash" },
+    "governs": ["safeZones"]
+  },
+  {
     "id": "mb-check",
     "platform": "tool",
     "url": "https://github.com/edwinjosechittilappilly/market-blaster/blob/main/src/check.ts",

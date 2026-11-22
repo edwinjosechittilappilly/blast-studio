@@ -4,6 +4,7 @@
   "marketBlaster": "threads",
   "ai": "draft",
   "aiSource": "instagram-47",
+  "safeZones": { "video": "unknown", "image": "unknown" },
   "formats": [
     "text",
     "image",

@@ -4,6 +4,7 @@
   "marketBlaster": null,
   "ai": "draft",
   "aiSource": "instagram-47",
+  "safeZones": { "video": { "value": { "top": 0.14, "bottom": 0.35, "left": 0.06, "right": 0.06 }, "source": "instagram-reels-safe-zone" }, "image": "unknown" },
   "formats": [
     "video",
     "carousel",
@@ -122,6 +123,7 @@
     "instagram-45",
     "instagram-46",
     "instagram-47",
+    "instagram-reels-safe-zone",
     "instagram-48",
     "cross-platform-63",
     "cross-platform-64"

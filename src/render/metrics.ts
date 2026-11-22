@@ -1,11 +1,29 @@
 import type { Page } from "playwright";
+import type { PlatformPack } from "../types.ts";
+
+export type SafeZone = { top: number; bottom: number; left: number; right: number };
+export const defaultZone: SafeZone = { top: .05, bottom: .05, left: .05, right: .05 };
+
+/** Combine the independently required insets of all destinations sharing an output. */
+export function combinedZone(packs: (PlatformPack | undefined)[], kind: "image" | "video", vertical = true): { zone: SafeZone; description: string } {
+  const zone: SafeZone = { top: 0, bottom: 0, left: 0, right: 0 };
+  const descriptions = new Set<string>();
+  for (const pack of packs) {
+    const sourced = vertical || kind === "image" ? pack?.safeZones?.[kind] : undefined;
+    const value = sourced && sourced !== "unknown" ? sourced.value : defaultZone;
+    descriptions.add(sourced && sourced !== "unknown" ? `${pack!.name} zone (${sourced.source})` : `${pack?.name ?? "Unknown platform"} default 5% margin`);
+    for (const side of ["top", "bottom", "left", "right"] as const) zone[side] = Math.max(zone[side], value[side]);
+  }
+  if (!packs.length) return { zone: { ...defaultZone }, description: "default 5% margin" };
+  return { zone, description: [...descriptions].join(", ") };
+}
 
 /** `overflow`: text is cut off (outside the canvas or slide, or clipped by an ancestor). `edge`: text sits inside the safe margin. */
 export interface TextMetric { text: string; fontPx: number; bold: boolean; contrast: number | null; overflow: boolean; edge: boolean }
 export interface RenderMetrics { minFontPx: number | null; minContrast: number | null; overflow: boolean; edge: boolean; nodes: TextMetric[]; unmeasurable: string[] }
 
 /** Measure actual rendered text, not bounding boxes of its containers. */
-export async function measureText(page: Page, inset = 0.05): Promise<RenderMetrics> {
+export async function measureText(page: Page, inset: SafeZone = defaultZone): Promise<RenderMetrics> {
   const results = await Promise.all(page.frames().map(frame => frame.evaluate((safeInset) => {
     type Color = [number, number, number, number];
     const parse = (value: string): Color | null => {
@@ -56,13 +74,13 @@ export async function measureText(page: Page, inset = 0.05): Promise<RenderMetri
       const fg = parse(style.color); let contrast: number | null = null;
       if (!unknown && fg) { const a = luminance(over(fg, bg)); const b = luminance(bg); contrast = (Math.max(a, b) + .05) / (Math.min(a, b) + .05); }
       const slide = el.closest('.slide'); const bounds = slide?.getBoundingClientRect() ?? { left: 0, top: 0, width: innerWidth, height: innerHeight };
-      const outside = (r: DOMRect, box: { left: number; top: number; width: number; height: number }, inset: number) => r.left < box.left + box.width * inset - .5 || r.right > box.left + box.width * (1 - inset) + .5 || r.top < box.top + box.height * inset - .5 || r.bottom > box.top + box.height * (1 - inset) + .5;
+      const outside = (r: DOMRect, box: { left: number; top: number; width: number; height: number }, inset: SafeZone) => r.left < box.left + box.width * inset.left - .5 || r.right > box.left + box.width * (1 - inset.right) + .5 || r.top < box.top + box.height * inset.top - .5 || r.bottom > box.top + box.height * (1 - inset.bottom) + .5;
       let clipped = false;
       for (let p: Element | null = el; p && p !== document.body && !clipped; p = p.parentElement) {
         const s = getComputedStyle(p);
-        if (s.overflowX !== 'visible' || s.overflowY !== 'visible') clipped = rects.some(r => outside(r, p!.getBoundingClientRect(), 0));
+        if (s.overflowX !== 'visible' || s.overflowY !== 'visible') clipped = rects.some(r => outside(r, p!.getBoundingClientRect(), { top: 0, bottom: 0, left: 0, right: 0 }));
       }
-      const overflow = clipped || rects.some(r => outside(r, bounds, 0));
+      const overflow = clipped || rects.some(r => outside(r, bounds, { top: 0, bottom: 0, left: 0, right: 0 }));
       const edge = !overflow && rects.some(r => outside(r, bounds, safeInset));
       nodes.push({ text, fontPx: parseFloat(style.fontSize), bold: Number(style.fontWeight) >= 700 || style.fontWeight === 'bold', contrast, overflow, edge });
     }

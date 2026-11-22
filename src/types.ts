@@ -92,6 +92,8 @@ export interface PlatformPack {
   textLimit?: Sourced<number>;
   titleLimit?: Sourced<number>;
   media: MediaSpec[];
+  /** Insets as fractions of the frame; unknown values use the default margin. */
+  safeZones?: { video?: Sourced<{ top: number; bottom: number; left: number; right: number }>; image?: Sourced<{ top: number; bottom: number; left: number; right: number }> };
   /** Market Blaster's API attachment restrictions, separate from platform capabilities. */
   marketBlasterMedia?: { source: string; allowedKinds: MediaSpec["kind"][]; exclusiveKinds?: MediaSpec["kind"][][]; maxCount?: number };
   accessibility?: { minFontPx?: number; minContrast?: number; minContrastLarge?: number; largeTextPx?: number };
@@ -191,8 +193,8 @@ export interface AssetMeta {
   trademarkChecked?: boolean;
   /** Set when render skipped the asset because its provider is off (e.g. "voice.provider is none"). */
   skipped?: string;
-  /** Render metrics per output (stills): smallest text, worst contrast (null when text sits on an image), cut-off text (`overflow`) and text inside the 5% edge margin (`edge`). */
-  metrics?: { file: string; minFontPx: number | null; minContrast: number | null; overflow: boolean; edge?: boolean; texts?: string[]; unmeasurable?: string[]; nodes?: { text: string; fontPx: number; bold?: boolean; contrast: number | null; overflow: boolean; edge?: boolean }[] }[];
+  /** Rendered text metrics per output; edge reports text inside the measured safe margin. */
+  metrics?: { file: string; minFontPx: number | null; minContrast: number | null; overflow: boolean; edge?: boolean; zoneDescription?: string; texts?: string[]; unmeasurable?: string[]; nodes?: { text: string; fontPx: number; bold?: boolean; contrast: number | null; overflow: boolean; edge?: boolean }[] }[];
 }
 
 export interface GateResult {

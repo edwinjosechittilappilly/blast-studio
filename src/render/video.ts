@@ -1,12 +1,14 @@
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "yaml";
 import type { IO } from "../io.ts";
 import type { AssetMeta, StudioConfig } from "../types.ts";
 import { UserError } from "../types.ts";
 import { encodeVideo, extractFrames, probeMedia, runTool } from "./ffmpeg.ts";
+import { renderHtml } from "./stills.ts";
+import type { SafeZone } from "./metrics.ts";
 
 const sizes: Record<string, [number, number]> = { "9:16": [1080, 1920], "1:1": [1080, 1080], "16:9": [1920, 1080] };
 const hyperframes = fileURLToPath(new URL("../../node_modules/.bin/hyperframes", import.meta.url));
@@ -55,7 +57,7 @@ async function hasSubtitleFilter(io: IO): Promise<boolean> {
 }
 
 /** Render editable per-aspect HyperFrames projects or a VHS tape into asset-relative outputs. */
-export async function renderVideo(assetDir: string, config: StudioConfig, io: IO, generatedVoice?: string): Promise<AssetMeta["outputs"]> {
+export async function renderVideo(assetDir: string, config: StudioConfig, io: IO, generatedVoice?: string, zoneForAspect?: (aspect: string) => { zone: SafeZone; description: string }, metrics?: NonNullable<AssetMeta["metrics"]>, projectDir?: string): Promise<AssetMeta["outputs"]> {
   assetDir = resolve(assetDir);
   const meta = parse(readFileSync(join(assetDir, "asset.yml"), "utf8")) as VideoSettings;
   if (!meta || typeof meta !== "object") throw new UserError("Invalid video asset.yml");
@@ -93,6 +95,7 @@ export async function renderVideo(assetDir: string, config: StudioConfig, io: IO
         copyFileSync(from, target);
       }
       const info = await probeMedia(target, io);
+      metrics?.push({ file: `out/${basename(name)}`, minFontPx: null, minContrast: null, overflow: false, unmeasurable: ["VHS terminal demo (text not measured)"] });
       outputs.push({ file: `out/${basename(name)}`, ...info });
       mkdirSync(frameDir, { recursive: true });
       const prefix = basename(name, extname(name));
@@ -122,6 +125,17 @@ export async function renderVideo(assetDir: string, config: StudioConfig, io: IO
         const index = join(project, "index.html"), html = readFileSync(index, "utf8");
         if (!/<\/body\s*>/i.test(html)) throw new UserError(`Composition source/${aspect}/index.html needs a closing body tag for captions`);
         writeFileSync(index, html.replace(/<\/body\s*>/i, `${captionScript(readFileSync(caption, "utf8"), aspect, config)}</body>`));
+      }
+      if (metrics && zoneForAspect) {
+        const [width, height] = sizes[aspect], safe = zoneForAspect(aspect);
+        const index = join(project, "index.html"), composition = readFileSync(index, "utf8");
+        const base = `<base href="${pathToFileURL(`${project}/`).href}">`;
+        const html = /<head(?:\s[^>]*)?>/i.test(composition) ? composition.replace(/<head(?:\s[^>]*)?>/i, `$&${base}`) : base + composition;
+        const image = join(out, `.${label}-metrics.png`);
+        try {
+          const result = await renderHtml({ html, width, height, out: image, assetDir: temp ? project : assetDir, projectDir, safeZone: safe.zone, sampleTimeline: true });
+          metrics.push({ file: `out/${label}.mp4`, ...result.metrics, zoneDescription: safe.description, texts: result.metrics.nodes.map(node => node.text) });
+        } finally { rmSync(image, { force: true }); }
       }
       await runTool(io, "hyperframes", hyperframes, ["render", project, "--output", raw, "--format", "mp4", "--workers", "1", "--refuse-outside-files"], undefined, { config, workspace: assetDir });
       await encodeVideo(raw, target, io, { captions: useFilter ? caption : undefined, voiceover: existsSync(voice) ? voice : undefined });

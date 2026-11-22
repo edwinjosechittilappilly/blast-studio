@@ -4,6 +4,7 @@
   "marketBlaster": "linkedin",
   "ai": "draft",
   "aiSource": "linkedin-3",
+  "safeZones": { "video": "unknown", "image": "unknown" },
   "formats": [
     "text",
     "image",

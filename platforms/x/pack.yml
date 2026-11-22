@@ -4,6 +4,7 @@
   "marketBlaster": "x",
   "ai": "draft",
   "aiSource": "x-8",
+  "safeZones": { "video": "unknown", "image": "unknown" },
   "formats": [
     "text",
     "thread",

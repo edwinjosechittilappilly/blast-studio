@@ -12,6 +12,7 @@ import { configFile, loadConfig } from "../config.ts";
 import type { IO } from "../io.ts";
 import type { StudioConfig } from "../types.ts";
 import { measureText } from "./metrics.ts";
+import type { SafeZone } from "./metrics.ts";
 
 const exec = promisify(execFile);
 let browser: Promise<Browser> | undefined;
@@ -24,7 +25,7 @@ export async function closeBrowser(): Promise<void> {
   if (current) await (await current).close();
 }
 
-export async function renderHtml({ html, width, height, out, pdf = false, assetDir, projectDir }: { html: string; width: number; height: number; out: string; pdf?: boolean; assetDir?: string; projectDir?: string }) {
+export async function renderHtml({ html, width, height, out, pdf = false, assetDir, projectDir, safeZone, sampleTimeline = false }: { html: string; width: number; height: number; out: string; pdf?: boolean; assetDir?: string; projectDir?: string; safeZone?: SafeZone; sampleTimeline?: boolean }) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) throw new Error("Render size must be positive integer pixels");
   const dir = mkdtempSync(join(tmpdir(), "bstudio-render-"));
   const page = await (await getBrowser()).newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
@@ -59,7 +60,26 @@ export async function renderHtml({ html, width, height, out, pdf = false, assetD
     });
     await page.goto(pathToFileURL(input).href, { waitUntil: "load" });
     await page.evaluate(() => document.fonts.ready);
-    const metrics = await measureText(page);
+    let metrics = await measureText(page, safeZone);
+    if (sampleTimeline) {
+      const duration = await page.evaluate(() => {
+        const timelines = Object.values((window as unknown as { __timelines?: Record<string, { duration?: () => number; seek?: (time: number) => unknown; pause?: () => unknown }> }).__timelines ?? {});
+        const seekable = timelines.filter(timeline => typeof timeline.seek === "function" && typeof timeline.duration === "function");
+        for (const timeline of seekable) timeline.pause?.();
+        return Math.max(0, ...seekable.map(timeline => timeline.duration!()).filter(Number.isFinite));
+      });
+      if (duration > 0) {
+        for (const fraction of [.25, .5, .75]) {
+          await page.evaluate(time => {
+            const timelines = Object.values((window as unknown as { __timelines?: Record<string, { seek?: (time: number) => unknown }> }).__timelines ?? {});
+            for (const timeline of timelines) timeline.seek?.(time);
+          }, duration * fraction);
+          const next = await measureText(page, safeZone);
+          const nodes = [...metrics.nodes, ...next.nodes];
+          metrics = { minFontPx: nodes.length ? Math.min(...nodes.map(n => n.fontPx)) : null, minContrast: nodes.some(n => n.contrast === null) ? null : nodes.length ? Math.min(...nodes.map(n => n.contrast!)) : null, overflow: metrics.overflow || next.overflow, edge: metrics.edge || next.edge, nodes, unmeasurable: [...new Set([...metrics.unmeasurable, ...next.unmeasurable])] };
+        }
+      } else metrics.unmeasurable.push("video timeline (only static composition state measured)");
+    }
     mkdirSync(dirname(resolve(out)), { recursive: true });
     if (pdf) {
       await page.addStyleTag({ content: `@page { size: ${width}px ${height}px; margin: 0 } html, body { margin: 0; padding: 0 } .slide { break-after: page; page-break-after: always } .slide:last-child { break-after: auto; page-break-after: auto }` });
