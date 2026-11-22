@@ -38,3 +38,10 @@ h1[tabindex]:focus{outline:none}
 .summary-tiles>cds-tile{display:block;min-width:0;overflow-wrap:anywhere}.summary-tiles>cds-tile strong,.summary-tiles>cds-tile span{display:block}.summary-tiles>cds-tile strong{font-size:1.5rem;font-weight:400;margin-bottom:.5rem}#settings .surface cds-number-input,#settings .surface cds-select,#settings .surface cds-password-input,#settings .surface cds-toggle{display:block;margin:1.5rem 0}#settings form>cds-button{justify-self:end}
 #sources .table-scroll,#health .table-scroll{max-width:100%;overflow-x:auto}#sources .table-scroll cds-table,#health .table-scroll cds-table{display:block;min-width:48rem}#sources cds-table-cell,#health cds-table-cell{white-space:normal;overflow-wrap:anywhere}
 cds-inline-notification ul{max-width:min(40rem,calc(100vw - 8rem));padding-inline-start:1.25rem;overflow-wrap:anywhere;word-break:break-word}
+.shell-header-actions cds-header-global-action svg{display:block;width:20px;height:20px}
+.shell-job cds-tag{margin-left:.5rem}.shell-job time{display:block;margin-top:.25rem;color:var(--cds-text-secondary,#525252);font-size:.75rem}.shell-job cds-button{margin:.5rem 0}.shell-job details{margin-top:.5rem}
+.hooks li>div{vertical-align:top}
+.project-info,.project-campaigns,.empty-projects{margin-bottom:1rem}.project-info li,.empty-projects li{margin:.5rem 0;overflow-wrap:anywhere}
+.shell-header-actions cds-header-global-action{display:block;width:3rem;height:3rem}.shell-header-actions cds-header-global-action::part(button){display:flex;align-items:center;justify-content:center;width:3rem;height:3rem;padding:0}
+.project-info p{overflow-wrap:anywhere}
+.asset-blockers{padding:1rem;margin:1rem 0;background:var(--cds-layer-02,#f4f4f4);border:1px solid var(--cds-border-subtle-01,#e0e0e0)}.asset-blockers h3{margin:0 0 .75rem}.asset-blockers ul{padding-left:1.25rem}.asset-blockers li{overflow-wrap:anywhere}

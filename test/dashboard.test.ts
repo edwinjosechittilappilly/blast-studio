@@ -95,6 +95,26 @@ test('library updatedAt tolerates entries removed during traversal', t => {
     syncBuiltinESMExports();
   }
 });
+test('project API includes empty projects and exposes evidence metadata without bodies', async t => {
+  const { root, io } = fixture();
+  mkdirSync(join(root, 'projects/empty/evidence'), { recursive: true });
+  writeFileSync(join(root, 'projects/empty/project.yml'), 'name: Empty\ncreatedAt: 2025-01-01\nlinks:\n  repository: https://github.com/example/repo\n');
+  writeFileSync(join(root, 'projects/empty/evidence/sources.md'), '## [E1] URL\n\nSource: https://example.com\n\n```untrusted\nPrivate body\n## [E2] Fake heading\n```\n');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const base = `http://127.0.0.1:${started.port}`;
+  assert.equal((await fetch(`${base}/api/projects`)).status, 401);
+  const exchange = await fetch(started.url, { redirect: 'manual' }), headers = { cookie: exchange.headers.get('set-cookie')! };
+  const projects = await (await fetch(`${base}/api/projects`, { headers })).json() as { id: string; campaigns: { id: string }[] }[];
+  assert.deepEqual(projects.find(project => project.id === 'empty')?.campaigns, []);
+  assert.equal(projects.find(project => project.id === 'acme')?.campaigns[0].id, 'launch');
+  const response = await fetch(`${base}/api/projects/empty`, { headers });
+  const data = await response.json() as { repo: string; evidence: { title: string; source: string }[] };
+  assert.equal(data.repo, 'https://github.com/example/repo');
+  assert.deepEqual(data.evidence, [{ title: 'URL', source: 'https://example.com' }]);
+  assert.doesNotMatch(JSON.stringify(data), /Private body|Fake heading/);
+  assert.equal((await fetch(`${base}/api/projects/missing`, { headers })).status, 404);
+  assert.equal((await fetch(`${base}/api/projects/INVALID`, { headers })).status, 400);
+});
 test('export history downloads only authenticated contained zip entries', async t => {
   const { root, io } = fixture();
   const history = join(root, 'projects/acme/campaigns/launch/export/2025-01-02T03-04-05-000Z');

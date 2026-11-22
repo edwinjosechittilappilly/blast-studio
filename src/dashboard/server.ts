@@ -12,6 +12,8 @@ import type { IO } from '../io.ts';
 import { handleJobsApi } from './jobs-api.ts';
 import { buildOperation } from '../jobs/registry.ts';
 import { campaignLockStatus, JobConflict, jobLogTail, listJobs, startJob } from '../jobs/runner.ts';
+import { containedPath, listProjects, readProject, validateId } from '../campaigns.ts';
+import { parseBrief } from '../brief.ts';
 
 const staticDir = join(dirname(fileURLToPath(import.meta.url)), 'static');
 const buildDir = join(dirname(fileURLToPath(import.meta.url)), 'build');
@@ -141,6 +143,25 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
           if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || !statSync(file).isFile() || extname(file).toLowerCase() !== '.zip') { send(res, 403, { error: 'Forbidden' }); return; }
           res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodeURIComponent(name.split('/').pop()!)}`);
           serveFile(req, res, file); return;
+        }
+        if (pathname === '/api/projects' || /^\/api\/projects\/[^/]+$/.test(pathname)) {
+          const id = pathname === '/api/projects' ? null : validateId(decodeURIComponent(pathname.slice('/api/projects/'.length)));
+          const projects = listProjects(config), library = loadLibrary(config);
+          const selected = id ? projects.filter(project => project.project === id) : projects;
+          if (id && !selected.length) { send(res, 404, { error: 'Project not found' }); return; }
+          const result = selected.map(project => {
+            const metadata = readProject(config, project.project);
+            const campaigns = library.filter(campaign => campaign.slug.split('/')[0] === project.project).map(campaign => ({
+              id: campaign.slug.split('/')[1], updatedAt: campaign.updatedAt,
+              verdicts: campaign.reviews.map(review => review.verdict),
+            }));
+            const evidenceFile = containedPath(config.root, 'projects', project.project, 'evidence', 'sources.md');
+            const evidence = id && existsSync(evidenceFile) ? parseBrief(readFileSync(evidenceFile, 'utf8')).map(section => ({
+              title: section.title, source: /^Source:\s*(.+)$/m.exec(section.body.split(/^ {0,3}(?:`{3,}|~{3,})/m, 1)[0])?.[1],
+            })) : [];
+            return { id: project.project, ...metadata, repo: metadata.links?.repository, campaigns, updatedAt: project.updatedAt.toISOString(), ...(id ? { evidence } : {}) };
+          });
+          send(res, 200, id ? result[0] : result); return;
         }
         if (pathname === '/api/library') { send(res, 200, loadLibrary(config, url.searchParams.get('q') ?? '')); return; }
         if (pathname === '/api/budget') { send(res, 200, { cap: config.budget.monthlyUsd, perProject: config.budget.perProjectUsd, mtd: monthToDate(config.root), providerTotals: providerTotals(config.root), projects: Object.fromEntries(loadLibrary(config).map(p => [p.slug, projectTotal(config.root, p.slug)])), providers: { images: config.images.provider, voice: config.voice.provider, allowUpload: config.providers.allowUpload }, brand: config.brand }); return; }

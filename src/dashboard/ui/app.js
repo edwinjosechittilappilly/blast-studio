@@ -43,8 +43,8 @@ const dark = matchMedia('(prefers-color-scheme: dark)'); function theme() { docu
 async function library() {
   const target = $('#project-list'), query = $('#search').value, load = ++libraryLoad;
   const skeleton = el('cds-table-skeleton'); skeleton.setAttribute('aria-label', 'Loading projects'); target.replaceChildren(skeleton);
-  let projects;
-  try { projects = await api(`/api/library?q=${encodeURIComponent(query)}`); }
+  let projects, studioProjects;
+  try { [projects, studioProjects] = await Promise.all([api(`/api/library?q=${encodeURIComponent(query)}`), api('/api/projects')]); }
   catch (error) {
     if (error.message === 'Session expired' || load !== libraryLoad || query !== $('#search').value) return;
     const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'error'); notice.setAttribute('title', 'Unable to load projects'); notice.setAttribute('subtitle', 'Check that your studio is available and try again.'); notice.setAttribute('hide-close-button', '');
@@ -52,12 +52,18 @@ async function library() {
   }
   if (load !== libraryLoad || query !== $('#search').value) return;
   target.replaceChildren(); $('#project-count').textContent = `${projects.length} campaigns`;
-  if (!projects.length) {
+  const emptyProjects = studioProjects.filter(project => !project.campaigns.length && (!query || project.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()) || project.id.includes(query.toLocaleLowerCase())));
+  if (emptyProjects.length) {
+    const section = el('section', null, 'surface empty-projects'); section.append(el('h2', 'Projects without campaigns'));
+    const list = el('ul'); for (const project of emptyProjects) { const item = el('li'), link = el('a', project.name); link.href = `#/p/${encodeURIComponent(project.id)}`; item.append(link); list.append(item); } section.append(list); target.append(section);
+  }
+  if (!projects.length && !emptyProjects.length) {
     const empty = el('div', null, 'surface empty'); empty.append(el('h2', query ? `No projects match “${query}”` : 'No projects yet'));
     if (query) { const clear = button('Clear search', 'secondary'); clear.addEventListener('click', () => { $('#search').value = ''; history.replaceState(null, '', '#/projects'); library(); }); empty.append(clear); }
     else { const link = el('a', 'Create a project'); link.href = '#/projects/new'; empty.append(el('p', 'Create a project and its first campaign to get started.'), link); }
     target.append(empty); return;
   }
+  if (!projects.length) return;
   const table = el('cds-table'), head = el('cds-table-head'), hr = el('cds-table-header-row'), body = el('cds-table-body'), cards = el('div', null, 'project-cards'), mobileSort = el('div', null, 'project-sort'), label = el('label', 'Sort campaigns by '), select = el('select'), order = el('button'); let direction = -1, current = 'Updated';
   const value = (p, key) => key === 'Project' ? p.slug.split('/')[0] : key === 'Campaign' ? p.slug.split('/')[1] : key === 'Updated' ? p.updatedAt || '' : key === 'Review status' ? p.reviews.map(r => r.verdict).join(', ') : `${p.exported ? 'Exported' : 'Not exported'} · ${Object.keys(p.published || {}).length} published`;
   function render() {
@@ -158,13 +164,36 @@ function platformPanel(project, post) {
 }
 function assetBlockers(project) {
   const blocked = project.assets.filter(asset => asset.blockers?.length); if (!blocked.length) return null;
-  const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'error'); notice.setAttribute('title', `${blocked.length} ${blocked.length === 1 ? 'asset has' : 'assets have'} blockers`); notice.setAttribute('hide-close-button', ''); const list = el('ul'); for (const asset of blocked) for (const blocker of asset.blockers) list.append(el('li', `${asset.id}: ${typeof blocker === 'string' ? blocker : JSON.stringify(blocker)}`)); notice.append(list); return notice;
+  const notice = el('section', null, 'asset-blockers'); notice.setAttribute('role', 'status'); notice.append(el('h3', `${blocked.length} ${blocked.length === 1 ? 'asset has' : 'assets have'} blockers`)); const list = el('ul'); for (const asset of blocked) for (const blocker of asset.blockers) list.append(el('li', `${asset.id}: ${typeof blocker === 'string' ? blocker : JSON.stringify(blocker)}`)); notice.append(list); return notice;
+}
+async function openStudioProject(id) {
+  const load = ++projectLoad, container = $('#project-detail'); activeProject = null;
+  container.replaceChildren(el('h1', id), el('p', 'Loading project…', 'muted')); show('project');
+  const project = await api(`/api/projects/${encodeURIComponent(id)}`);
+  if (load !== projectLoad) return;
+  container.replaceChildren();
+  const breadcrumb = el('nav', null, 'breadcrumb'), back = el('a', 'Projects'); breadcrumb.setAttribute('aria-label', 'Breadcrumb'); back.href = '#/projects'; breadcrumb.append(back, document.createTextNode(` / ${project.name}`));
+  const heading = el('div', null, 'page-heading'), title = el('div'), create = el('cds-button', 'New campaign'); create.href = `#/p/${encodeURIComponent(id)}/new`; title.append(el('h1', project.name)); heading.append(title, create); container.append(breadcrumb, heading);
+  const info = el('section', null, 'surface project-info'); info.append(el('h2', 'Project details'));
+  if (project.repo) { const p = el('p'); let url; try { url = new URL(project.repo); } catch {} if (url && ['http:', 'https:'].includes(url.protocol)) { const link = el('a', project.repo); link.href = url.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; p.append(document.createTextNode('Repository: '), link); } else p.textContent = `Repository: ${project.repo}`; info.append(p); } else info.append(el('p', 'No repository linked.', 'muted'));
+  info.append(el('h3', 'Evidence'));
+  if (!project.evidence.length) info.append(el('p', 'No shared evidence yet.', 'muted'));
+  else { const list = el('ul'); for (const evidence of project.evidence) { const item = el('li', evidence.title); if (evidence.source) { let url; try { url = new URL(evidence.source); } catch {} if (url && ['http:', 'https:'].includes(url.protocol)) { const link = el('a', evidence.source); link.href = url.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; item.append(document.createTextNode(' — '), link); } else item.append(document.createTextNode(` — ${evidence.source}`)); } list.append(item); } info.append(list); }
+  const section = el('section', null, 'surface project-campaigns'); section.append(el('h2', 'Campaigns'));
+  if (!project.campaigns.length) { const link = el('cds-button', 'New campaign'); link.href = create.href; section.append(el('p', 'No campaigns yet. Create a campaign to get started.', 'muted'), link); }
+  else {
+    const table = el('table', null, 'overview-table'), head = el('thead'), header = el('tr'), body = el('tbody'); for (const label of ['Campaign', 'Review status', 'Updated']) header.append(el('th', label)); head.append(header);
+    for (const campaign of project.campaigns) { const row = el('tr'), cell = el('td'), link = el('a', campaign.id); link.href = `${campaignRoute(`${id}/${campaign.id}`)}/overview`; cell.append(link); row.append(cell, el('td', campaign.verdicts.join(' · ') || 'Unreviewed'), el('td', campaign.updatedAt ? new Date(campaign.updatedAt).toLocaleDateString() : '—')); body.append(row); }
+    table.append(head, body); const scroll = el('div', null, 'table-scroll'); scroll.append(table); section.append(scroll);
+  }
+  container.append(info, section);
 }
 function orderedPosts(project) { const byId = new Map(project.posts.map(post => [post.platform, post])); const order = [...project.plan.map(item => item.platform), ...project.posts.map(post => post.platform)]; return [...new Set(order)].flatMap(id => byId.has(id) ? [byId.get(id)] : []); }
 function overviewPanel(project) {
   const section = el('section', null, 'surface'), tiles = el('div', null, 'summary-tiles'); section.append(el('h2', 'Campaign summary'));
   for (const [label, value] of [['Pending feedback', project.feedback.filter(e => e.status === 'pending').length], ['Ready', project.reviews.filter(r => r.verdict === 'pass').length], ['Published', Object.keys(project.published || {}).length], ['Export', project.exported ? 'Available' : 'Not exported']]) { const tile = el('div'); tile.append(el('strong', String(value)), el('span', label)); tiles.append(tile); } section.append(tiles);
   const blockers = assetBlockers(project); if (blockers) section.append(blockers);
+  if (!orderedPosts(project).length) { const empty = el('div', null, 'empty'); empty.append(el('h3', 'No posts yet'), el('p', 'Plan creates destinations and posts.')); const plan = el('cds-button', 'Plan'); plan.href = `${campaignRoute(project.slug)}/actions?start=plan`; empty.append(plan); section.append(empty, feedbackHistory(project, {})); return section; }
   const table = el('table', null, 'overview-table'), head = el('thead'), header = el('tr'); for (const name of ['Destination', 'Status', 'Score', 'Failed gates', 'Pending feedback', 'Last reviewed']) header.append(el('th', name)); head.append(header); const body = el('tbody');
   for (const post of orderedPosts(project)) { const review = project.reviews.find(r => r.platform === post.platform), row = el('tr'), cell = el('td'), link = el('a', displayName(post.platform)); link.href = `${campaignRoute(project.slug)}/${encodeURIComponent(post.platform)}`; cell.append(link); const status = el('td'); status.append(verdictTag(review)); row.append(cell, status, el('td', review?.total == null ? '—' : Number(review.total).toFixed(1)), el('td', String((review?.gates || []).filter(g => !g.pass).length)), el('td', String(project.feedback.filter(e => e.status === 'pending' && e.target.platform === post.platform).length)), el('td', review?.at ? new Date(review.at).toLocaleDateString() : '—')); body.append(row); }
   table.append(head, body); const scroll = el('div', null, 'table-scroll'); scroll.append(table); section.append(scroll, feedbackHistory(project, {})); return section;
@@ -178,7 +207,7 @@ async function openProject(slug, requested = 'overview') {
   panel.setAttribute('role', 'tabpanel');
   function select(name) { activeTab = name; panel.setAttribute('aria-labelledby', `tab-${name}`); if (name === 'actions') renderActions(panel, { project, operations }); else if (name === 'export') renderExport(panel, { project, operations }); else if (name === 'assets') { renderAssetsTable(panel, { project, feedbackForm, mediaGallery, selfReview }); const blockers = assetBlockers(project); if (blockers) panel.prepend(blockers); } else panel.replaceChildren(name === 'overview' ? overviewPanel(project) : platformPanel(project, project.posts.find(p => p.platform === name))); }
   for (const name of options) { const review = project.reviews.find(r => r.platform === name), tab = el('cds-tab', ({ overview: 'Overview', assets: 'Assets', actions: 'Actions', export: 'Export' })[name] || `${project.platforms?.[name]?.name || displayName(name)} · ${review?.verdict || 'unreviewed'}`); const icon = tabStatusIcon(review?.verdict); if (icon) tab.prepend(icon); tab.id = `tab-${name}`; tab.value = name; if (name === activeTab) tab.setAttribute('selected', ''); tabs.append(tab); }
-  job.project = project; tabs.addEventListener('cds-tabs-selected', event => { const name = event.detail.item.value; select(name); event.detail.item.scrollIntoView({ block: 'nearest', inline: 'nearest' }); history.replaceState(null, '', `${campaignRoute(slug)}/${encodeURIComponent(name)}`); }); select(activeTab); container.append(job, tabs, panel); show('project'); await tabs.updateComplete; const selectedTab = tabs.querySelector(`[value="${CSS.escape(activeTab)}"]`); if (selectedTab) { selectedTab.selected = true; await selectedTab.updateComplete; selectedTab.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } try { await jobStatus(project, job, apply); } catch (error) { if (activeProject === slug && !$('#project').hidden && job.isConnected) { message(error.message); scheduleStatus(project, job, apply); } }
+  job.project = project; tabs.addEventListener('cds-tabs-selected', event => { const name = event.detail.item.value; select(name); event.detail.item.scrollIntoView({ block: 'nearest', inline: 'nearest' }); history.replaceState(null, '', `${campaignRoute(slug)}/${encodeURIComponent(name)}`); }); select(activeTab); container.append(job, tabs, panel); show('project'); await customElements.whenDefined('cds-tabs'); await customElements.whenDefined('cds-tab'); await tabs.updateComplete; const selectedTab = [...tabs.querySelectorAll('cds-tab')].find(tab => tab.value === requested); if (selectedTab && load === projectLoad) { selectedTab.selected = true; await selectedTab.updateComplete; await tabs.updateComplete; const reveal = () => { if (load !== projectLoad) return; const viewport = tabs.shadowRoot?.querySelector('.cds--tabs-nav-content-container'); if (viewport) { const tabRect = selectedTab.getBoundingClientRect(), viewRect = viewport.getBoundingClientRect(); if (tabRect.right > viewRect.right) viewport.scrollLeft += tabRect.right - viewRect.right + 8; else if (tabRect.left < viewRect.left) viewport.scrollLeft -= viewRect.left - tabRect.left + 8; } }; requestAnimationFrame(() => { reveal(); requestAnimationFrame(reveal); }); } try { await jobStatus(project, job, apply); } catch (error) { if (activeProject === slug && !$('#project').hidden && job.isConnected) { message(error.message); scheduleStatus(project, job, apply); } }
 }
 async function route(focus = true) {
   const routeId = ++navigation; projectLoad++; libraryLoad++; clearTimeout(timer); message(''); const [path, search = ''] = location.hash.slice(1).split('?'), parts = path.split('/').filter(Boolean).map(decodeURIComponent);
@@ -187,6 +216,7 @@ async function route(focus = true) {
     if (parts[0] === 'projects' && parts[1] === 'new') { activeProject = null; show('project'); await renderNewProject($('#project-detail'), {}); }
     else if (parts[0] === 'p' && parts[1] && parts[2] === 'new') { activeProject = null; show('project'); await renderNewCampaign($('#project-detail'), { project: parts[1] }); }
     else if (parts[0] === 'p' && parts[1] && parts[2]) { await openProject(`${parts[1]}/${parts[2]}`, parts[3]); }
+    else if (parts[0] === 'p' && parts[1]) { await openStudioProject(parts[1]); }
     else { activeProject = null; const view = ['settings', 'sources', 'health'].includes(parts[0]) ? parts[0] : 'projects'; show(view); if (view === 'projects') { const project = parts[0] === 'p' ? parts[1] : ''; $('#search').value = project || new URLSearchParams(search).get('q') || ''; const create = $('#new-campaign'); create.hidden = !project; create.href = `#/p/${encodeURIComponent(project)}/new`; await library(); } else if (view === 'settings') await renderSettings($('#settings')); else if (view === 'sources') await renderSources($('#sources')); else await renderHealth($('#health')); }
   } catch (error) { if (routeId !== navigation || error.message === 'Session expired') return; if (error.status === 404) show('not-found'); else message(error.message); }
   if (routeId !== navigation) return; const heading = document.querySelector('.view:not([hidden]) h1'); if (heading) { document.title = `${heading.textContent} – Blast Studio`; if (focus) { heading.setAttribute('tabindex', '-1'); heading.focus({ preventScroll: true }); } }

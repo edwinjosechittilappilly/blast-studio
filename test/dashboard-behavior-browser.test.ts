@@ -55,6 +55,18 @@ test('Carbon navigation opens on mobile and closes after navigation', async t =>
   assert.equal(await page.getByRole('button', { name: 'Open navigation' }).isVisible(), true);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
 });
+test('mobile campaign deep links reveal the selected tab', async t => {
+  const { page, url } = await dashboard(t, { width: 375, height: 812 });
+  await page.goto(`${url}#/p/acme/launch/actions`);
+  await page.getByRole('heading', { name: 'Campaign actions' }).waitFor();
+  await page.waitForFunction(() => {
+    const tabs = document.querySelector('cds-tabs'), tab = document.querySelector('#tab-actions');
+    const viewport = tabs?.shadowRoot?.querySelector('.cds--tabs-nav-content-container');
+    if (!tab || !viewport) return false;
+    const item = tab.getBoundingClientRect(), visible = viewport.getBoundingClientRect();
+    return item.left >= visible.left && item.right <= visible.right;
+  });
+});
 
 test('sortable Carbon headers expose their direction', async t => {
   const { page, url } = await dashboard(t);
