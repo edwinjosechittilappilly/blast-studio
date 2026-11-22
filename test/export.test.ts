@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -9,7 +9,7 @@ import { run as exportCommand } from '../src/commands/export.ts';
 import { run as mark } from '../src/commands/mark.ts';
 import { run as accept, confirm } from '../src/commands/accept.ts';
 import { run as library } from '../src/commands/library.ts';
-import { loadLibrary } from '../src/library.ts';
+import { listExports, loadLibrary, projectDetails } from '../src/library.ts';
 import { loadConfig } from '../src/config.ts';
 import { mediaContentHash, reviewHash } from '../src/review-hash.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
@@ -187,4 +187,64 @@ test('library enumerates and searches composite campaign identities', async () =
   assert.deepEqual(loadLibrary(loadConfig(f.io), 'OTHER/DEMO').map(entry => entry.slug), ['other/demo']);
   await library(['search', 'acme'], f.io);
   assert.match(f.io.text(), /acme\tdemo/);
+});
+
+test('local zip exports retain history and update library status', async () => {
+  const f = fixture(), config = loadConfig(f.io);
+  assert.equal(projectDetails(config, 'acme/demo').exported, false);
+  await exportCommand(['acme/demo', '--list'], f.io);
+  assert.match(f.io.stdout.at(-1)!, /No campaign zip exports/);
+  await exportCommand(['acme/demo'], f.io);
+  assert.match(f.io.stdout.join('\n'), /Import later.*--mb <path>/);
+  assert.equal(projectDetails(config, 'acme/demo').exported, true);
+  const stable = join(f.project, 'export/acme--demo.campaign.zip');
+  const first = readFileSync(stable);
+  await exportCommand(['acme/demo'], f.io);
+  const exports = listExports(config, 'acme/demo');
+  assert.equal(exports.length, 2);
+  assert.notEqual(exports[0].name, exports[1].name);
+  for (const entry of exports) {
+    assert.equal(entry.size, first.length);
+    assert.deepEqual(readFileSync(join(f.project, 'export', entry.name)), first);
+    assert.ok(Number.isFinite(Date.parse(entry.time)));
+  }
+  assert.deepEqual(readFileSync(stable), first);
+  await exportCommand(['acme/demo', '--list'], f.io);
+  assert.match(f.io.stdout.join('\n'), new RegExp(exports[0].name.replaceAll('.', '\\.')));
+});
+
+test('project Market Blaster target is used and explicit target overrides it', async () => {
+  const f = fixture(), target = join(f.root, 'target'), override = join(f.root, 'override');
+  mkdirSync(target); mkdirSync(override);
+  writeFileSync(join(f.root, 'projects/acme/project.yml'), `name: Acme\ncreatedAt: '2026-01-01'\nmarketBlaster:\n  project: ${target}\n`);
+  const calls: string[] = [];
+  f.io.run = async (_cmd, _args, opts) => { calls.push(opts!.cwd!); return ''; };
+  await exportCommand(['acme/demo'], f.io);
+  await exportCommand(['acme/demo', '--mb', override], f.io);
+  assert.deepEqual(calls, [target, target, override, override]);
+  await assert.rejects(exportCommand(['acme/demo', '--mb', join(f.root, 'missing')], f.io), /directory not found/);
+});
+
+test('approved draft refusal suggests force without importing twice', async () => {
+  const f = fixture();
+  let calls = 0;
+  f.io.run = async () => { calls++; throw new Error('cannot replace approved drafts'); };
+  await assert.rejects(exportCommand(['acme/demo', '--mb', f.root], f.io), /approved drafts[\s\S]*--force/);
+  assert.equal(calls, 1);
+});
+
+test('library summarizes recent top-level changes, pending feedback and marked platforms', () => {
+  const f = fixture();
+  writeFileSync(join(f.project, 'feedback.yml'), [
+    '- { id: one, target: {}, note: pending, at: "2026-01-01", status: pending }',
+    '- { id: two, target: {}, note: done, at: "2026-01-01", status: applied }',
+    '- { id: three, target: {}, note: no, at: "2026-01-01", status: rejected }',
+  ].join('\n'));
+  writeFileSync(join(f.project, 'published.json'), JSON.stringify({ instagram: { url: 'https://instagram.com/p/1' } }));
+  const latest = new Date('2030-01-01T00:00:00.000Z');
+  utimesSync(join(f.project, 'feedback.yml'), latest, latest);
+  const entry = loadLibrary(loadConfig(f.io))[0];
+  assert.equal(entry.updatedAt, latest.toISOString());
+  assert.equal(entry.pendingFeedback, 1);
+  assert.deepEqual(Object.keys(entry.published), ['instagram']);
 });

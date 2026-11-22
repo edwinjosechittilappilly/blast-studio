@@ -83,5 +83,14 @@ export function writeCampaignZip(project: string, identity: CampaignRef, prepare
   const sorted = Object.fromEntries(Object.entries(files).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
   const zip = zipSync(sorted, { level: 0, mtime: new Date(1980, 0, 1) });
   const dir = join(project, 'export'); mkdirSync(dir, { recursive: true });
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  let history = join(dir, `${timestamp}-${slug}.campaign.zip`);
+  for (let collision = 1; ; collision++) {
+    try { writeFileSync(history, zip, { flag: 'wx' }); break; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+      history = join(dir, `${timestamp}-${collision}-${slug}.campaign.zip`);
+    }
+  }
   const path = join(dir, `${slug}.campaign.zip`); writeFileSync(path, zip); return path;
 }

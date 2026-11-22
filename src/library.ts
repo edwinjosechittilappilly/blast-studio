@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { campaignDir } from './config.ts';
+import { compositeSlug, parseCampaignRef, type CampaignRef } from './campaigns.ts';
 import { readBrief } from './brief.ts';
 import { loadPosts } from './posts.ts';
 import { loadPacks, loadSources } from './packs.ts';
@@ -11,6 +12,16 @@ import { readPlan } from './plan.ts';
 import type { AssetMeta, PlatformId, PlatformPack, Review, StudioConfig } from './types.ts';
 
 const dirs = (path: string) => existsSync(path) ? readdirSync(path, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name).sort() : [];
+export function listExports(config: StudioConfig, ref: CampaignRef | string): { name: string; size: number; time: string }[] {
+  const identity = typeof ref === 'string' ? parseCampaignRef(ref) : ref;
+  const dir = join(campaignDir(config, identity), 'export');
+  if (!existsSync(dir)) return [];
+  const suffix = `-${compositeSlug(identity)}.campaign.zip`;
+  return readdirSync(dir, { withFileTypes: true })
+    .filter(entry => entry.isFile() && entry.name.endsWith(suffix) && /^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z(?:-\d+)?-/.test(entry.name))
+    .map(entry => { const stat = statSync(join(dir, entry.name)); return { name: entry.name, size: stat.size, time: stat.mtime.toISOString() }; })
+    .sort((a, b) => b.time.localeCompare(a.time) || b.name.localeCompare(a.name));
+}
 export function projectDetails(config: StudioConfig, slug: string) {
   const dir = campaignDir(config, slug);
   const posts = [...loadPosts(dir).values()];
@@ -22,7 +33,9 @@ export function projectDetails(config: StudioConfig, slug: string) {
   });
   const brief = join(dir, 'brief.md');
   const marksFile = join(dir, 'published.json');
-  return { slug, created: statSync(dir).birthtime.toISOString(), inputs: existsSync(brief) ? readBrief(dir).map(s => s.title) : [], posts, reviews, assets, exported: existsSync(join(dir, 'export', 'manifest.json')), published: existsSync(marksFile) ? JSON.parse(readFileSync(marksFile, 'utf8')) as unknown : [] };
+  const updatedAt = new Date(readdirSync(dir, { withFileTypes: true }).filter(entry => entry.isFile()).reduce((latest, entry) => Math.max(latest, statSync(join(dir, entry.name)).mtimeMs), statSync(dir).mtimeMs)).toISOString();
+  const pendingFeedback = loadFeedback(dir).filter(entry => entry.status === 'pending').length;
+  return { slug, created: statSync(dir).birthtime.toISOString(), updatedAt, pendingFeedback, inputs: existsSync(brief) ? readBrief(dir).map(s => s.title) : [], posts, reviews, assets, exported: existsSync(join(dir, 'export', 'manifest.json')) || existsSync(join(dir, 'export', `${compositeSlug(parseCampaignRef(slug))}.campaign.zip`)), published: existsSync(marksFile) ? JSON.parse(readFileSync(marksFile, 'utf8')) as Record<string, unknown> : {} };
 }
 let cachedPacks: Map<PlatformId, PlatformPack> | undefined;
 export function projectReview(config: StudioConfig, slug: string) {
