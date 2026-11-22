@@ -12,9 +12,7 @@ const operation = (step: string, fields: Record<string, Field>, paid = false, ca
 /** All command vectors originate here; callers cannot supply flags or executable paths. */
 export const operations: Readonly<Record<string, Operation>> = {
   init: operation('init', {}, false, false), doctor: operation('doctor', {}, false, false),
-  'project new': operation('project', { project: id(true), ...inputs }, false, false),
-  'project list': operation('project', {}, false, false),
-  new: operation('new', { campaign, ...inputs, from: option('id', '--from') }, true),
+  new: operation('new', { campaign, ...inputs }, true),
   brief: operation('brief', { campaign, ...inputs }),
   plan: operation('plan', { campaign, ...scope }, true),
   make: operation('make', { campaign, ...scope }, true),
@@ -33,16 +31,16 @@ export const operations: Readonly<Record<string, Operation>> = {
   'sources check': operation('sources', { only: option('ids', '--only'), write: option('bool', '--write') }, false, false),
   'sources verify': operation('sources', { source: id(true) }, false, false),
   'auth list': operation('auth', {}, false, false),
-  history: operation('history', { campaign }),
+  history: operation('history', { campaign }, false, false),
   restore: operation('restore', { campaign, version: { kind: 'number', required: true, positional: true } }),
-  'feedback list': operation('feedback', { campaign }),
+  'feedback list': operation('feedback', { campaign }, false, false),
   'feedback add': operation('feedback', { campaign, note: { ...inputs.note, required: true }, asset: option('id', '--asset'), platform: option('id', '--platform') }),
   'feedback rm': operation('feedback', { campaign, id: id(true) }),
 };
 const slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 /** A single identity seam, replaceable by the project/campaign resolver. */
 export function campaignRef(value: unknown): string {
-  if (typeof value !== 'string' || value.length > 201 || !value.split('/').every(s => s.length <= 100 && slug.test(s)) || value.split('/').length > 2) throw new UserError('Invalid campaign address');
+  if (typeof value !== 'string' || value.length > 100 || !slug.test(value)) throw new UserError('Invalid campaign address');
   return value;
 }
 function validate(value: unknown, kind: Kind, key: string): string | boolean {
@@ -51,6 +49,7 @@ function validate(value: unknown, kind: Kind, key: string): string | boolean {
   if (kind === 'id' && !slug.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'ids' && !value.split(',').every(s => slug.test(s))) throw new UserError(`Invalid ${key}`);
   if (kind === 'number' && !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) throw new UserError(`Invalid ${key}`);
+  if ((key === 'pr' || key === 'version') && !/^\d+$/.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'sha' && !/^[a-f\d]{4,64}$/i.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'repo' && value !== 'local' && !/^[\w.-]+\/[\w.-]+$/.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'url') { try { const u = new URL(value); if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw new Error(); } catch { throw new UserError(`Invalid ${key}`); } }
@@ -72,7 +71,7 @@ export function buildOperation(name: string, raw: unknown, options: { imageProvi
     if (field.positional) positional.push(String(parsed));
     else if (field.flag && parsed !== false) {
       if (parsed === true) flags.push(field.flag);
-      else if (field.flag === '--assets' || field.flag === '--platforms') flags.push(`${field.flag}=${parsed}`);
+      else if (field.flag === '--assets' || field.flag === '--platforms' || ['brief', 'new', 'revise', 'export', 'feedback'].includes(cmd)) flags.push(`${field.flag}=${parsed}`);
       else flags.push(field.flag, String(parsed));
     }
   }

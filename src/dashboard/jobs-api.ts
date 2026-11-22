@@ -45,7 +45,8 @@ export async function handleJobsApi(req: IncomingMessage, res: ServerResponse, o
     if (match && req.method === 'POST' && match[2] === 'cancel') { send(res, 200, cancelJob(options.config.root, match[1])); return true; }
     send(res, 404, { error: 'Not found' }); return true;
   } catch (error) {
-    const code = error instanceof JobConflict ? 409 : error instanceof UserError ? 400 : 500;
+    const message = (error as Error).message;
+    const code = error instanceof JobConflict || message === 'Job is not running' ? 409 : message === 'Job not found' ? 404 : message === 'Request too large' ? 413 : error instanceof UserError ? 400 : 500;
     send(res, code, { error: code === 500 ? 'Job request failed' : (error as Error).message }); return true;
   }
 }

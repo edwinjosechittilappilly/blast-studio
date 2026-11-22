@@ -128,13 +128,14 @@ export async function runBilledAgent(io: IO, config: StudioConfig, settings: { b
   let shown = false;
   const showProgress = () => { shown = true; progress(); };
   const timer = setInterval(showProgress, 10000);
-  let report = '';
+  let report = '', succeeded = false;
   try {
     // Agent CLIs parse a positional argument starting with "-" as a flag (a SKILL.md begins with "---"), so the
     // prompt always starts with a plain word.
     const safePrompt = /^\s*-/.test(prompt) ? `Task:\n${prompt}` : prompt;
     const wrapped = sandboxCommand(io, config, cwd, temp, command[0], [...command.slice(1), safePrompt]);
     report = await io.run(wrapped.command, wrapped.args, { cwd, env, timeoutMs, onOutput: line => { if (!shown) showProgress(); if (io.quiet) io.log?.(line); else io.err(line); } });
+    succeeded = true;
     return report;
   } finally {
     clearInterval(timer);
@@ -143,6 +144,6 @@ export async function runBilledAgent(io: IO, config: StudioConfig, settings: { b
       const usd = parsed.usd ?? maxUsd!, usage = parsed.usage;
       await settleAgentRun(config, id, { usd, usage });
     }
-    await recordAgentRun(config, { model, ms: Date.now() - started, usd: null, projectSlug, step });
+    await recordAgentRun(config, { model, ms: Date.now() - started, usd: null, projectSlug, step, succeeded });
   }
 }
