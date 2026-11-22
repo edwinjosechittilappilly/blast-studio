@@ -3,41 +3,66 @@ import assert from 'node:assert/strict';
 import { mediaGallery } from '../src/dashboard/ui/components/media.js';
 
 class Node {
-  constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.listeners = {}; this.classList = { toggle: () => true }; }
+  constructor(tag) { this.tag = tag; this.children = []; this.attributes = {}; this.listeners = {}; const values = new Set(); this.classList = { toggle: name => values.has(name) ? (values.delete(name), false) : (values.add(name), true), contains: name => values.has(name) }; }
   append(...children) { this.children.push(...children); }
   setAttribute(name, value) { this.attributes[name] = value; }
   addEventListener(name, listener) { this.listeners[name] = listener; }
   focus() { this.focused = true; }
+  click() { return this.listeners.click?.(); }
   remove() { this.removed = true; }
 }
+function find(node, predicate) { if (predicate(node)) return node; for (const child of node.children) { const found = find(child, predicate); if (found) return found; } }
+function tag(node, name) { return find(node, child => child.tag === name); }
 function setup() {
   const body = new Node('body');
-  globalThis.document = { body, createElement: tag => new Node(tag), createElementNS: (_, tag) => new Node(tag) };
+  globalThis.document = { body, createElement: name => new Node(name), createElementNS: (_, name) => new Node(name) };
   return body;
 }
 
-test('gallery distinguishes outputs and shows a video poster without a player', () => {
+test('extension determines output kind and video uses a poster rather than a player', () => {
   setup();
   const gallery = mediaGallery('launch', [
-    { file: 'assets/clip/out/1x1.mp4', alt: 'clip preview', width: 1080, height: 1080, seconds: 12 },
-    { file: 'assets/clip/out/frames/1x1-1.png', alt: 'clip preview' },
+    { file: 'assets/clip/out/1x1.mp4', kind: 'image', width: 1080, height: 1080, seconds: 12 },
+    { file: 'assets/clip/out/frames/1x1-1.png', kind: 'video' },
   ], {});
-  const view = gallery.children[0].children[0];
-  assert.equal(view.attributes['aria-label'], 'View 1x1.mp4');
-  assert.equal(view.children[0].children[0].src, '/media/launch/assets/clip/out/frames/1x1-1.png');
-  assert.equal(view.children[2].textContent, 'Video · 1080 × 1080 · 12 s');
-  assert.equal(view.children[0].children.some(node => node.tag === 'video'), false);
-  assert.equal(gallery.children[0].children[1].children[0].children[0].attributes.fill, 'currentColor');
+  assert.equal(find(gallery, n => n.textContent === 'Video · 1080 × 1080 · 12 s').tag, 'span');
+  assert.ok(find(gallery, n => n.textContent === 'Image'));
+  assert.equal(tag(gallery, 'video'), undefined);
+  assert.equal(tag(gallery, 'img').src, '/media/launch/assets/clip/out/frames/1x1-1.png');
 });
 
-test('viewer names the file, retains alt text and restores focus after close', () => {
+test('viewer suppresses synthetic alt text but preserves real descriptions', () => {
   const body = setup();
-  const gallery = mediaGallery('launch', [{ file: 'assets/poster/out/image.png', alt: 'A descriptive poster.' }], {});
-  const view = gallery.children[0].children[0]; view.listeners.click();
-  const modal = body.children[0], [header, content, footer] = modal.children;
-  assert.equal(header.children[1].textContent, 'image.png');
-  assert.equal(header.children[2].tag, 'cds-modal-close-button');
-  assert.equal(content.children.at(-1).textContent, 'A descriptive poster.');
-  assert.equal(footer.children.length, 2);
-  modal.listeners['cds-modal-closed'](); assert.equal(view.focused, true);
+  const gallery = mediaGallery('launch', [{ file: 'assets/poster/out/image.png', alt: 'poster preview' }, { file: 'assets/poster/out/other.png', alt: 'A descriptive poster.' }], {});
+  find(gallery, n => n.attributes['aria-label'] === 'View image.png').click();
+  let modal = tag(body, 'cds-modal');
+  assert.equal(find(modal, n => n.textContent === 'poster preview'), undefined);
+  assert.equal(find(modal, n => n.textContent === 'Copy alt text'), undefined);
+  find(gallery, n => n.attributes['aria-label'] === 'View other.png').click();
+  modal = body.children.at(-1);
+  assert.ok(find(modal, n => n.textContent === 'A descriptive poster.'));
+  assert.ok(find(modal, n => n.textContent === 'Copy alt text'));
+});
+
+test('zoom toggles the image and exposes a stable pressed control', () => {
+  const body = setup();
+  const gallery = mediaGallery('launch', [{ file: 'image.png', alt: 'Poster' }], {});
+  tag(gallery, 'button').click();
+  const modal = tag(body, 'cds-modal'), zoom = tag(modal, 'cds-icon-button'), image = tag(modal, 'img');
+  assert.equal(zoom.attributes['aria-pressed'], 'false');
+  assert.ok(find(zoom, n => n.textContent === 'View at 100%'));
+  zoom.click(); assert.equal(zoom.attributes['aria-pressed'], 'true'); assert.ok(image.classList.contains('actual-size'));
+  zoom.click(); assert.equal(zoom.attributes['aria-pressed'], 'false'); assert.equal(image.classList.contains('actual-size'), false);
+});
+
+test('download confirmation expires', () => {
+  const body = setup(), original = globalThis.setTimeout; let expire;
+  globalThis.setTimeout = (fn, delay) => { assert.equal(delay, 5000); expire = fn; };
+  try {
+    const gallery = mediaGallery('launch', [{ file: 'image.png' }], {});
+    tag(gallery, 'button').click();
+    find(body, n => n.textContent === 'Download').click();
+    const toast = tag(body, 'cds-toast-notification'); assert.equal(toast.attributes.timeout, '5000');
+    expire(); assert.equal(toast.removed, true);
+  } finally { globalThis.setTimeout = original; }
 });
