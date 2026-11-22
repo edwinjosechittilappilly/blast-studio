@@ -38,7 +38,10 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
       - name: Install D2
         run: |
-          curl -fsSL https://d2lang.com/install.sh | sh -s -- --method standalone --prefix "$HOME/.local" --version v0.9.0
+          # Direct release download: the install script queries the GitHub API, which rate-limits runners (403).
+          curl -fsSLo /tmp/d2.tgz https://github.com/terrastruct/d2/releases/download/v0.9.0/d2-v0.9.0-linux-amd64.tar.gz
+          echo "5669ddc46b99e942cc96078f4a4e36d5e62103348f4c05179ede27802fdd87a9  /tmp/d2.tgz" | sha256sum -c -
+          mkdir -p "$HOME/.local/bin" && tar -xzf /tmp/d2.tgz -C /tmp && install /tmp/d2-v0.9.0/bin/d2 "$HOME/.local/bin/d2"
           "$HOME/.local/bin/d2" --version
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: npm test
