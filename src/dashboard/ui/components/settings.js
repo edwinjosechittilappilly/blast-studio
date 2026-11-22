@@ -70,15 +70,15 @@ export async function renderSettings(container) {
   const saveSettings = async event => {
     event.preventDefault(); if (save.disabled) return; clear(); keyResult.replaceChildren();
     if (monthly.invalid || campaign.invalid) { (monthly.invalid ? monthly : campaign).focus(); return; }
-    const entered = keyInputs.filter(([, input]) => input.value).map(([key]) => key);
+    const entered = keyInputs.filter(([, input]) => input.value).map(([key, input]) => ({ key, input, value: input.value }));
     save.disabled = true;
-    const saveKeys = entered.length && keyStatus ? await confirmKeys(entered) : false;
+    const saveKeys = entered.length && keyStatus ? await confirmKeys(entered.map(({ key }) => key)) : false;
     if (entered.length && !saveKeys) keyResult.replaceChildren(notice(keyStatus ? 'Keys not saved.' : 'Keys not saved. Credential status is unavailable; reload before saving keys.'));
     try {
       await api('/api/budget', { method: 'PUT', headers, body: JSON.stringify({ monthlyUsd: Number(monthly.value), perProjectUsd: Number(campaign.value) }) });
       await api('/api/providers', { method: 'PUT', headers, body: JSON.stringify({ images: images.value, voice: voice.value, allowUpload: consent.checked }) });
       let savedKeys = false;
-      if (saveKeys) for (const [key, input] of keyInputs) if (input.value) { await api('/api/secrets', { method: 'POST', headers, body: JSON.stringify({ key, value: input.value }) }); input.value = ''; savedKeys = true; }
+      if (saveKeys) for (const { key, input, value } of entered) { await api('/api/secrets', { method: 'POST', headers, body: JSON.stringify({ key, value }) }); if (input.value === value) input.value = ''; savedKeys = true; }
       result.replaceChildren(notice('Settings saved.', 'success'));
       if (savedKeys) await refreshAuth();
     } catch (error) { result.replaceChildren(notice(`Could not save all settings: ${error.message}`)); }
@@ -98,6 +98,20 @@ export async function renderSettings(container) {
 export async function renderSources(container) {
   const title = el('h1', 'Source updates'), description = el('p', 'Review source changes and verify platform guidance after a manual check.'), run = button('Check sources', 'primary'), job = el('div', null, 'job-status'), results = el('div');
   container.replaceChildren(title, description, run, job, results);
+  let busy = false;
+  function setBusy(value) {
+    busy = value; run.disabled = value;
+    for (const verify of results.querySelectorAll('cds-button')) verify.disabled = value;
+  }
+  async function startSourceJob(op, args = {}) {
+    if (busy) return;
+    setBusy(true);
+    await runJob(job, op, args, async record => {
+      try {
+        if (op === 'sources check' || record.state === 'succeeded') await load();
+      } finally { setBusy(false); }
+    });
+  }
   async function load() {
     try {
       const data = await api('/api/sources'), rows = [];
@@ -113,7 +127,7 @@ export async function renderSources(container) {
         const details = el('details'); details.append(el('summary', 'What changed'), el('p', error || `Affected guidance: ${fields || 'Not reported'}`));
         if (previous && current) { try { details.append(el('h4', 'Previous'), el('p', JSON.parse(previous)), el('h4', 'Current'), el('p', JSON.parse(current))); } catch { details.append(el('p', 'Snapshot details are unavailable.')); } }
         const action = el('span', '—');
-        if (status === 'changed' || status === 'manual') { const verify = button('Verify', 'ghost'); verify.addEventListener('click', () => confirmVerify(id, async () => { await runJob(job, 'sources verify', { source: id }, async record => { if (record.state === 'succeeded') await load(); }); })); action.replaceChildren(verify); }
+        if (status === 'changed' || status === 'manual') { const verify = button('Verify', 'ghost'); verify.disabled = busy; verify.addEventListener('click', () => { if (!busy) confirmVerify(id, () => startSourceJob('sources verify', { source: id })); }); action.replaceChildren(verify); }
         return [source, tag(status === 'manual' ? 'Manual review' : status[0].toUpperCase() + status.slice(1), status === 'failed' ? 'red' : 'warm-gray'), details, action];
       })));
       if (data.unverified?.length) {
@@ -123,6 +137,6 @@ export async function renderSources(container) {
       }
     } catch (error) { results.replaceChildren(notice(error.message)); }
   }
-  run.addEventListener('click', async () => { run.disabled = true; await runJob(job, 'sources check', {}, async record => { run.disabled = false; if (record.state === 'succeeded' || record.state === 'failed') await load(); }); if (!job.querySelector('details')) run.disabled = false; });
+  run.addEventListener('click', () => startSourceJob('sources check'));
   await load();
 }

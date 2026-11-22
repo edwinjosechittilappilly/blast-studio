@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { Ajv } from 'ajv';
@@ -28,7 +28,7 @@ function changes(a: unknown, b: unknown, path = ''): string[] {
 interface Evidence { path: string; source: string; quote: string }
 export async function propose(io: IO, options: { root?: string; branch?: boolean } = {}): Promise<void> {
   const root = options.root ?? repoRoot, studioRoot = options.root ?? loadConfig(io).root;
-  const candidates = [studioRoot, ...(options.root || studioRoot === repoRoot ? [] : [repoRoot])].flatMap(dir => { try { return [{ dir, date: latest(dir) }]; } catch { return []; } }).sort((a, b) => b.date.localeCompare(a.date));
+  const candidates = [studioRoot, ...(options.root || studioRoot === repoRoot ? [] : [repoRoot])].flatMap(dir => { try { const date = latest(dir); return [{ dir, date, written: statSync(join(dir, 'updates', `${date}.json`)).mtimeMs }]; } catch { return []; } }).sort((a, b) => b.date.localeCompare(a.date) || b.written - a.written);
   if (!candidates.length) throw new UserError('No source check report');
   const { dir: reportRoot, date } = candidates[0], rows = JSON.parse(readFileSync(join(reportRoot, 'updates', `${date}.json`), 'utf8')) as Result[];
   const changed = rows.filter(r => r.status === 'changed'); if (!changed.length) throw new UserError('Latest report has no changed sources');

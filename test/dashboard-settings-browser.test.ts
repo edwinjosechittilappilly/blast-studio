@@ -92,3 +92,96 @@ test('health check renders doctor job results and a copyable fix', async t => {
   assert.equal(await page.getByRole('button', { name: 'Copy fix' }).count(), 1);
   assert.equal(await page.getByRole('button', { name: 'Run again' }).count(), 1);
 });
+
+for (const initiallyEntered of [false, true]) {
+  test(`settings save only confirmed credential snapshot (initial key: ${initiallyEntered})`, async t => {
+    const { page, url } = await dashboard(t);
+    const budgetGate = Promise.withResolvers<void>(), started = Promise.withResolvers<void>();
+    t.after(() => budgetGate.resolve());
+    const writes: unknown[] = [];
+    await page.route('**/api/secrets/status', route => route.fulfill({ json: { GEMINI_API_KEY: { set: false } } }));
+    await page.route('**/api/secrets', route => { writes.push(route.request().postDataJSON()); return route.fulfill({ json: {} }); });
+    await page.route('**/api/providers', route => route.fulfill({ json: {} }));
+    await page.route('**/api/budget', async route => {
+      if (route.request().method() !== 'PUT') return route.continue();
+      started.resolve(); await budgetGate.promise; await route.fulfill({ json: {} });
+    });
+    await page.goto(url); await page.getByRole('link', { name: 'Budget & providers' }).click();
+    await page.getByText('Not set', { exact: true }).waitFor();
+    const key = page.getByLabel('Gemini API key');
+    if (initiallyEntered) await key.fill('placeholder-before');
+    await page.getByRole('button', { name: 'Save settings' }).click();
+    if (initiallyEntered) await page.getByRole('button', { name: 'Save keys', exact: true }).click();
+    await started.promise;
+    await key.fill('placeholder-after');
+    budgetGate.resolve();
+    await page.getByText('Settings saved.').waitFor();
+    assert.deepEqual(writes, initiallyEntered ? [{ key: 'GEMINI_API_KEY', value: 'placeholder-before' }] : []);
+    assert.equal(await key.inputValue(), 'placeholder-after');
+  });
+}
+
+test('job polling retries without losing the active job or enabling another run', async t => {
+  const { page, url } = await dashboard(t);
+  const retryGate = Promise.withResolvers<void>(), retrying = Promise.withResolvers<void>();
+  let polls = 0;
+  t.after(() => retryGate.resolve());
+  await page.route('**/api/jobs', route => route.request().method() === 'POST' ? route.fulfill({ status: 202, json: { id: 'health-job', state: 'running' } }) : route.continue());
+  await page.route('**/api/jobs/health-job/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.route('**/api/jobs/health-job', async route => {
+    if (++polls === 1) return route.fulfill({ status: 503, json: { error: 'Unavailable' } });
+    retrying.resolve(); await retryGate.promise;
+    await route.fulfill({ json: { id: 'health-job', state: 'succeeded' } });
+  });
+  await page.goto(url); await page.getByRole('link', { name: 'Health check' }).click();
+  await page.getByRole('button', { name: 'Run health check' }).click();
+  await page.getByText('Unable to refresh job status. Retrying.').waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Cancel job' }).isVisible(), true);
+  assert.equal(await page.getByRole('button', { name: 'Run health check' }).evaluate(node => (node as HTMLButtonElement).disabled), true);
+  await retrying.promise; retryGate.resolve();
+  await page.getByRole('button', { name: 'Run again' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Cancel job' }).isVisible(), false);
+});
+
+for (const action of ['check', 'verify'] as const) {
+  test(`source ${action} blocks other source actions until completion`, async t => {
+    const { page, url } = await dashboard(t);
+    const jobGate = Promise.withResolvers<void>(), started = Promise.withResolvers<void>();
+    t.after(() => jobGate.resolve());
+    const operations: string[] = [];
+    await page.route('**/api/sources', route => route.fulfill({ json: { lastCheck: 'today', report: '## source-1: changed\nTitle: Example source\n' } }));
+    await page.route('**/api/jobs', async route => {
+      if (route.request().method() !== 'POST') return route.continue();
+      operations.push(route.request().postDataJSON().op); started.resolve();
+      await jobGate.promise; await route.fulfill({ status: 202, json: { id: 'source-job', state: 'succeeded' } });
+    });
+    await page.route('**/api/jobs/source-job/log?*', route => route.fulfill({ json: { log: '' } }));
+    await page.route('**/api/jobs/source-job', route => route.fulfill({ json: { id: 'source-job', state: 'succeeded' } }));
+    await page.goto(url); await page.getByRole('link', { name: 'Source updates' }).click();
+    const check = page.getByRole('button', { name: 'Check sources' });
+    const verify = page.getByRole('button', { name: 'Verify', exact: true });
+    await verify.waitFor();
+    if (action === 'check') await check.click();
+    else { await verify.click(); await page.getByRole('button', { name: 'Verify source', exact: true }).click(); }
+    await started.promise;
+    assert.equal(await check.evaluate(node => (node as HTMLButtonElement).disabled), true);
+    assert.equal(await verify.evaluate(node => (node as HTMLButtonElement).disabled), true);
+    assert.deepEqual(operations, [`sources ${action}`]);
+    jobGate.resolve();
+    await page.waitForFunction(() => [...document.querySelectorAll('cds-button')].some(node => node.textContent?.trim() === 'Verify' && !(node as HTMLButtonElement).disabled));
+    assert.equal(await check.evaluate(node => (node as HTMLButtonElement).disabled), false);
+  });
+}
+
+test('source controls recover when a job fails to start', async t => {
+  const { page, url } = await dashboard(t);
+  await page.route('**/api/sources', route => route.fulfill({ json: { lastCheck: 'today', report: '## source-1: manual\n' } }));
+  await page.route('**/api/jobs', route => route.request().method() === 'POST' ? route.fulfill({ status: 503, json: { error: 'Job unavailable' } }) : route.continue());
+  await page.goto(url); await page.getByRole('link', { name: 'Source updates' }).click();
+  const check = page.getByRole('button', { name: 'Check sources' });
+  await page.getByRole('button', { name: 'Verify', exact: true }).waitFor();
+  await check.click();
+  await page.getByText('Job unavailable').waitFor();
+  await page.waitForFunction(() => [...document.querySelectorAll('cds-button')].some(node => node.textContent?.trim() === 'Verify' && !(node as HTMLButtonElement).disabled));
+  assert.equal(await check.evaluate(node => (node as HTMLButtonElement).disabled), false);
+});

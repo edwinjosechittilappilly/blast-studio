@@ -313,3 +313,88 @@ test('a failed diagnostic job without findings remains a failure', async t => {
   await page.locator('#jobs-toggle').click();
   await page.locator('#jobs-list cds-tag[type="red"]').getByText('failed', { exact: true }).waitFor();
 });
+
+test('a late log response from an older job cannot replace the current job or suppress its completion refresh', async t => {
+  const { page, url } = await dashboard(t);
+  const oldLog = gate();
+  t.after(() => oldLog.release());
+  let started = false, finished = false, historyCalls = 0;
+  const oldJob = { ...job('succeeded'), id: 'old-job', operation: 'review' };
+  const newJob = () => ({ ...job(finished ? 'succeeded' : 'running'), id: 'new-job', operation: 'review' });
+  await page.route('**/api/jobs?*', route => route.fulfill({ json: [started ? newJob() : oldJob] }));
+  await page.route('**/api/jobs/old-job/log?*', async route => { oldLog.arrived(); await oldLog.blocked; await route.fulfill({ json: { log: 'old log' } }); });
+  await page.route('**/api/jobs/new-job/log?*', route => route.fulfill({ json: { log: 'new log' } }));
+  await page.route('**/api/jobs', route => { if (route.request().method() !== 'POST') return route.fulfill({ json: [] }); started = true; return route.fulfill({ json: newJob() }); });
+  await page.route('**/api/campaigns/acme/launch/history', async route => { historyCalls++; await route.fulfill({ json: [] }); });
+  await page.goto(`${url}#/p/acme/launch/actions`);
+  await oldLog.entered;
+  await page.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.locator('cds-modal').getByRole('button', { name: 'Review', exact: true }).click();
+  await page.locator('cds-inline-notification[title="review: running"]').waitFor();
+  const oldResponse = page.waitForResponse(response => response.url().includes('/api/jobs/old-job/log'));
+  oldLog.release(); await oldResponse;
+  const historyBeforeCompletion = historyCalls;
+  const completionRefresh = page.waitForResponse(response => response.url().endsWith('/api/campaigns/acme/launch/history'));
+  finished = true;
+  await page.locator('cds-inline-notification[title="review: succeeded"]').waitFor();
+  await completionRefresh;
+  await page.waitForFunction(() => document.querySelector('.actions-log')?.textContent === 'new log');
+  assert.ok(historyCalls > historyBeforeCompletion);
+});
+
+for (const failingRequest of ['status', 'log']) test(`job monitoring can retry a failed ${failingRequest} request without starting another job`, async t => {
+  const { page, url } = await dashboard(t);
+  let recovered = false, posts = 0;
+  await page.route('**/api/jobs', route => { if (route.request().method() !== 'POST') return route.fulfill({ json: [] }); posts++; return route.fulfill({ status: 500, json: { error: 'Unexpected start' } }); });
+  await page.route('**/api/jobs?*', route => {
+    if (failingRequest === 'status' && !recovered) return route.fulfill({ status: 503, json: { error: 'Status unavailable' } });
+    return route.fulfill({ json: [{ ...job('running'), operation: 'review' }] });
+  });
+  await page.route('**/api/jobs/revision-1/log?*', route => {
+    if (failingRequest === 'log' && !recovered) return route.fulfill({ status: 503, json: { error: 'Log unavailable' } });
+    return route.fulfill({ json: { log: 'still running' } });
+  });
+  await page.goto(`${url}#/p/acme/launch/actions`);
+  const retry = page.getByRole('button', { name: 'Retry status' });
+  await retry.waitFor();
+  recovered = true;
+  await retry.click();
+  await page.locator('cds-inline-notification[title="review: running"]').waitFor();
+  assert.equal(posts, 0);
+});
+
+test('a rejected job submission keeps its form and values available for retry', async t => {
+  const { page, url } = await dashboard(t);
+  let attempts = 0;
+  await page.route('**/api/jobs', route => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: [] });
+    if (++attempts === 1) return route.fulfill({ status: 400, json: { error: 'Invalid feedback' } });
+    return route.fulfill({ json: { ...job('queued'), operation: 'feedback add' } });
+  });
+  await page.route('**/api/jobs?*', route => route.fulfill({ json: [] }));
+  await page.goto(`${url}#/p/acme/launch/actions`);
+  await page.getByRole('button', { name: 'Add feedback', exact: true }).click();
+  const modal = page.locator('cds-modal'), field = modal.locator('cds-textarea textarea');
+  await field.fill('Keep this draft');
+  const submit = modal.getByRole('button', { name: 'Add feedback', exact: true });
+  await submit.click();
+  await modal.getByRole('alert').filter({ hasText: 'Invalid feedback' }).waitFor();
+  assert.equal(await field.inputValue(), 'Keep this draft');
+  assert.equal(await submit.isDisabled(), false);
+  await submit.click();
+  await modal.waitFor({ state: 'detached' });
+  assert.equal(attempts, 2);
+});
+
+test('Escape closes the jobs panel and restores focus to its toggle', async t => {
+  const { page, url } = await dashboard(t);
+  await page.goto(url);
+  const toggle = page.locator('#jobs-toggle'), panel = page.locator('#jobs-panel');
+  await toggle.click();
+  await panel.waitFor({ state: 'visible' });
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'true');
+  await page.keyboard.press('Escape');
+  await panel.waitFor({ state: 'hidden' });
+  assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
+  assert.equal(await toggle.evaluate(element => element === document.activeElement), true);
+});

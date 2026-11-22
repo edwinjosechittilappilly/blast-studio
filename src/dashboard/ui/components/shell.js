@@ -77,7 +77,7 @@ export function setupShell() {
     } finally { refreshing = false; }
   }
   jobsButton.addEventListener('click', () => { panel.hidden = !panel.hidden; jobsButton.setAttribute('aria-expanded', String(!panel.hidden)); if (!panel.hidden) refreshJobs(); });
-  document.addEventListener('keydown', event => { if (event.key === 'Escape') { if (!panel.hidden) { panel.hidden = true; jobsButton.focus(); } closeNav(); } });
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') { if (!panel.hidden) { panel.hidden = true; jobsButton.setAttribute('aria-expanded', 'false'); jobsButton.focus(); } closeNav(); } });
   refreshJobs(); setInterval(refreshJobs, 5000);
   return { closeNav, setActive(view) { document.querySelectorAll('cds-side-nav-link').forEach(link => { link.active = link.dataset.view === view; if (link.active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); }); } };
 }

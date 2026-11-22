@@ -25,36 +25,45 @@ function terminalCommand(op, schema, campaign, args) {
 export function jobRegion(container, ctx, options = {}) {
   const region = el('section', null, 'surface job-status actions-job'), status = el('div'), startError = el('div'), cancelError = el('div'), details = el('details'), log = el('pre', null, 'job-log actions-log'), cancel = button('Cancel job', 'secondary');
   details.append(el('summary', 'Job log'), log); cancel.hidden = true; region.append(el('h2', 'Job status'), startError, status, cancelError, cancel, details); container.append(region);
-  let current, timer, lastState, lockConflict = false;
+  let current, timer, lastState, generation = 0, lockConflict = false;
   async function refresh() {
     if (!region.isConnected) { clearTimeout(timer); return; }
+    clearTimeout(timer);
+    const request = ++generation;
     try {
       const allJobs = await api(`/api/jobs?campaign=${encodeURIComponent(slugOf(ctx))}`);
+      if (request !== generation || !region.isConnected) return;
       if (lockConflict && !allJobs.some(job => job.state === 'queued' || job.state === 'running')) { startError.replaceChildren(); lockConflict = false; }
       const jobs = allJobs.filter(job => !options.operation || job.operation === options.operation);
       const job = current ? jobs.find(item => item.id === current) : jobs[0];
       if (!job) { status.replaceChildren(el('p', 'No jobs yet.', 'muted')); details.hidden = true; cancel.hidden = true; if (lockConflict) timer = setTimeout(refresh, 2000); return; }
       current = job.id;
       const result = await api(`/api/jobs/${encodeURIComponent(job.id)}/log?tail=200`), lines = (result.log || '').trim().split('\n').filter(Boolean);
+      if (request !== generation || current !== job.id || !region.isConnected) return;
       log.textContent = result.log || 'No log output yet.'; details.hidden = false;
       const running = job.state === 'queued' || job.state === 'running', n = notice(`${job.operation}: ${job.state}${running && job.cancelRequested ? ' (cancellation requested)' : ''}`, job.state === 'failed' ? 'error' : job.state === 'succeeded' ? 'success' : job.state === 'cancelled' ? 'warning' : 'info');
       if (job.state === 'failed' && lines.length) n.setAttribute('subtitle', lines.at(-1));
       status.replaceChildren(n); if (job.state === 'failed' && lastState !== 'failed') details.open = true;
       cancel.hidden = !running; cancel.disabled = !!job.cancelRequested;
-      if (!running && lastState && lastState !== job.state) await options.onComplete?.(job);
+      const completed = !running && lastState && lastState !== job.state;
       lastState = job.state;
-      if (running || lockConflict) timer = setTimeout(refresh, 2000);
-    } catch (error) { status.replaceChildren(notice(error.message)); }
+      if (completed) await options.onComplete?.(job);
+      if (request === generation && (running || lockConflict)) timer = setTimeout(refresh, 2000);
+    } catch (error) {
+      if (request !== generation || !region.isConnected) return;
+      const retry = button('Retry status', 'secondary'); retry.addEventListener('click', refresh);
+      status.replaceChildren(notice(error.message), retry);
+    }
   }
   cancel.addEventListener('click', async () => { cancel.disabled = true; try { await api(`/api/jobs/${encodeURIComponent(current)}/cancel`, { method: 'POST', headers }); cancelError.replaceChildren(); await refresh(); } catch (error) { cancelError.replaceChildren(notice(error.message)); cancel.disabled = false; } });
-  async function run(op, args = {}) {
-    try { const job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op, campaign: slugOf(ctx), args }) }); current = job.id; lastState = 'queued'; lockConflict = false; startError.replaceChildren(); clearTimeout(timer); await refresh(); return true; }
+  async function run(op, args = {}, reportError = () => {}) {
+    try { const job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op, campaign: slugOf(ctx), args }) }); generation++; current = job.id; lastState = 'queued'; lockConflict = false; startError.replaceChildren(); clearTimeout(timer); await refresh(); return true; }
     catch (error) {
       let message = error.message; lockConflict = /campaign is locked/i.test(message);
       if (lockConflict) {
         try { const jobs = await api(`/api/jobs?campaign=${encodeURIComponent(slugOf(ctx))}`); const running = jobs.find(job => job.state === 'running' || job.state === 'queued'); message = `Another job${running ? ` (${running.operation})` : ''} is running on this campaign. Wait for it or cancel it.`; } catch { message = 'Another job is running on this campaign. Wait for it or cancel it.'; }
       }
-      const n = el('cds-inline-notification'); n.setAttribute('kind', 'error'); n.setAttribute('title', message); startError.replaceChildren(n); if (error.command) startError.append(el('code', error.command), copyButton('Copy command', error.command)); if (lockConflict) { clearTimeout(timer); timer = setTimeout(refresh, 2000); } return false;
+      const n = el('cds-inline-notification'); n.setAttribute('kind', 'error'); n.setAttribute('title', message); startError.replaceChildren(n); if (error.command) startError.append(el('code', error.command), copyButton('Copy command', error.command)); reportError(message); if (lockConflict) { clearTimeout(timer); timer = setTimeout(refresh, 2000); } return false;
     }
   }
   setTimeout(refresh, 0); return run;
@@ -67,7 +76,7 @@ export function openForm(title, description, fields, submitLabel, onSubmit, kind
   const footer = el('cds-modal-footer'), close = button('Cancel', 'secondary'), submit = button(submitLabel, kind); footer.append(close, submit); modal.append(header, body, footer); document.body.append(modal);
   const dismiss = () => modal.remove(); close.addEventListener('click', dismiss); x.addEventListener('click', dismiss); modal.addEventListener('cds-modal-closed', dismiss);
   for (const item of fields) item.node.addEventListener('change', () => item.node.removeAttribute('invalid'));
-  submit.addEventListener('click', async () => { const args = {}; for (const item of fields) { const raw = item.bool ? item.node.checked : item.node.value?.trim(), value = raw === '__none' ? '' : raw; if (item.required && !value) { item.node.setAttribute('invalid', ''); item.node.setAttribute('invalid-text', `Choose or enter ${item.label.toLowerCase()}.`); item.node.focus(); return; } if (value) args[item.key] = value; } if (args.platform && args.asset && title === 'Add feedback') { error.textContent = 'Choose either a platform or an asset, not both.'; return; } submit.disabled = true; try { await onSubmit(args); dismiss(); } catch (failure) { error.textContent = failure.message; submit.disabled = false; } });
+  submit.addEventListener('click', async () => { const args = {}; for (const item of fields) { const raw = item.bool ? item.node.checked : item.node.value?.trim(), value = raw === '__none' ? '' : raw; if (item.required && !value) { item.node.setAttribute('invalid', ''); item.node.setAttribute('invalid-text', `Choose or enter ${item.label.toLowerCase()}.`); item.node.focus(); return; } if (value) args[item.key] = value; } if (args.platform && args.asset && title === 'Add feedback') { error.textContent = 'Choose either a platform or an asset, not both.'; return; } error.textContent = ''; submit.disabled = true; try { if (await onSubmit(args, message => { error.textContent = message; }) === false) { if (!error.textContent) error.textContent = 'Could not start the job.'; submit.disabled = false; } else dismiss(); } catch (failure) { error.textContent = failure.message; submit.disabled = false; } });
 }
 const input = (key, label, required = false, tag = 'cds-text-input') => ({ key, label, required, node: field(label, tag) });
 const check = (key, label) => { const node = el('cds-checkbox'); node.setAttribute('label-text', label); return { key, label, node, bool: true }; };
@@ -82,13 +91,13 @@ export function renderActions(container, ctx) {
   const feedback = el('section', null, 'surface actions-feedback'), feedbackContent = el('div'); feedback.append(el('h2', 'Feedback'), feedbackContent); const versions = el('section', null, 'surface actions-versions'), versionContent = el('div'); versions.append(el('h2', 'Versions'), versionContent);
   const base = `/api/campaigns/${project.slug.split('/').map(encodeURIComponent).join('/')}`; let snapshots = [], budget;
   async function loadData() {
-    try { const [updated, history] = await Promise.all([api(`/api/project/${encodeURIComponent(project.slug)}`), api(`${base}/history`)]); Object.assign(project, updated); snapshots = history; renderFeedbackHistory(feedbackContent, { campaign: project.slug, entries: project.feedback, onRemove: entry => openForm('Remove feedback', 'Remove this feedback item?', [], 'Remove', () => run('feedback rm', { id: entry.id }), 'danger') }); renderVersions(); } catch (error) { versionContent.replaceChildren(notice(`Could not load campaign history: ${error.message}`)); }
+    try { const [updated, history] = await Promise.all([api(`/api/project/${encodeURIComponent(project.slug)}`), api(`${base}/history`)]); Object.assign(project, updated); snapshots = history; renderFeedbackHistory(feedbackContent, { campaign: project.slug, entries: project.feedback, onRemove: entry => openForm('Remove feedback', 'Remove this feedback item?', [], 'Remove', (_, reportError) => run('feedback rm', { id: entry.id }, reportError), 'danger') }); renderVersions(); } catch (error) { versionContent.replaceChildren(notice(`Could not load campaign history: ${error.message}`)); }
   }
   const run = jobRegion(container, ctx, { onComplete: loadData }); api('/api/budget').then(data => { budget = data; }).catch(() => {});
   function renderVersions() {
     versionContent.replaceChildren(); if (!snapshots.length) { versionContent.append(el('p', 'No versions yet.', 'muted')); return; }
     const table = el('table', null, 'overview-table'), head = el('thead'), hr = el('tr'), body = el('tbody'), scroll = el('div', null, 'table-scroll'); for (const name of ['Version', 'Step', 'Time', 'Size', '']) hr.append(el('th', name)); head.append(hr);
-    for (const item of snapshots) { const row = el('tr'), cell = el('td'), restore = button('Restore', 'ghost'); restore.addEventListener('click', () => openForm('Restore version', `Replace the current campaign with version ${item.n}?`, [], 'Restore', () => run('restore', { version: String(item.n) }), 'danger')); cell.append(restore); row.append(el('td', String(item.n)), el('td', item.step), el('td', new Date(item.time).toLocaleString()), el('td', `${(item.size / 1024).toFixed(1)} KB`), cell); body.append(row); } table.append(head, body); scroll.append(table); versionContent.append(scroll);
+    for (const item of snapshots) { const row = el('tr'), cell = el('td'), restore = button('Restore', 'ghost'); restore.addEventListener('click', () => openForm('Restore version', `Replace the current campaign with version ${item.n}?`, [], 'Restore', (_, reportError) => run('restore', { version: String(item.n) }, reportError), 'danger')); cell.append(restore); row.append(el('td', String(item.n)), el('td', item.step), el('td', new Date(item.time).toLocaleString()), el('td', `${(item.size / 1024).toFixed(1)} KB`), cell); body.append(row); } table.append(head, body); scroll.append(table); versionContent.append(scroll);
   }
   const platforms = () => [...new Set([...project.plan.map(item => item.platform), ...project.posts.map(item => item.platform)])], assets = () => project.assets.map(asset => asset.id);
   const pipeline = [['plan', 'Plan'], ['make', 'Make'], ['render', 'Render'], ['review', 'Review']];
@@ -108,7 +117,7 @@ export function renderActions(container, ctx) {
       const description = schema.requiresTTY ? 'This operation requires an interactive terminal. Prepare a command to run there.' : schema.paid ? `This step can incur provider charges.${budget ? ` Monthly spend: $${Number(budget.mtd).toFixed(2)} of $${Number(budget.cap).toFixed(2)}.` : ' Check Settings for budget details.'}` : '';
       if (schema.requiresTTY) { openForm(label, description, fields, 'Prepare command', args => { const command = terminalCommand(op, schema, slugOf(ctx), args), output = el('div', null, 'command-snippet'), terminal = el('div', null, 'actions-terminal'); output.append(el('code', command), copyButton('Copy command', command)); terminal.append(notice('Run this operation in a terminal', 'info'), output); section.querySelector('.actions-terminal')?.remove(); section.append(terminal); }); return; }
       if (!fields.length && !description) { run(op); return; }
-      openForm(label, description, fields, label, args => run(op, args));
+      openForm(label, description, fields, label, (args, reportError) => run(op, args, reportError));
     });
   }
   for (const [title, list] of [['Pipeline', pipeline], ['Decisions', [['accept', 'Accept'], ['confirm', 'Confirm rights'], ['mark', 'Mark published']]]]) { const group = el('div', null, 'actions-group'), controls = el('div', null, 'actions-controls'); group.append(el('h3', title), controls); section.append(group); for (const [op, label] of list) action(op, label, controls); }

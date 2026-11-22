@@ -24,21 +24,26 @@ export async function runJob(target, op, args = {}, onComplete = () => {}) {
   let job;
   try { job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op, args }) }); }
   catch (error) { target.replaceChildren(notice(error.message)); if (error.command) target.append(el('p', 'This operation requires a terminal.'), command(error.command)); await onComplete({ state: 'failed' }, ''); return; }
-  const status = el('p'), warning = notice('', 'warning'), cancel = button('Cancel job', 'secondary'), details = el('details'), summary = el('summary', 'Job log'), log = el('pre');
-  warning.hidden = true; details.append(summary, log); target.replaceChildren(status, warning, cancel, details);
+  const status = el('p'), warning = notice('', 'warning'), refreshError = notice('Unable to refresh job status. Retrying.', 'warning'), cancel = button('Cancel job', 'secondary'), details = el('details'), summary = el('summary', 'Job log'), log = el('pre');
+  warning.hidden = true; refreshError.hidden = true; details.append(summary, log); target.replaceChildren(status, warning, refreshError, cancel, details);
   cancel.addEventListener('click', async () => { cancel.disabled = true; try { await api(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST', headers }); } catch (error) { target.append(notice(error.message)); cancel.disabled = false; } });
   async function update() {
+    let current, output;
     try {
-      const [current, output] = await Promise.all([api(`/api/jobs/${encodeURIComponent(job.id)}`), api(`/api/jobs/${encodeURIComponent(job.id)}/log?tail=1000`)]);
-      job = current; log.textContent = output.log || 'No output yet.';
-      const findings = job.findings === true && job.state === 'failed';
-      const counts = op === 'sources check' ? [...(output.log || '').matchAll(/^##\s+[^:]+:\s*(changed|new|failed|manual)\b/gmi)].reduce((all, match) => { const key = match[1].toLowerCase(); all[key] = (all[key] || 0) + 1; return all; }, {}) : {};
-      const message = findings ? ['Completed with findings', ...Object.entries(counts).map(([key, count]) => `${count} ${key}`)].join(' · ') : `Job ${job.state}${job.cancelRequested && (job.state === 'running' || job.state === 'queued') ? ' · cancellation requested' : ''}`;
-      status.hidden = findings; warning.hidden = !findings;
-      if (findings) warning.setAttribute('title', message); else status.textContent = message;
-      if (job.state === 'running' || job.state === 'queued') { setTimeout(() => { if (target.isConnected) update(); }, 1000); return; }
-      cancel.hidden = true; await onComplete(job, output.log || '');
-    } catch (error) { status.hidden = false; warning.hidden = true; status.textContent = 'Unable to refresh job status.'; target.append(notice(error.message)); cancel.hidden = true; await onComplete({ state: 'failed' }, ''); }
+      [current, output] = await Promise.all([api(`/api/jobs/${encodeURIComponent(job.id)}`), api(`/api/jobs/${encodeURIComponent(job.id)}/log?tail=1000`)]);
+    } catch {
+      refreshError.hidden = false;
+      setTimeout(() => { if (target.isConnected) update(); }, 1000);
+      return;
+    }
+    refreshError.hidden = true; job = current; log.textContent = output.log || 'No output yet.';
+    const findings = job.findings === true && job.state === 'failed';
+    const counts = op === 'sources check' ? [...(output.log || '').matchAll(/^##\s+[^:]+:\s*(changed|new|failed|manual)\b/gmi)].reduce((all, match) => { const key = match[1].toLowerCase(); all[key] = (all[key] || 0) + 1; return all; }, {}) : {};
+    const message = findings ? ['Completed with findings', ...Object.entries(counts).map(([key, count]) => `${count} ${key}`)].join(' · ') : `Job ${job.state}${job.cancelRequested && (job.state === 'running' || job.state === 'queued') ? ' · cancellation requested' : ''}`;
+    status.hidden = findings; warning.hidden = !findings;
+    if (findings) warning.setAttribute('title', message); else status.textContent = message;
+    if (job.state === 'running' || job.state === 'queued') { setTimeout(() => { if (target.isConnected) update(); }, 1000); return; }
+    cancel.hidden = true; await onComplete(job, output.log || '');
   }
   await update();
 }

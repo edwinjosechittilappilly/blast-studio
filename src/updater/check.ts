@@ -6,7 +6,7 @@ import { loadPacks, loadSources } from '../packs.ts';
 import type { SourceRow } from '../packs.ts';
 import type { IO } from '../io.ts';
 import { UserError } from '../types.ts';
-import { loadConfig } from '../config.ts';
+import { configFile, loadConfig } from '../config.ts';
 
 export const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 export interface Result { id: string; status: 'changed' | 'unchanged' | 'new' | 'failed' | 'manual'; fields: string[]; error?: string; old?: string; text?: string }
@@ -68,7 +68,7 @@ async function detect(row: SourceRow, io: IO): Promise<string> {
 }
 export async function check(io: IO, options: { root?: string; sources?: SourceRow[]; packs?: Map<string, unknown>; only?: string[]; write?: boolean; date?: string } = {}): Promise<{ results: Result[]; code: number; report: string }> {
   const inCheckout = existsSync(join(repoRoot, '.git')) && !relative(repoRoot, resolve(io.cwd)).startsWith(`..${sep}`) && relative(repoRoot, resolve(io.cwd)) !== '..';
-  const root = options.root ?? (options.write && inCheckout ? repoRoot : loadConfig(io).root), sources = options.sources ?? loadSources(), packs = options.packs ?? loadPacks(), date = options.date ?? new Date().toISOString().slice(0, 10);
+  const root = options.root ?? (options.write && inCheckout || !options.write && !existsSync(configFile(io)) ? repoRoot : loadConfig(io).root), sources = options.sources ?? loadSources(), packs = options.packs ?? loadPacks(), date = options.date ?? new Date().toISOString().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new UserError('Invalid source report date');
   if (options.only) for (const id of options.only) if (!sources.some(s => s.id === id)) throw new UserError(`Unknown source: ${id}`);
   const results: Result[] = [];

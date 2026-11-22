@@ -95,7 +95,7 @@ function markFailure(log, inputs, args, evidence) {
   return true;
 }
 
-async function monitor(region, job, success, submit, inputs, args, evidence) {
+async function monitor(region, job, success, finished, inputs, args, evidence) {
   const status = el('div'), cancelError = el('div'), log = el('pre', '', 'job-log'), cancel = button('Cancel job', 'secondary');
   const details = el('details'); details.open = true; details.append(el('summary', 'Job log'), log);
   status.setAttribute('role', 'status'); log.style.whiteSpace = 'pre-wrap'; log.style.overflowWrap = 'anywhere';
@@ -116,8 +116,10 @@ async function monitor(region, job, success, submit, inputs, args, evidence) {
       status.replaceChildren(notification(current.state === 'failed' ? 'error' : current.state === 'succeeded' ? 'success' : 'info', current.cancelRequested && running ? 'Cancelling job…' : `Job ${current.state}`, current.state === 'failed' ? fieldError ? 'Check the highlighted field and try again.' : 'Review the log, correct the problem, and try again.' : ''));
       cancel.hidden = !running; cancel.disabled = !!current.cancelRequested;
       if (running) setTimeout(update, 2000);
-      else if (current.state === 'succeeded') success();
-      else submit.disabled = false;
+      else {
+        finished();
+        if (current.state === 'succeeded') success();
+      }
     } catch (error) {
       if (!region.isConnected) return;
       status.replaceChildren(notification('error', 'Could not load job status', error.message));
@@ -180,11 +182,12 @@ async function render(container, ctx, projectMode) {
     if (force?.checked) args.force = true;
     return args;
   };
+  let active = false;
   function updateTTY() {
     const op = mode?.value || 'brief', schema = operations[op], terminal = !projectMode && schema?.requiresTTY;
     const validId = slug.test(id.value?.trim() || '');
     submit.textContent = terminal ? 'Copy command' : projectMode ? 'Create project' : 'Create campaign';
-    submit.disabled = !!terminal && !validId;
+    submit.disabled = active || (!!terminal && !validId);
     if (terminal && validId) tty.replaceChildren(notification('info', 'Run this operation in a terminal', 'The configured image provider requires an interactive terminal.'), el('code', command(op, schema, argsFor()), 'create-command'));
     else if (terminal) tty.replaceChildren(notification('info', 'Run this operation in a terminal', 'Enter a valid campaign ID to prepare the command.'));
     else tty.replaceChildren();
@@ -208,12 +211,12 @@ async function render(container, ctx, projectMode) {
       return;
     }
     const start = async () => {
-      submit.disabled = true; errors.replaceChildren();
+      active = true; updateTTY(); errors.replaceChildren();
       try {
         const body = projectMode ? { op, args } : { op, campaign: args.campaign, args: Object.fromEntries(Object.entries(args).filter(([key]) => key !== 'campaign')) };
         const job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify(body) });
-        await monitor(progress, job, () => { location.hash = projectMode ? `#/p/${route(args.project)}` : `#/p/${args.campaign.split('/').map(route).join('/')}/overview`; }, submit, inputs, args, evidence);
-      } catch (error) { errors.replaceChildren(notification('error', 'Could not start job', error.message)); if (error.command) { const terminal = el('div'); commandNotice(terminal, error.command); errors.append(terminal); } submit.disabled = false; }
+        await monitor(progress, job, () => { location.hash = projectMode ? `#/p/${route(args.project)}` : `#/p/${args.campaign.split('/').map(route).join('/')}/overview`; }, () => { active = false; updateTTY(); }, inputs, args, evidence);
+      } catch (error) { errors.replaceChildren(notification('error', 'Could not start job', error.message)); if (error.command) { const terminal = el('div'); commandNotice(terminal, error.command); errors.append(terminal); } active = false; updateTTY(); }
     };
     if (schema.paid) {
       submit.disabled = true;

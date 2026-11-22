@@ -215,7 +215,7 @@ async function route(focus = true) {
   shell.closeNav();
   try {
     if (parts[0] === 'projects' && parts[1] === 'new') { activeProject = null; show('project'); await renderNewProject($('#project-detail'), {}); }
-    else if (parts[0] === 'p' && parts[1] && parts[2] === 'new') { activeProject = null; show('project'); await renderNewCampaign($('#project-detail'), { project: parts[1] }); }
+    else if (parts[0] === 'p' && parts[1] && parts[2] === 'new' && !parts[3]) { activeProject = null; show('project'); await renderNewCampaign($('#project-detail'), { project: parts[1] }); }
     else if (parts[0] === 'p' && parts[1] && parts[2]) { await openProject(`${parts[1]}/${parts[2]}`, parts[3]); }
     else if (parts[0] === 'p' && parts[1]) { await openStudioProject(parts[1]); }
     else { activeProject = null; const view = ['settings', 'sources', 'health'].includes(parts[0]) ? parts[0] : 'projects'; show(view); if (view === 'projects') { const project = parts[0] === 'p' ? parts[1] : ''; $('#search').value = project || new URLSearchParams(search).get('q') || ''; const create = $('#new-campaign'); create.hidden = !project; create.href = `#/p/${encodeURIComponent(project)}/new`; await library(); } else if (view === 'settings') await renderSettings($('#settings')); else if (view === 'sources') await renderSources($('#sources')); else await renderHealth($('#health')); }

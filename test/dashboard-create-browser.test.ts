@@ -6,7 +6,7 @@ import { startDashboard } from '../src/dashboard/server.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 async function dashboard(t: TestContext) {
-  const root = tempStudio({ 'projects/acme/project.yml': 'name: Acme\ncreatedAt: 2025-01-01\n' });
+  const root = tempStudio({ 'projects/acme/project.yml': 'name: Acme\ncreatedAt: 2025-01-01\n', 'projects/acme/campaigns/new/brief.md': '# New campaign' });
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') } });
   const server = await startDashboard(io, { port: 0 });
   t.after(() => server.server.close());
@@ -38,6 +38,47 @@ test('project creation validates its ID and submits all shared evidence as a job
   await page.getByText('Collecting evidence').waitFor();
   assert.deepEqual(submitted, { op: 'project new', args: { project: 'acme-new', repo: 'org/repo', url: ['https://example.com/a', 'https://example.com/b'], note: ['First note', 'Second note'] } });
   assert.equal(await page.getByRole('button', { name: 'Cancel job' }).isVisible(), true);
+});
+
+test('creation stays disabled while a job runs, even when inputs or mode change', async t => {
+  const { page, url } = await dashboard(t);
+  let state = 'running', submissions = 0;
+  await page.route('**/api/operations', async route => {
+    const response = await route.fetch();
+    const operations = await response.json(); operations.new.requiresTTY = true;
+    await route.fulfill({ json: operations });
+  });
+  await page.route('**/api/jobs', async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    submissions++;
+    await route.fulfill({ status: 202, json: { id: 'test-job', state: 'running' } });
+  });
+  await page.route('**/api/jobs/test-job', route => route.fulfill({ json: { id: 'test-job', state } }));
+  await page.route('**/api/jobs/test-job/log?*', route => route.fulfill({ json: { log: 'Working' } }));
+  await page.goto(`${url}#/p/acme/new`);
+  await page.getByRole('textbox', { name: 'Campaign ID' }).fill('launch');
+  await page.getByRole('button', { name: 'Create campaign' }).click();
+  await page.getByText('Working').waitFor();
+  await page.getByRole('textbox', { name: 'Campaign ID' }).fill('other');
+  assert.equal(await page.getByRole('button', { name: 'Create campaign' }).isDisabled(), true);
+  await page.getByRole('combobox', { name: 'Creation mode' }).selectOption('new');
+  assert.equal(await page.getByRole('button', { name: 'Copy command' }).isDisabled(), true);
+  await page.getByRole('combobox', { name: 'Creation mode' }).selectOption('brief');
+  assert.equal(await page.getByRole('button', { name: 'Create campaign' }).isDisabled(), true);
+  assert.equal(submissions, 1);
+  state = 'failed';
+  await page.locator('cds-inline-notification[title="Job failed"]').waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Create campaign' }).isEnabled(), true);
+});
+
+test('campaign named new opens its overview and actions without hiding creation', async t => {
+  const { page, url } = await dashboard(t);
+  await page.goto(`${url}#/p/acme/new/overview`);
+  await page.getByRole('heading', { name: 'Campaign summary' }).waitFor();
+  await page.goto(`${new URL(url).origin}/#/p/acme/new/actions`);
+  await page.getByRole('heading', { name: 'Campaign actions' }).waitFor();
+  await page.goto(`${new URL(url).origin}/#/p/acme/new`);
+  await page.getByRole('heading', { name: 'New campaign' }).waitFor();
 });
 
 test('campaign brief submits its inputs and navigates on success', async t => {

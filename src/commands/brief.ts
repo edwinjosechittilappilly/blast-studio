@@ -109,7 +109,7 @@ export const run: Command = async (args, io) => {
   if (values.repo && !values.pr && !values.commit) await collectRepository(io, add, values.repo);
   if (values["mb-brief"]) {
     const input = values["mb-brief"];
-    const file = resolve(io.cwd, input.startsWith("~/") ? join(homedir(), input.slice(2)) : input);
+    const file = resolve(io.cwd, input.startsWith("~/") ? join(io.env.HOME || homedir(), input.slice(2)) : input);
     const imported = parseBrief(readFileSync(file, "utf8"));
     if (!imported.length) throw new UserError("Market Blaster brief has no evidence sections");
     for (const section of imported) addImported(section, file, true);
