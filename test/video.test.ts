@@ -7,7 +7,7 @@ import test, { after } from "node:test";
 import { realIO } from "../src/cli.ts";
 import { chromium } from "playwright";
 import { renderVideo } from "../src/render/video.ts";
-import { encodeVideo } from "../src/render/ffmpeg.ts";
+import { encodeVideo, extractFrames, probeMedia } from "../src/render/ffmpeg.ts";
 import { loadConfig } from "../src/config.ts";
 import { fakeIO, tempStudio } from "./helpers.ts";
 
@@ -16,7 +16,6 @@ const hf = fileURLToPath(new URL("../node_modules/.bin/hyperframes", import.meta
 // Render tools run sandboxed with the studio root hidden, so tests need a real config.
 const studio = tempStudio();
 const config = loadConfig(fakeIO({ cwd: studio, env: { BSTUDIO_HOME: studio, BSTUDIO_CONFIG: "studio.yml" } }));
-config.agent.sandbox = "on";
 after(() => rmSync(studio, { recursive: true, force: true }));
 const available = (cmd: string) => spawnSync("which", [cmd]).status === 0;
 const mediaMissing = ["ffmpeg", "ffprobe"].filter(c => !available(c));
@@ -56,8 +55,18 @@ test("voiceover is muxed into a video", { skip: mediaMissing.length ? `missing b
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
+test("extracts review frames from a GIF whose last frame has a long delay", { skip: mediaMissing.length ? `missing binaries: ${mediaMissing.join(", ")}` : false }, async () => {
+  const dir = tempStudio(), io = realIO(), input = join(dir, "single.gif");
+  try {
+    await io.run("ffmpeg", ["-y", "-f", "lavfi", "-i", "color=black:s=16x16:r=1", "-frames:v", "1", "-final_delay", "400", input]);
+    const info = await probeMedia(input, io), frames = [1, 2, 3].map(i => join(dir, `${i}.png`));
+    await extractFrames(input, frames, info.seconds, io);
+    for (const frame of frames) assert.ok(existsSync(frame), `${frame} was not extracted`);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
 // Slow: real Chromium, HyperFrames and FFmpeg; no paid APIs.
-test("renders a two-second portrait composition and extracts review frames", { timeout: 60_000, skip: missingVideo.length ? `missing binaries: ${missingVideo.join(", ")}` : false }, async () => {
+for (const mode of ["off", "on"] as const) test(`renders a two-second portrait composition and extracts review frames (sandbox ${mode})`, { timeout: 60_000, skip: missingVideo.length ? `missing binaries: ${missingVideo.join(", ")}` : false }, async t => {
   const dir = tempStudio();
   try {
     mkdirSync(join(dir, "source"));
@@ -65,7 +74,13 @@ test("renders a two-second portrait composition and extracts review frames", { t
     copyFileSync(join(fixtures, "captions.vtt"), join(dir, "source/captions.vtt"));
     writeFileSync(join(dir, "asset.yml"), "kind: video\naspects: ['9:16']\ncaptions:\n  burn: true\n");
     const io = realIO();
-    const outputs = await renderVideo(dir, config, io);
+    const settings = mode === "off" ? config : { ...config, agent: { ...config.agent, sandbox: "on" as const } };
+    let outputs;
+    try { outputs = await renderVideo(dir, settings, io); }
+    catch (error) {
+      if (/hyperframes failed[\s\S]*low disk space/i.test(String(error))) { t.skip("HyperFrames reports low disk space"); return; }
+      throw error;
+    }
     const video = outputs.find(o => o.file === "out/9x16.mp4");
     assert.ok(video);
     assert.equal(video.width, 1080); assert.equal(video.height, 1920);
@@ -99,13 +114,14 @@ test("renders a two-second portrait composition and extracts review frames", { t
 });
 
 // Slow: VHS drives a real terminal and browser.
-test("renders a VHS GIF and review frames", { timeout: 60_000, skip: missingVhs.length ? `missing binaries: ${missingVhs.join(", ")}` : false }, async () => {
+for (const mode of ["off", "on"] as const) test(`renders a VHS GIF and review frames (sandbox ${mode})`, { timeout: 60_000, skip: missingVhs.length ? `missing binaries: ${missingVhs.join(", ")}` : false }, async () => {
   const dir = tempStudio();
   try {
     mkdirSync(join(dir, "source"));
     copyFileSync(join(fixtures, "demo.tape"), join(dir, "source/demo.tape"));
     writeFileSync(join(dir, "asset.yml"), "kind: terminal-demo\n");
-    const outputs = await renderVideo(dir, config, realIO());
+    const settings = mode === "off" ? config : { ...config, agent: { ...config.agent, sandbox: "on" as const } };
+    const outputs = await renderVideo(dir, settings, realIO());
     assert.ok(outputs.some(o => o.file === "out/demo.gif" && o.bytes > 0));
     for (const i of [1, 2, 3]) assert.ok(existsSync(join(dir, `out/frames/demo-${i}.png`)));
   } finally { rmSync(dir, { recursive: true, force: true }); }

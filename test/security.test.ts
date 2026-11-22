@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -57,6 +57,26 @@ test('video tools receive a temporary home without secrets', async () => {
       assert.throws(() => loadConfig(io), /agent\.sandbox must be on or off/);
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('sandboxed HyperFrames can read browser caches but cannot modify them', async () => {
+  if (process.platform !== 'darwin') return;
+  const home = mkdtempSync(join(tmpdir(), 'bstudio-browser-home-')), root = tempStudio(), work = mkdtempSync(join(tmpdir(), 'bstudio-browser-work-'));
+  try {
+    const managed = join(home, '.cache/hyperframes'), shared = join(home, '.cache/puppeteer');
+    for (const dir of [managed, shared]) { mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, 'browser'), 'ok'); }
+    const io = fakeIO({ cwd: root, env: { HOME: home, PATH: process.env.PATH, BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml' },
+      run: async (command, args, opts) => {
+        const result = spawnSync(command, args, { ...opts, encoding: 'utf8' });
+        assert.equal(result.stdout, 'okok');
+        assert.ok(existsSync(join(managed, 'locks', 'allowed')));
+        assert.match(result.stderr, /Operation not permitted/);
+        assert.notEqual(result.status, 0);
+        return '';
+      } });
+    const config = loadConfig(io); config.agent.sandbox = 'on';
+    await runTool(io, 'hyperframes', '/bin/sh', ['-c', 'cat "$HYPERFRAMES_CACHE_DIR/browser" "$HOME/.cache/puppeteer/browser"; touch "$HYPERFRAMES_CACHE_DIR/locks/allowed"; touch "$HYPERFRAMES_CACHE_DIR/forbidden"'], work, { config, workspace: work });
+  } finally { rmSync(home, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); rmSync(work, { recursive: true, force: true }); }
 });
 
 test('OS sandbox denies reading the studio root and writes outside the workspace', () => {

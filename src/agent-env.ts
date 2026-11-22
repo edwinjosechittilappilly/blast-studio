@@ -28,12 +28,13 @@ export function agentEnv(io: IO, options: { temp: string; home?: string; bin?: s
 let warnedSandbox = false;
 let bwrapProbe: { path: string; available: boolean } | undefined;
 /** Wrap subprocesses in the OS sandbox where available. */
-export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, temp: string, command: string, args: string[], options: { render?: boolean; loopback?: boolean; pty?: boolean; readPaths?: string[] } = {}): { command: string; args: string[] } {
+export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, temp: string, command: string, args: string[], options: { render?: boolean; loopback?: boolean; pty?: boolean; readPaths?: string[]; readDirs?: string[]; writeDirs?: string[] } = {}): { command: string; args: string[] } {
   if (config.agent.sandbox !== 'on') return { command, args };
   const home = io.env.HOME;
   const canonical = (path: string) => { try { return realpathSync(path); } catch { return resolve(path); } };
   const writable = [workspace, temp].map(canonical);
   const readable = home && !options.render ? ['.omp', '.claude', '.codex', '.local/bin', '.local/share', '.nvm', '.npm-global', '.config/omp'].map(p => canonical(join(home, p))) : home ? ['.local/bin', '.local/share', '.nvm', '.npm-global', 'Library/Caches/ms-playwright'].map(p => canonical(join(home, p))) : [];
+  readable.push(...(options.readDirs ?? []).map(canonical));
   if (options.render) readable.push(canonical(fileURLToPath(new URL('..', import.meta.url))));
   const packageMetadata: string[] = [];
   if (options.render) {
@@ -41,6 +42,7 @@ export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, 
     while (dir !== dirname(dir)) { packageMetadata.push(join(dir, 'package.json')); dir = dirname(dir); }
   }
   const readPaths = (options.readPaths ?? []).map(canonical);
+  const toolWrites = (options.writeDirs ?? []).map(canonical);
   const stateDirs = home && !options.render ? [canonical(join(home, '.omp/agent/sessions'))] : [];
   const stateFiles = home && !options.render ? ['agent.db', 'agent.db-wal', 'agent.db-shm', 'history.db', 'history.db-wal', 'history.db-shm', 'models.db', 'models.db-wal', 'models.db-shm', 'skill-descriptions.db', 'skill-descriptions.db-wal', 'skill-descriptions.db-shm'].map(p => canonical(join(home, '.omp/agent', p))) : [];
   if (process.platform === 'darwin') {
@@ -54,6 +56,7 @@ export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, 
       ...readable.map(p => `(allow file-read* (subpath ${JSON.stringify(p)}))`),
       ...stateDirs.map(p => `(allow file-write* (subpath ${JSON.stringify(p)}))`),
       ...stateFiles.map(p => `(allow file-write* (literal ${JSON.stringify(p)}))`),
+      ...toolWrites.map(p => `(allow file-write* (subpath ${JSON.stringify(p)}))`),
       ...[config.root, config.file].map(p => `(deny file-read* file-write* (subpath ${JSON.stringify(canonical(p))}))`),
       ...readPaths.map(p => `(allow file-read* (literal ${JSON.stringify(p)}))`),
       ...writable.map(p => `(allow file-read* file-write* (subpath ${JSON.stringify(p)}))`),
@@ -78,6 +81,7 @@ export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, 
       };
       for (const path of readable) bind(path, false);
       for (const path of [...stateDirs, ...stateFiles]) bind(path, true);
+      for (const path of toolWrites) bind(path, true);
       for (const path of [config.root, config.file].map(canonical)) if (existsSync(path)) mounts.push(...(statSync(path).isDirectory() ? ['--tmpfs', path] : ['--ro-bind', '/dev/null', path]));
       for (const path of readPaths) bind(path, false);
       for (const path of writable) bind(path, true);

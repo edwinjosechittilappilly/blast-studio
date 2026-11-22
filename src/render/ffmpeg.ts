@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { agentEnv, sandboxCommand } from "../agent-env.ts";
 import type { IO } from "../io.ts";
 import { UserError, type StudioConfig } from "../types.ts";
@@ -16,8 +16,29 @@ export async function runTool(io: IO, name: keyof typeof guidance, command: stri
   try {
     const configured = Number(io.env.BSTUDIO_RENDER_TIMEOUT_MS);
     const timeoutMs = Number.isFinite(configured) && configured > 0 ? configured : (name === "vhs" || name === "hyperframes" ? 1_800_000 : 120_000);
-    const wrapped = sandbox ? sandboxCommand(io, sandbox.config, sandbox.workspace, temp, command, args, { render: true, loopback: name === "vhs" || name === "hyperframes", pty: name === "vhs" }) : { command, args };
     const env = agentEnv(io, { temp, home: temp, minimal: true });
+    const readDirs: string[] = [], writeDirs: string[] = [];
+    if (name === "hyperframes") {
+      const home = io.env.HOME ?? homedir();
+      const managed = resolve(io.cwd, io.env.HYPERFRAMES_CACHE_DIR || join(home, ".cache/hyperframes"));
+      const puppeteer = join(home, ".cache/puppeteer");
+      if (existsSync(home)) {
+        mkdirSync(managed, { recursive: true, mode: 0o700 });
+        env.HYPERFRAMES_CACHE_DIR = managed; readDirs.push(managed);
+        if (sandbox?.config.agent.sandbox === "on") {
+          const locks = join(managed, "locks");
+          mkdirSync(locks, { recursive: true, mode: 0o700 });
+          writeDirs.push(locks);
+        }
+      }
+      if (existsSync(puppeteer)) {
+        mkdirSync(join(temp, ".cache"));
+        symlinkSync(puppeteer, join(temp, ".cache/puppeteer"), "dir");
+        readDirs.push(puppeteer);
+      }
+    }
+    const wrapped = sandbox ? sandboxCommand(io, sandbox.config, sandbox.workspace, temp, command, args, { render: true, loopback: name === "vhs" || name === "hyperframes", pty: name === "vhs", readDirs, writeDirs }) : { command, args };
+    if (name === "hyperframes" && wrapped.command !== command) env.HYPERFRAMES_CHROME_SANDBOX = "0";
     if (name === "vhs" && wrapped.command !== command) env.VHS_NO_SANDBOX = "1";
     return await io.run(wrapped.command, wrapped.args, { cwd, env, timeoutMs });
   } catch (error) {
@@ -67,6 +88,7 @@ export async function encodeVideo(input: string, output: string, io: IO, options
 export async function extractFrames(input: string, files: string[], seconds: number, io: IO): Promise<void> {
   for (let i = 0; i < files.length; i++) {
     const at = seconds * (i + 1) / (files.length + 1);
-    await runTool(io, "ffmpeg", "ffmpeg", ["-y", "-ss", String(at), "-i", input, "-frames:v", "1", "-update", "1", files[i]]);
+    // GIF duration includes the last frame's display delay, which may extend past its last timestamp.
+    await runTool(io, "ffmpeg", "ffmpeg", ["-y", "-i", input, "-vf", `tpad=stop_mode=clone:stop_duration=${seconds}`, "-ss", String(at), "-frames:v", "1", "-update", "1", files[i]]);
   }
 }
