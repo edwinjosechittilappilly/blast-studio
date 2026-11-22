@@ -2,6 +2,16 @@
 
 `bstudio init` creates `~/.config/blast-studio/studio.yml` without overwriting an existing file. `BSTUDIO_CONFIG` overrides that path. `studio.root` defaults to `~/BlastStudio`; `BSTUDIO_HOME` overrides it. Relative paths resolve against the current working directory; `~` expansion applies to the studio root, not `BSTUDIO_CONFIG`. The root contains projects, provider caches, the spend ledger, and an optional `.env` file. Keep unpublished work and credentials private.
 
+## Project storage and migration
+
+Projects live at `projects/<project>/`, with `project.yml` metadata, shared `evidence/`, and independent campaigns under `campaigns/<campaign>/`. Use `bstudio project new acme --repo owner/repo --url https://example.com --note "Context"` to collect reusable evidence, and `bstudio project list` to list projects. Campaign commands use addresses such as `acme/launch`.
+
+On startup, a legacy `projects/<slug>/brief.md` project is migrated to `projects/<slug>/campaigns/<slug>/`, including unknown files. Stop all running jobs and dashboard revisions, then back up the studio before upgrading. Migration records its progress in `.bstudio-migration.json` and resumes on the next run after an interruption. If a destination or metadata conflict is reported, preserve both copies, resolve the indicated paths manually, and retry; do not remove the journal while recovery is pending.
+
+Historical ledger entries remain attributed to the migrated `<slug>/<slug>` campaign for spending limits; newly recorded costs use the full campaign address. Market Blaster identity changes from `<slug>` to `<slug>--<slug>` on re-export. This can create a separate Market Blaster campaign with fresh drafts and no connection to the old approvals or posted state. Check the old campaign before publishing to avoid duplicate posts.
+
+Rename a project with `bstudio project rename <project> <new-project>`, or rename or move a campaign with `bstudio campaign rename <project>/<campaign> <project2>/<campaign2>`. A move to another project requires that project to exist; the destination must not exist. Stop active campaign jobs and revisions first. The campaign directory, including history and feedback, moves intact, and ledger attribution and job record campaign references are updated. Renaming either component changes the Market Blaster composite slug; re-export can create a separate campaign with fresh approval and posted state, so check existing campaigns before publishing.
+
 | Key | Default | Purpose |
 | --- | --- | --- |
 | `studio.root` | `~/BlastStudio` | Private studio directory. |
@@ -28,7 +38,7 @@
 | `voice.provider` | `none` | `none` or `openai`. |
 | `voice.model`, `voice.voice` | `tts-1`, `alloy` | Optional speech model and voice; the model needs a matching voice price in `providers/prices.yml`. |
 | `budget.monthlyUsd` | `0` | Monthly cap for reserved API calls; zero disables them, not separately billed subscription or OMP usage. |
-| `budget.perProjectUsd` | `0` | Lifetime per-project cap; zero means no additional project limit. |
+| `budget.perProjectUsd` | `0` | Lifetime per-campaign cap, keyed by `<project>/<campaign>`; zero means no additional campaign limit. |
 | `providers.allowUpload` | `false` | Reference-image upload consent flag. Reference-image uploads are not supported by the current adapter even when enabled; this flag does not prevent text prompts being sent to selected providers. |
 | `grounding.waive` | `[]` | Strings whose numeric metrics are waived from the fabricated-metrics grounding check. |
 | `marketBlaster.command` | `[mblast]` | Market Blaster executable and arguments. |

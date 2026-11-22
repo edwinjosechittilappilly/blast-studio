@@ -3,8 +3,10 @@ import { randomUUID } from 'node:crypto';
 import { appendFileSync, closeSync, existsSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseCampaignRef } from '../campaigns.ts';
+import { withStudioLock } from '../migrate.ts';
 import { UserError } from '../types.ts';
-import { buildOperation, campaignRef } from './registry.ts';
+import { buildOperation } from './registry.ts';
 
 export type JobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export interface Job { id: string; operation: string; campaign?: string; state: JobState; createdAt: string; updatedAt: string; pid?: number; processStarted?: string; childStarted?: Record<string, string>; exitCode?: number | null; completed?: boolean; command: string; cancelRequested?: boolean; processGroup?: boolean; childPids?: number[] }
@@ -59,11 +61,22 @@ function safeDir(root: string, parts: string[]): string {
   return current;
 }
 export function campaignDirectory(root: string, ref: string, create = false): string {
-  const slug = campaignRef(ref);
-  if (slug.includes('/')) throw new UserError('Project/campaign addresses are not yet supported');
-  const path = join(resolve(root), 'projects', slug);
-  if (!create && !existsSync(path)) throw new UserError(`Campaign not found: ${slug}`);
-  return safeDir(root, ['projects', slug]);
+  return create ? withStudioLock(root, () => resolveCampaignDirectory(root, ref, true)) : resolveCampaignDirectory(root, ref, false);
+}
+function resolveCampaignDirectory(root: string, ref: string, create: boolean): string {
+  const { project, campaign } = parseCampaignRef(ref);
+  const projects = join(resolve(root), 'projects');
+  const projectDir = join(projects, project);
+  for (const path of [projects, projectDir]) {
+    if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new UserError('Unsafe job directory');
+  }
+  if (existsSync(join(projectDir, 'brief.md')) || existsSync(join(projectDir, '.bstudio-migration.json')))
+    throw new UserError(`Campaign migration is incomplete for ${projectDir}; resolve the migration warning before retrying`);
+  const metadata = join(projectDir, 'project.yml');
+  if (!existsSync(metadata) || lstatSync(metadata).isSymbolicLink()) throw new UserError(`Project ${project} does not exist; run bstudio project new ${project}`);
+  const path = join(projectDir, 'campaigns', campaign);
+  if (!create && !existsSync(path)) throw new UserError(`Campaign not found: ${ref}`);
+  return safeDir(root, ['projects', project, 'campaigns', campaign]);
 }
 function logDir(root: string, ref?: string): string { return ref ? safeDir(campaignDirectory(root, ref), ['logs', 'jobs']) : safeDir(root, ['logs', 'jobs']); }
 function recordPath(dir: string, id: string): string { if (!idPattern.test(id)) throw new UserError('Invalid job id'); return join(dir, `${id}.json`); }
@@ -83,27 +96,29 @@ function lockAlive(lock: Lock): boolean {
   return (lock.processStarted ? sameProcess(lock.pid, lock.processStarted) : alive(lock.pid)) || (lock.childPids ?? []).some(pid => sameGroup(pid, lock.childStarted?.[pid]));
 }
 export function acquireCampaignLock(root: string, ref: string, id: string = randomUUID()): () => void {
-  const path = lockPath(root, ref);
-  for (;;) {
-    try {
-      const temp = `${path}.${randomUUID()}.tmp`;
-      try { writeFileSync(temp, JSON.stringify({ id, pid: process.pid, processStarted: processStarted(process.pid) }), { mode: 0o600, flag: 'wx' }); linkSync(temp, path); }
-      finally { rmSync(temp, { force: true }); }
-      return () => { if (readLock(path)?.id === id) rmSync(path, { force: true }); };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-      const lock = readLock(path);
-      if (!lock && !existsSync(path)) continue;
-      if (lock && lock.id === id && process.env.BSTUDIO_JOB_ID === id) return () => {};
-      if ((!lock && Date.now() - statSync(path).mtimeMs < 30000) || (lock && (!Number.isInteger(lock.pid) || lockAlive(lock)))) throw new JobConflict(lock?.id ?? 'another process');
-      const guard = `${path}.recovery`;
-      try { mkdirSync(guard); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new JobConflict('lock recovery'); throw e; }
+  return withStudioLock(root, () => {
+    const path = lockPath(root, ref);
+    for (;;) {
       try {
-        const current = readLock(path);
-        if ((!current && existsSync(path) && Date.now() - statSync(path).mtimeMs >= 30000) || (current && Number.isInteger(current.pid) && !lockAlive(current))) rmSync(path, { force: true });
-      } finally { rmSync(guard, { recursive: true, force: true }); }
+        const temp = `${path}.${randomUUID()}.tmp`;
+        try { writeFileSync(temp, JSON.stringify({ id, pid: process.pid, processStarted: processStarted(process.pid) }), { mode: 0o600, flag: 'wx' }); linkSync(temp, path); }
+        finally { rmSync(temp, { force: true }); }
+        return () => { if (readLock(path)?.id === id) rmSync(path, { force: true }); };
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        const lock = readLock(path);
+        if (!lock && !existsSync(path)) continue;
+        if (lock && lock.id === id && process.env.BSTUDIO_JOB_ID === id) return () => {};
+        if ((!lock && Date.now() - statSync(path).mtimeMs < 30000) || (lock && (!Number.isInteger(lock.pid) || lockAlive(lock)))) throw new JobConflict(lock?.id ?? 'another process');
+        const guard = `${path}.recovery`;
+        try { mkdirSync(guard); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new JobConflict('lock recovery'); throw e; }
+        try {
+          const current = readLock(path);
+          if ((!current && existsSync(path) && Date.now() - statSync(path).mtimeMs >= 30000) || (current && Number.isInteger(current.pid) && !lockAlive(current))) rmSync(path, { force: true });
+        } finally { rmSync(guard, { recursive: true, force: true }); }
+      }
     }
-  }
+  });
 }
 /** Register a foreground CLI operation in the same durable store as dashboard jobs. */
 export function startCliJob(root: string, ref: string, operation: string): { id: string; log: (line: string) => void; finish: (code: number, cancelled?: boolean) => void } {
@@ -169,18 +184,19 @@ export function startJob(root: string, name: string, values: unknown, options: {
 }
 function dirs(root: string): string[] {
   const result = [logDir(root)], projects = join(realpathSync(resolve(root)), 'projects');
-  if (!existsSync(projects)) return result;
+  if (!existsSync(projects) || lstatSync(projects).isSymbolicLink()) return result;
   for (const project of readdirSync(projects, { withFileTypes: true })) {
     if (!project.isDirectory() || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(project.name)) continue;
-    const p = join(projects, project.name), legacy = join(p, 'logs', 'jobs');
-    if (existsSync(legacy)) result.push(legacy);
+    const p = join(projects, project.name);
+    const legacy = join(p, 'logs', 'jobs'); if (existsSync(legacy)) result.push(legacy);
     const campaigns = join(p, 'campaigns'); if (!existsSync(campaigns) || lstatSync(campaigns).isSymbolicLink()) continue;
     for (const c of readdirSync(campaigns, { withFileTypes: true })) if (c.isDirectory() && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(c.name)) { const d = join(campaigns, c.name, 'logs', 'jobs'); if (existsSync(d)) result.push(d); }
   }
   return result;
 }
-export function listJobs(root: string): Job[] {
-  const result: Job[] = [];
+type LocatedJob = { job: Job; dir: string };
+function locatedJobs(root: string): LocatedJob[] {
+  const result: LocatedJob[] = [];
   for (const dir of dirs(root)) {
     const base = realpathSync(resolve(root)), rel = relative(base, dir);
     let part = base, unsafe = false;
@@ -194,23 +210,25 @@ export function listJobs(root: string): Job[] {
         if ((job.state === 'running' || job.state === 'queued') && job.pid && !sameProcess(job.pid, job.processStarted) && !(job.childPids ?? []).some(pid => sameGroup(pid, job.childStarted?.[pid]))) {
           const current = JSON.parse(readFileSync(join(dir, name), 'utf8')) as Job;
           if (current.state === 'running' || current.state === 'queued') { current.state = current.cancelRequested ? 'cancelled' : current.completed && current.exitCode === 0 ? 'succeeded' : 'failed'; current.updatedAt = new Date().toISOString(); writeJob(dir, current); }
-          result.push(current); continue;
+          result.push({ job: current, dir }); continue;
         }
-        result.push(job);
+        result.push({ job, dir });
       } catch { /* A damaged record cannot be used to control processes. */ }
     }
   }
-  return result.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return result.sort((a, b) => b.job.createdAt.localeCompare(a.job.createdAt));
 }
-export function findJob(root: string, id: string): Job { if (!idPattern.test(id)) throw new UserError('Invalid job id'); const job = listJobs(root).find(j => j.id === id); if (!job) throw new UserError('Job not found'); return job; }
+export function listJobs(root: string): Job[] { return locatedJobs(root).map(({ job }) => job); }
+function findLocatedJob(root: string, id: string): LocatedJob { if (!idPattern.test(id)) throw new UserError('Invalid job id'); const found = locatedJobs(root).find(({ job }) => job.id === id); if (!found) throw new UserError('Job not found'); return found; }
+export function findJob(root: string, id: string): Job { return findLocatedJob(root, id).job; }
 export function jobLog(root: string, id: string): string {
-  const job = findJob(root, id), path = join(logDir(root, job.campaign), `${id}.log`);
+  const { dir } = findLocatedJob(root, id), path = join(dir, `${id}.log`);
   try { if (lstatSync(path).isSymbolicLink()) throw new UserError('Unsafe job log'); return readFileSync(path, 'utf8'); }
   catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw e; }
 }
 export function cancelJob(root: string, id: string): Job {
-  const job = findJob(root, id); if (job.state !== 'running' || !job.pid) throw new UserError('Job is not running');
-  const dir = logDir(root, job.campaign), current = JSON.parse(readFileSync(recordPath(dir, id), 'utf8')) as Job;
+  const { job, dir } = findLocatedJob(root, id); if (job.state !== 'running' || !job.pid) throw new UserError('Job is not running');
+  const current = JSON.parse(readFileSync(recordPath(dir, id), 'utf8')) as Job;
   if (current.state !== 'running') throw new UserError('Job is not running');
   current.cancelRequested = true; current.updatedAt = new Date().toISOString(); writeJob(dir, current);
   const signal = (pid: number, group: boolean, started?: string) => {

@@ -2,6 +2,8 @@ import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSyn
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
+import { parse } from "yaml";
+import { containedPath } from "../campaigns.ts";
 import type { StudioConfig } from "../types.ts";
 import { UserError } from "../types.ts";
 
@@ -45,14 +47,23 @@ export function monthToDate(root: string, now = new Date()): number {
   return effective(root).filter(e => e.at.slice(0, 7) === month).reduce((sum, e) => sum + (e.usd ?? 0), 0);
 }
 export function projectTotal(root: string, projectSlug: string): number {
-  return effective(root).filter(e => e.projectSlug === projectSlug).reduce((sum, e) => sum + (e.usd ?? 0), 0);
+  const [project, campaign, extra] = projectSlug.split("/");
+  let legacy: string | undefined;
+  if (project && project === campaign && extra === undefined && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(project)) {
+    const file = containedPath(root, "projects", project, "project.yml");
+    if (existsSync(file)) {
+      const metadata: unknown = parse(readFileSync(file, "utf8"));
+      if (metadata && typeof metadata === "object" && "migratedFrom" in metadata && metadata.migratedFrom === project) legacy = project;
+    }
+  }
+  return effective(root).filter(e => e.projectSlug === projectSlug || (legacy !== undefined && e.projectSlug === legacy)).reduce((sum, e) => sum + (e.usd ?? 0), 0);
 }
 export function providerTotals(root: string, now = new Date()): Record<string, number> {
   const totals: Record<string, number> = {};
   for (const e of effective(root)) if (e.at.slice(0, 7) === now.toISOString().slice(0, 7)) totals[e.provider] = (totals[e.provider] ?? 0) + (e.usd ?? 0);
   return totals;
 }
-async function locked<T>(root: string, fn: () => T): Promise<T> {
+export async function locked<T>(root: string, fn: () => T): Promise<T> {
   mkdirSync(root, { recursive: true, mode: 0o700 });
   const path = join(root, "ledger.lock"), deadline = Date.now() + 10000;
   let fd: number;

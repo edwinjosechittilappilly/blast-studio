@@ -1,8 +1,9 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { parseArgs } from 'node:util';
 import { parse, stringify } from 'yaml';
-import { loadConfig, projectDir } from '../config.ts';
+import { loadConfig, campaignDir } from '../config.ts';
 import { loadPacks, knownValue } from '../packs.ts';
 import { readPlan } from '../plan.ts';
 import { loadPosts, serializePost } from '../posts.ts';
@@ -17,15 +18,23 @@ import type { Command, IO } from '../io.ts';
 import { snapshot } from '../history.ts';
 
 async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<number> {
-  const regen = args.includes('--regen'), selection = args.find(a => a.startsWith('--assets=')), platforms = args.find(a => a.startsWith('--platforms='));
-  const selected = selection ? new Set(selection.slice(9).split(',').filter(Boolean)) : undefined;
-  const selectedPlatforms = platforms ? new Set(platforms.slice(12).split(',').filter(Boolean)) : undefined;
-  const pos = args.filter(a => a !== '--regen' && a !== selection && a !== platforms);
-  if (pos.length !== 1 || pos[0].startsWith('-')) throw new UserError('usage: bstudio render <slug> [--regen]');
-  const config = loadConfig(io), project = projectDir(config, pos[0]), plan = readPlan(project), packs = loadPacks();
+  const usage = 'usage: bstudio render <project>/<campaign> [--regen] [--assets ids] [--platforms ids]';
+  let parsed;
+  try { parsed = parseArgs({ args, allowPositionals: true, options: { regen: { type: 'boolean' }, assets: { type: 'string' }, platforms: { type: 'string' }, help: { type: 'boolean', short: 'h' } } }); }
+  catch { throw new UserError(usage); }
+  if (parsed.values.help) { io.out(`${usage}\nExample: bstudio render acme/launch --assets hero`); return 0; }
+  const pos = parsed.positionals, regen = parsed.values.regen ?? false;
+  if (pos.length !== 1 || pos[0].startsWith('-')) throw new UserError(usage);
+  let selected = parsed.values.assets === undefined ? undefined : new Set(parsed.values.assets.split(',').filter(Boolean));
+  const selectedPlatforms = parsed.values.platforms === undefined ? undefined : new Set(parsed.values.platforms.split(',').filter(Boolean));
+  const config = loadConfig(io), project = campaignDir(config, pos[0]), plan = readPlan(project), packs = loadPacks();
   const validAssets = [...new Set(plan.flatMap(entry => entry.assets.map(asset => asset.id)))], validPlatforms = plan.map(entry => entry.platform);
   for (const id of selected ?? []) if (!validAssets.includes(id)) throw new UserError(`Unknown asset: ${id}. Valid assets: ${validAssets.join(', ') || '(none)'}`);
   for (const id of selectedPlatforms ?? []) if (!validPlatforms.some(platform => platform === id)) throw new UserError(`Unknown platform: ${id}. Valid platforms: ${validPlatforms.join(', ') || '(none)'}`);
+  if (!selected && selectedPlatforms) {
+    const shared = new Set(plan.filter(entry => !selectedPlatforms.has(entry.platform)).flatMap(entry => entry.assets.map(asset => asset.id)));
+    selected = new Set(plan.filter(entry => selectedPlatforms.has(entry.platform)).flatMap(entry => entry.assets.map(asset => asset.id)).filter(id => !shared.has(id)));
+  }
   if (saveSnapshot) snapshot(project, 'render');
   const metadata = new Map<string, { dir: string; meta: AssetMeta }>();
   const selections = new Map<string, Map<string, { image?: string; document?: string; slides?: string[] }>>();

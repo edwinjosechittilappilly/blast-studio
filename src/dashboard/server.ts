@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { addFeedback } from '../feedback.ts';
-import { loadConfig, projectDir, writeConfigField } from '../config.ts';
+import { loadConfig, campaignDir, writeConfigField } from '../config.ts';
 import { loadLibrary, projectReview, latestSources } from '../library.ts';
 import { monthToDate, projectTotal, providerTotals } from '../budget/ledger.ts';
 import type { IO } from '../io.ts';
@@ -97,11 +97,11 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
       if (!validSession(cookie)) { unauthenticated(req, res, 'Authentication required'); return; }
       res.setHeader('Set-Cookie', sessionCookie());
       const rawPath = (req.url ?? '').split('?')[0];
-      if (rawPath.startsWith('/media/') && decodeURIComponent(rawPath).split(/[\\/]/).some(part => part === '..' || part === '.')) { send(res, 403, { error: 'Forbidden' }); return; }
+      if ((rawPath.startsWith('/media/') || rawPath.startsWith('/api/project/') || rawPath.startsWith('/api/projects/')) && decodeURIComponent(rawPath).split(/[\\/]/).some(part => part === '..' || part === '.')) { send(res, 403, { error: 'Forbidden' }); return; }
       const config = loadConfig(io), pathname = url.pathname;
       const projectApi = /^\/api\/projects\/([^/]+)\/(feedback|revise|status)$/.exec(pathname);
       if (projectApi) {
-        const slug = decodeURIComponent(projectApi[1]), dir = projectDir(config, slug), action = projectApi[2];
+        const slug = decodeURIComponent(projectApi[1]), dir = campaignDir(config, slug), action = projectApi[2];
         if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; }
         if (req.method === 'GET' && action === 'status') {
           const run = runs.get(slug), lock = revisionLockStatus(dir), logs = join(dir, 'logs');
@@ -138,11 +138,11 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
         if (pathname === '/api/library') { send(res, 200, loadLibrary(config, url.searchParams.get('q') ?? '')); return; }
         if (pathname === '/api/budget') { send(res, 200, { cap: config.budget.monthlyUsd, perProject: config.budget.perProjectUsd, mtd: monthToDate(config.root), providerTotals: providerTotals(config.root), projects: Object.fromEntries(loadLibrary(config).map(p => [p.slug, projectTotal(config.root, p.slug)])), providers: { images: config.images.provider, voice: config.voice.provider }, brand: config.brand }); return; }
         if (pathname === '/api/sources') { send(res, 200, latestSources(config)); return; }
-        if (pathname.startsWith('/api/project/')) { const slug = decodeURIComponent(pathname.slice(13)); const dir = projectDir(config, slug); if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; } send(res, 200, projectReview(config, slug)); return; }
+        if (pathname.startsWith('/api/project/')) { const slug = decodeURIComponent(pathname.slice(13)); const dir = campaignDir(config, slug); if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; } send(res, 200, projectReview(config, slug)); return; }
         if (pathname.startsWith('/media/')) {
-          const parts = pathname.slice(7).split('/').map(decodeURIComponent), slug = parts.shift() ?? '';
-          const project = projectDir(config, slug), base = realpathSync(project), root = realpathSync(join(config.root, 'projects'));
-          if (relative(root, base).startsWith('..') || parts.some(p => p === '..' || p === '.' || p.includes('/') || p.includes('\\'))) { send(res, 403, { error: 'Forbidden' }); return; }
+          const parts = pathname.slice(7).split('/').map(decodeURIComponent), project = parts.shift() ?? '', campaign = parts.shift() ?? '';
+          if (parts.some(p => !p || p === '..' || p === '.' || p.includes('/') || p.includes('\\'))) { send(res, 403, { error: 'Forbidden' }); return; }
+          const base = realpathSync(campaignDir(config, { project, campaign }));
           const file = realpathSync(resolve(base, ...parts)), rel = relative(base, file);
           if (!rel || rel === '..' || rel.startsWith(`..${sep}`) || !statSync(file).isFile()) { send(res, 403, { error: 'Forbidden' }); return; }
           serveFile(req, res, file, true); return;

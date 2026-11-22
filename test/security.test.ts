@@ -21,8 +21,10 @@ test('maker and reviewer inherit only allowed environment and retain real HOME',
   const root = tempStudio(), calls: { cwd?: string; env?: Record<string, string | undefined> }[] = [];
   const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: 'studio.yml', BSTUDIO_HOME: root, HOME: '/real-home', PATH: '/bin', GH_TOKEN: 'secret', MODEL_API_KEY: 'secret', AWS_SECRET_ACCESS_KEY: 'secret', CUSTOM_TOKEN: 'explicit' }, run: async (_cmd, _args, opts) => { calls.push(opts ?? {}); return '{"scores":[]}'; } });
   const config = loadConfig(io); config.agent.passEnv = ['CUSTOM_TOKEN'];
-  await runAgentInWorkspace({ config, io, projectDir: join(root, 'projects/p'), files: {}, allowOut: [], prompt: 'test', timeoutMs: 1000 });
-  await runReviewer({ config, io, post: { platform: 'x', path: 'x.md', body: 'text', media: [], evidence: [] }, rubric: [], brief: '', projectDir: join(root, 'projects/p') });
+  await runAgentInWorkspace({ config, io, projectDir: join(root, 'projects/p/campaigns/c'), files: {}, allowOut: [], prompt: 'test', timeoutMs: 1000 });
+  await runReviewer({ config, io, post: { platform: 'x', path: 'x.md', body: 'text', media: [], evidence: [] }, rubric: [], brief: '', projectDir: join(root, 'projects/p/campaigns/c') });
+  const entries = readFileSync(join(root, 'ledger.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(entries.map(entry => entry.projectSlug), ['p/c', 'p/c']);
   assert.equal(calls.length, 2);
   for (const call of calls) {
     assert.equal(call.env?.HOME, '/real-home'); assert.notEqual(call.env?.TMPDIR, call.cwd);
@@ -121,10 +123,10 @@ test('OS sandbox denies reading the studio root and writes outside the workspace
   } finally { rmSync(root, { recursive: true, force: true }); rmSync(work, { recursive: true, force: true }); rmSync(temp, { recursive: true, force: true }); }
 });
 
-test('preview permits neighboring files only inside a project asset', { timeout: 20000 }, async () => {
+test('preview permits neighboring files only inside a campaign asset', { timeout: 20000 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-preview-security-'));
   try {
-    const asset = join(dir, 'projects/p/assets/a'), outside = join(dir, 'outside');
+    const asset = join(dir, 'projects/p/campaigns/c/assets/a'), outside = join(dir, 'outside');
     for (const path of [asset, outside]) {
       mkdirSync(path, { recursive: true });
       writeFileSync(join(path, 'red.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><rect width="20" height="20" fill="red"/></svg>');
@@ -150,9 +152,10 @@ test('API-billed maker reserves and settles reported usage', async () => {
   const root = tempStudio(), io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml' }, run: async () => JSON.stringify({ total_cost_usd: 0.2, usage: { input_tokens: 3 } }) });
   const config = loadConfig(io); config.budget.monthlyUsd = 1; config.budget.perProjectUsd = 1;
   config.agent.billing = 'api'; config.agent.maxUsdPerRun = 0.5;
-  await runAgentInWorkspace({ config, io, projectDir: join(root, 'projects/p'), files: {}, allowOut: [], prompt: '', timeoutMs: 1000 });
+  await runAgentInWorkspace({ config, io, projectDir: join(root, 'projects/p/campaigns/c'), files: {}, allowOut: [], prompt: '', timeoutMs: 1000 });
   const ledger = readFileSync(join(root, 'ledger.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
   assert.equal(ledger[0].type, 'reserved'); assert.equal(ledger[0].usd, 0.5);
+  assert.equal(ledger[0].projectSlug, 'p/c');
   assert.equal(ledger[1].type, 'settled'); assert.equal(ledger[1].usd, 0.2); assert.deepEqual(ledger[1].usage, { input_tokens: 3 });
 });
 
@@ -160,7 +163,7 @@ test('a prompt starting with a SKILL.md frontmatter dash is never passed as a CL
   const root = tempStudio(), argvs: string[][] = [];
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml' }, run: async (_cmd, args) => { argvs.push(args); return ''; } });
   const config = loadConfig(io); config.agent.sandbox = 'off';
-  await runAgentInWorkspace({ config, io, projectDir: join(root, 'projects/p'), files: {}, allowOut: [], prompt: '---\nname: studio-reviewer\n---\nReview this.', timeoutMs: 1000 });
+  await runAgentInWorkspace({ config, io, projectDir: join(root, 'projects/p/campaigns/c'), files: {}, allowOut: [], prompt: '---\nname: studio-reviewer\n---\nReview this.', timeoutMs: 1000 });
   const prompt = argvs[0].at(-1)!;
   assert.ok(!prompt.startsWith('-'), `prompt must not start with a dash: ${prompt.slice(0, 20)}`);
   assert.match(prompt, /name: studio-reviewer/);

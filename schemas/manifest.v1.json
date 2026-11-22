@@ -3,10 +3,12 @@
   "$id": "https://market-blaster.local/schemas/studio-manifest.v1.json",
   "title": "Blast Studio manifest v1",
   "type": "object",
-  "required": ["version", "slug", "generatedAt", "brief", "posts"],
+  "required": ["version", "slug", "project", "campaign", "generatedAt", "brief", "posts"],
   "properties": {
     "version": { "const": 1 },
     "slug": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "project": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "campaign": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
     "generatedAt": { "type": "string", "format": "date-time" },
     "brief": { "const": "brief.md" },
     "posts": { "type": "array", "items": { "$ref": "#/$defs/post" } }

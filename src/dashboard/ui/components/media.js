@@ -2,7 +2,7 @@ import { el, button } from './review.js';
 import { copyText } from '../../static/clipboard.js';
 import zoomIn from '@carbon/icons/es/zoom--in/16.js';
 if (typeof window !== 'undefined') import('@carbon/web-components/es/components/icon-button/index.js');
-export const mediaUrl = (slug, path) => `/media/${encodeURIComponent(slug)}/${path.split('/').map(encodeURIComponent).join('/')}`;
+export const mediaUrl = (slug, path) => `/media/${slug.split('/').map(encodeURIComponent).join('/')}/${path.split('/').map(encodeURIComponent).join('/')}`;
 function kindOf(path, kind) { return /\.(mp4|webm)$/i.test(path) ? 'video' : /\.pdf$/i.test(path) ? 'pdf' : /\.(png|jpe?g|gif|webp|svg)$/i.test(path) ? 'image' : kind === 'video' ? 'video' : kind === 'document' ? 'pdf' : kind === 'image' || kind === 'gif' ? 'image' : 'file'; }
 function filename(item) { return item.file.split('/').pop(); }
 function altText(item) { const match = /^assets\/([^/]+)\//.exec(item.file); return match && item.alt === `${match[1]} preview` ? '' : item.alt || ''; }

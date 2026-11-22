@@ -1,21 +1,29 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadConfig, projectDir } from '../config.ts';
+import { parseArgs } from 'node:util';
+import { loadConfig, campaignDir } from '../config.ts';
 import { loadLibrary, latestSources } from '../library.ts';
 import { monthToDate } from '../budget/ledger.ts';
 import type { Command } from '../io.ts';
 import { UserError } from '../types.ts';
 
 export const run: Command = async (args, io) => {
-  const verbose = args.includes('--verbose');
-  const positional = args.filter(arg => arg !== '--verbose');
-  if (positional.length > 1 || args.filter(arg => arg === '--verbose').length > 1 || positional.some(arg => arg.startsWith('--'))) throw new UserError('usage: bstudio status [<slug>] [--verbose]');
+  const usage = 'usage: bstudio status [<project>/<campaign>] [--verbose]';
+  let parsed;
+  try { parsed = parseArgs({ args, allowPositionals: true, options: { verbose: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } }); }
+  catch { throw new UserError(usage); }
+  if (parsed.values.help) { io.out(`${usage}\nExample: bstudio status acme/launch --verbose`); return 0; }
+  const positional = parsed.positionals, verbose = parsed.values.verbose;
+  if (positional.length > 1 || positional.some(arg => arg.startsWith('-'))) throw new UserError(usage);
   const config = loadConfig(io), slug = positional[0];
-  if (slug) projectDir(config, slug);
+  if (slug) campaignDir(config, slug);
   const projects = loadLibrary(config).filter(p => !slug || p.slug === slug);
-  if (slug && !projects.length) throw new UserError(`Project not found: ${slug}`);
+  if (slug && !projects.length) throw new UserError(`Campaign not found: ${slug}`);
+  let heading = '';
   for (const project of projects) {
-    io.out(project.slug);
+    const [name, campaign] = project.slug.split('/');
+    if (name !== heading) { heading = name; io.out(`Project: ${name}`); }
+    io.out(`  ${campaign}`);
     for (const platform of new Set([...project.posts.map(p => p.platform), ...project.reviews.map(r => r.platform)])) {
       const review = project.reviews.find(r => r.platform === platform);
       io.out(`  ${platform}: ${review?.verdict ?? 'unreviewed'}${review?.total == null ? '' : ` (${review.total}/100)`}`);
@@ -30,7 +38,7 @@ export const run: Command = async (args, io) => {
     });
     const unreviewed = project.posts.some(post => !project.reviews.some(review => review.platform === post.platform));
     const needsRevision = project.reviews.some(review => review.verdict !== 'pass' && review.verdict !== 'accepted');
-    const next = blocker ? 'resolve blockers: edit the brief or artifact metadata, then remove resolved blockers' : unresolved ? `confirm rights: ${unresolved[0]}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(projectDir(config, project.slug), 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : `export: bstudio export ${project.slug}`;
+    const next = blocker ? 'resolve blockers: edit the brief or artifact metadata, then remove resolved blockers' : unresolved ? `confirm rights: ${unresolved[0]}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(campaignDir(config, project.slug), 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : `export: bstudio export ${project.slug}`;
     io.out(`  next: ${next}`);
   }
   io.out(`Month to date: $${monthToDate(config.root).toFixed(2)} / $${config.budget.monthlyUsd.toFixed(2)}`);

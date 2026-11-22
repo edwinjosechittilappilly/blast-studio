@@ -10,7 +10,7 @@ import { findJob } from '../src/jobs/runner.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 test('jobs API enforces host, session, origin, header and argument schemas', async () => {
-  const root = tempStudio({ 'projects/demo/brief.md': '# Brief' }), io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml', PATH: process.env.PATH } }), config = loadConfig(io);
+  const root = tempStudio({ 'projects/demo/project.yml': 'name: Demo\ncreatedAt: 2025-01-01\n', 'projects/demo/campaigns/launch/brief.md': '# Brief' }), io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml', PATH: process.env.PATH } }), config = loadConfig(io);
   let port = 0;
   const ready = Promise.withResolvers<void>();
   const server = createServer(async (req, res) => {
@@ -41,22 +41,22 @@ test('jobs API enforces host, session, origin, header and argument schemas', asy
     assert.equal(secret.status, 400); assert.doesNotMatch(secret.body, /sensitive-value/);
     assert.equal((await call('GET', '/api/jobs/a0000000-0000-4000-8000-000000000000', headers)).status, 404);
     config.images.provider = 'omp';
-    const tty = await call('POST', '/api/jobs', headers, JSON.stringify({ operation: 'render', args: { campaign: 'demo' } }));
-    assert.equal(tty.status, 422); assert.equal(JSON.parse(tty.body).command, 'bstudio render demo');
+    const tty = await call('POST', '/api/jobs', headers, JSON.stringify({ operation: 'render', args: { campaign: 'demo/launch' } }));
+    assert.equal(tty.status, 422); assert.equal(JSON.parse(tty.body).command, 'bstudio render demo/launch');
     config.images.provider = 'none';
     const agent = `console.error("READY"); require("node:http").get("http://127.0.0.1:${port}/ready"); setInterval(()=>{},1000)`;
     writeFileSync(join(root, 'studio.yml'), `brand:\n  name: Demo\nagent:\n  command: ${JSON.stringify([process.execPath, '-e', agent])}\n`);
-    const payload = JSON.stringify({ operation: 'plan', args: { campaign: 'demo' } });
+    const payload = JSON.stringify({ operation: 'plan', args: { campaign: 'demo/launch' } });
     const started = await call('POST', '/api/jobs', headers, payload);
     assert.equal(started.status, 202);
     const id = JSON.parse(started.body).id as string;
     await ready.promise;
-    const cli = spawnSync(process.execPath, ['bin/bstudio.mjs', 'plan', 'demo'], { cwd: process.cwd(), env: { ...process.env, ...io.env, BSTUDIO_CONFIG: join(root, 'studio.yml') }, encoding: 'utf8' });
+    const cli = spawnSync(process.execPath, ['bin/bstudio.mjs', 'plan', 'demo/launch'], { cwd: process.cwd(), env: { ...process.env, ...io.env, BSTUDIO_CONFIG: join(root, 'studio.yml') }, encoding: 'utf8' });
     assert.equal(cli.status, 1); assert.match(cli.stderr, /locked by/);
     assert.equal((await call('POST', '/api/jobs', headers, payload)).status, 409);
     assert.match((await call('GET', `/api/jobs/${id}/log`, headers)).body, /READY/);
     const finished = Promise.withResolvers<void>();
-    const watcher = watch(join(root, 'projects/demo/logs/jobs'), () => {
+    const watcher = watch(join(root, 'projects/demo/campaigns/launch/logs/jobs'), () => {
       try { if (findJob(root, id).state === 'cancelled') { watcher.close(); finished.resolve(); } } catch { /* record replacement in progress */ }
     });
     assert.equal((await call('POST', `/api/jobs/${id}/cancel`, headers)).status, 200);

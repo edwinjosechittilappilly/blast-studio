@@ -1,9 +1,11 @@
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { createInterface, type Interface } from "node:readline/promises";
 import { run as accept, confirm } from "./commands/accept.ts";
 import { run as auth } from "./commands/auth.ts";
 import { run as brief } from "./commands/brief.ts";
 import { run as budget } from "./commands/budget.ts";
+import { run as campaign } from "./commands/campaign.ts";
 import { run as dashboard } from "./commands/dashboard.ts";
 import { run as doctor } from "./commands/doctor.ts";
 import { run as exportProject } from "./commands/export.ts";
@@ -17,13 +19,16 @@ import { run as mark } from "./commands/mark.ts";
 import { run as make } from "./commands/make.ts";
 import { run as newProject } from "./commands/new.ts";
 import { run as plan } from "./commands/plan.ts";
+import { run as project } from "./commands/project.ts";
 import { run as render } from "./commands/render.ts";
 import { run as renderPreview } from "./commands/render-preview.ts";
 import { run as review } from "./commands/review.ts";
 import { run as revise } from "./commands/revise.ts";
 import { run as sources } from "./commands/sources.ts";
 import { run as status } from "./commands/status.ts";
-import { loadConfig } from "./config.ts";
+import { campaignDir, configFile, loadConfig } from "./config.ts";
+import { migrateProjects } from "./migrate.ts";
+import { recoverRenames } from "./rename.ts";
 import { acquireCampaignLock, finishSpawnedJob, JobConflict, processGroupRunning, startCliJob, updateJobProcesses } from "./jobs/runner.ts";
 import { campaignRef } from "./jobs/registry.ts";
 import { keychainGet } from "./keychain.ts";
@@ -33,28 +38,30 @@ import { UserError } from "./types.ts";
 const COMMANDS: Record<string, { summary: string; run: Command }> = {
   init: { summary: "initialize the private studio and global configuration", run: init },
   jobs: { summary: "inspect or cancel durable jobs: jobs [list|log <id>|cancel <id>]", run: jobs },
+  project: { summary: "create, list or rename projects: project new|list|rename", run: project },
+  campaign: { summary: "rename a campaign: campaign rename <project>/<campaign> <project>/<campaign>", run: campaign },
   doctor: { summary: "check tools, providers and budget", run: doctor },
   "install-skills": { summary: "link studio skills [--with-hyperframes]", run: installSkills },
   new: {
-    summary: "brief + plan + make + render + review: new <slug> [--idea text] [--note text] [--url url] [--pr number] [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force]",
+    summary: "brief + plan + make + render + review: new <project>/<campaign> [brief options]",
     run: newProject,
   },
-  brief: { summary: "collect evidence: brief <slug> [--idea text] [--note text] [--url url] [--pr number] [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force]", run: brief },
-  plan: { summary: "choose post types, angles and hooks: plan <slug> [--platforms=id,...] [--assets=id,...]", run: plan },
-  make: { summary: "write posts and assets: make <slug> [--platforms=id,...] [--assets=id,...]", run: make },
-  render: { summary: "render images, carousels, logos, diagrams and video: render <slug> [--regen] [--assets=id,...] [--platforms=id,...]", run: render },
-  review: { summary: "gates + platform reviewer scores: review [<slug>] [--calibrate] [--platforms=id,...] (slug required unless calibrating)", run: review },
-  revise: { summary: "apply review findings or owner feedback: revise <slug> [--note text] [--asset id] [--platform id] [--feedback-only]", run: revise },
-  feedback: { summary: "queue and manage feedback: feedback <slug> list|add|rm", run: feedback },
-  history: { summary: "list snapshots: history <slug>", run: history },
-  restore: { summary: "restore a snapshot: restore <slug> <n>", run: restore },
-  accept: { summary: "human override of scores (never gates): accept <slug> <platform> --reason <reason>", run: accept },
-  confirm: { summary: "record human asset rights checks: confirm <slug> <asset-id> [--trademark-checked] [--license <license>]", run: confirm },
+  brief: { summary: "collect evidence: brief <project>/<campaign> [brief options]", run: brief },
+  plan: { summary: "choose post types, angles and hooks: plan <project>/<campaign> [--platforms=id,...] [--assets=id,...]", run: plan },
+  make: { summary: "write posts and assets: make <project>/<campaign> [--platforms=id,...] [--assets=id,...]", run: make },
+  render: { summary: "render assets: render <project>/<campaign> [--regen] [--assets=id,...] [--platforms=id,...]", run: render },
+  review: { summary: "gates + platform reviewer scores: review [<project>/<campaign>] [--calibrate] [--platforms=id,...]", run: review },
+  revise: { summary: "apply findings or feedback: revise <project>/<campaign> [--note text] [--asset id] [--platform id] [--feedback-only]", run: revise },
+  feedback: { summary: "queue and manage feedback: feedback <project>/<campaign> list|add|rm", run: feedback },
+  history: { summary: "list snapshots: history <project>/<campaign>", run: history },
+  restore: { summary: "restore a snapshot: restore <project>/<campaign> <n>", run: restore },
+  accept: { summary: "human override of scores (never gates): accept <project>/<campaign> <platform> --reason <reason>", run: accept },
+  confirm: { summary: "record asset rights checks: confirm <project>/<campaign> <asset-id> [--trademark-checked] [--license <license>]", run: confirm },
   budget: { summary: "paid generation caps: budget [show | set <usd> | set-project <usd>]", run: budget },
   auth: { summary: "provider keys in the macOS Keychain: auth set <KEY> [--stdin] | auth list", run: auth },
-  export: { summary: "hand passed posts to Market Blaster: export <slug> [--mb <project>] [--force] [--dir]", run: exportProject },
-  mark: { summary: "record a manual post (Shorts, Reels, TikTok, daily.dev): mark <slug> <platform> --url U", run: mark },
-  status: { summary: "projects, verdicts, spend and source health: status [<slug>] [--verbose]", run: status },
+  export: { summary: "hand passed posts to Market Blaster: export <project>/<campaign> [--mb <project>] [--force] [--dir]", run: exportProject },
+  mark: { summary: "record a manual post: mark <project>/<campaign> <platform> --url U", run: mark },
+  status: { summary: "campaigns, verdicts, spend and source health: status [<project>/<campaign>] [--verbose]", run: status },
   library: { summary: "everything you have made: library [search <query>]", run: library },
   dashboard: { summary: "local web dashboard: dashboard [--port <port>]", run: dashboard },
   sources: { summary: "keep platform packs current: sources check [--only id,...] [--write] | propose [--branch] | verify <id>...", run: sources },
@@ -90,7 +97,7 @@ function stopSubprocesses(signal: NodeJS.Signals): Promise<void> {
   }, 50);
   return promise;
 }
-function runProgram(cmd: string, args: string[], opts: { cwd?: string; env?: Record<string, string | undefined>; input?: string; timeoutMs?: number; onOutput?: (line: string) => void } = {}): Promise<string> {
+function runProgram(cmd: string, args: string[], opts: { cwd?: string; env?: Record<string, string | undefined>; input?: string; timeoutMs?: number; onOutput?: (line: string) => void; onStderr?: (text: string) => void } = {}): Promise<string> {
   const { promise, resolve, reject } = Promise.withResolvers<string>();
     const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"] });
     if (child.pid) { subprocesses.add(child.pid); recordProcesses?.([...subprocesses]); }
@@ -115,7 +122,7 @@ function runProgram(cmd: string, args: string[], opts: { cwd?: string; env?: Rec
       if (child.pid && !interrupted) { subprocesses.delete(child.pid); recordProcesses?.([...subprocesses]); }
       if (timedOut && child.pid) signalGroup(child.pid, "SIGKILL");
       clearTimeout(timer); clearTimeout(forceTimer);
-      if (code === 0) { resolve(stdout); return; }
+      if (code === 0) { if (stderr) opts.onStderr?.(stderr); resolve(stdout); return; }
       const reason = timedOut ? `timed out after ${opts.timeoutMs! / 1000}s` : `exited with ${code ?? signal}`;
       const tail = [stdout, stderr].filter(Boolean).join("\n").trim().split("\n").slice(-20).join("\n");
       reject(new Error(`${cmd} ${reason}${tail ? `:\n${tail}` : ""}`));
@@ -161,7 +168,8 @@ export async function withCampaignLock(name: string, args: string[], io: IO, run
     abortJob = finish;
     try { code = await run(io); return code; } finally { await stopping; subprocesses.clear(); recordProcesses = undefined; abortJob = undefined; finish(); }
   }
-  const ref = campaignRef(refArg), root = loadConfig(io).root;
+  const ref = campaignRef(refArg), config = loadConfig(io), root = config.root;
+  campaignDir(config, ref);
   try {
     if (io.env.BSTUDIO_JOB_ID) {
       const release = acquireCampaignLock(root, ref, io.env.BSTUDIO_JOB_ID);
@@ -181,8 +189,25 @@ export async function withCampaignLock(name: string, args: string[], io: IO, run
     try { code = await run(logged); return code; } finally { await stopping; subprocesses.clear(); recordProcesses = undefined; abortJob = undefined; finish(); }
   } catch (error) { if (error instanceof JobConflict) throw new UserError(error.message); throw error; }
 }
+const migratedRoots = new Map<string, Map<string, Error>>();
+function targetedProjects(name: string, args: string[]): string[] {
+  if (args.includes("--help") || args.includes("-h")) return [];
+  if ((name === "project" || name === "campaign") && args[0] === "rename") return args.slice(1, 3).map(value => value.split("/")[0]);
+  if (!["new", "brief", "plan", "make", "render", "review", "revise", "accept", "confirm", "export", "mark", "feedback", "history", "restore", "status"].includes(name)) return [];
+  const valued = ["--idea", "--note", "--url", "--pr", "--commit", "--repo", "--mb-brief", "--from", "--assets", "--platforms", "--asset", "--platform", "--reason", "--license", "--mb"];
+  for (let i = 0; i < args.length; i++) {
+    if (valued.includes(args[i])) { i++; continue; }
+    if (!args[i].startsWith("-")) return [args[i].split("/")[0]];
+  }
+  return [];
+}
 export async function main(argv: string[], io: IO = realIO()): Promise<number> {
   const [name, ...rest] = argv;
+  if (name === "--version" || name === "-v") {
+    const metadata: unknown = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    if (!metadata || typeof metadata !== "object" || !("version" in metadata) || typeof metadata.version !== "string") throw new Error("Invalid package version");
+    io.out(metadata.version); return 0;
+  }
   if (!name || name === "--help" || name === "-h" || name === "help") { io.out(help()); return name ? 0 : 1; }
   const command = COMMANDS[name];
   if (!command) { io.err(`unknown command "${name}"\n\n${help()}`); return 1; }
@@ -196,7 +221,24 @@ export async function main(argv: string[], io: IO = realIO()): Promise<number> {
   };
   const onTerm = () => onSignal("SIGTERM"), onInt = () => onSignal("SIGINT"), onHangup = () => onSignal("SIGHUP");
   if (managed) { process.on("SIGTERM", onTerm); process.on("SIGINT", onInt); process.on("SIGHUP", onHangup); }
-  try { return await withCampaignLock(name, commandArgs, commandIO, currentIO => command.run(commandArgs, currentIO)); }
-  catch (err) { if (interrupted) return interrupted === "SIGINT" ? 130 : 143; if (err instanceof UserError) { io.err(`error: ${err.message}`); return 1; } throw err; }
-  finally { if (managed) { process.off("SIGTERM", onTerm); process.off("SIGINT", onInt); process.off("SIGHUP", onHangup); interrupted = undefined; stopping = undefined; } readline?.close(); readline = undefined; }
+  try {
+    if (existsSync(configFile(io))) {
+      const config = loadConfig(io);
+      let failures = migratedRoots.get(config.root);
+      if (!failures) {
+        failures = await recoverRenames(config, message => io.err(message));
+        if (!failures.has("*")) for (const [project, error] of migrateProjects(config, message => io.err(message), new Set(failures.keys()))) if (!failures.has(project)) failures.set(project, error);
+        migratedRoots.set(config.root, failures);
+      }
+      for (const project of targetedProjects(name, commandArgs)) {
+        const failure = failures.get(project) ?? failures.get("*");
+        if (failure) throw new UserError(`Migration or rename recovery incomplete for ${project}: ${failure.message}`);
+      }
+    }
+    return await withCampaignLock(name, commandArgs, commandIO, currentIO => command.run(commandArgs, currentIO));
+  } catch (err) {
+    if (interrupted) return interrupted === "SIGINT" ? 130 : 143;
+    if (err instanceof UserError || (err instanceof TypeError && "code" in err && typeof err.code === "string" && err.code.startsWith("ERR_PARSE_ARGS_"))) { io.err(`error: ${err.message}`); return 1; }
+    throw err;
+  } finally { if (managed) { process.off("SIGTERM", onTerm); process.off("SIGINT", onInt); process.off("SIGHUP", onHangup); interrupted = undefined; stopping = undefined; } readline?.close(); readline = undefined; }
 }

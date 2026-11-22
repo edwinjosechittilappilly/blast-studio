@@ -8,7 +8,11 @@ import { UserError } from '../types.ts';
 import { closeBrowser, renderDiagram, renderHtml, renderSvg } from '../render/stills.ts';
 
 export const run: Command = async (args, io) => {
-  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { size: { type: 'string' }, out: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: 'boolean', short: 'h' }, size: { type: 'string' }, out: { type: 'string' } } });
+  if (values.help) {
+    io.out('Usage: bstudio render-preview <file.html|.svg|.mmd|.d2> --size WxH --out path\n\nExample:\n  bstudio render-preview design.svg --size 1200x630 --out preview.png');
+    return 0;
+  }
   const match = values.size?.match(/^(\d+)x(\d+)$/i);
   if (positionals.length !== 1 || !values.out || !match || !+match[1] || !+match[2]) throw new UserError('usage: bstudio render-preview <file.html|.svg|.mmd|.d2> --size WxH --out path');
   const input = resolve(io.cwd, positionals[0]), out = resolve(io.cwd, values.out);
@@ -19,7 +23,7 @@ export const run: Command = async (args, io) => {
     const withBase = /<head(?:\s[^>]*)?>/i.test(html) ? html.replace(/<head(?:\s[^>]*)?>/i, `$&<base href="${base}">`) : `<base href="${base}">${html}`;
     const realInput = realpathSync(input), parts = realInput.split(sep);
     const assets = parts.lastIndexOf('assets');
-    const assetDir = assets >= 2 && parts[assets - 2] === 'projects' && parts.length > assets + 2
+    const assetDir = assets >= 4 && parts[assets - 4] === 'projects' && parts[assets - 2] === 'campaigns' && parts.length > assets + 2
       ? parts.slice(0, assets + 2).join(sep) || sep : undefined;
     const tempRelative = relative(realpathSync(tmpdir()), realInput);
     const workspace = !isAbsolute(tempRelative) && !tempRelative.startsWith(`..${sep}`) && /^bstudio-agent-[^/\\]+$/.test(tempRelative.split(sep)[0])

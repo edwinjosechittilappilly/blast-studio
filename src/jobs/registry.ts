@@ -1,7 +1,8 @@
+import { parseCampaignRef } from '../campaigns.ts';
 import { UserError } from '../types.ts';
 
-type Kind = 'id' | 'ids' | 'text' | 'url' | 'path' | 'number' | 'bool' | 'repo' | 'sha';
-type Field = { kind: Kind; required?: boolean; positional?: boolean; flag?: string };
+type Kind = 'id' | 'campaign' | 'ids' | 'text' | 'url' | 'path' | 'number' | 'bool' | 'repo' | 'sha';
+type Field = { kind: Kind; required?: boolean; positional?: boolean; flag?: string; multiple?: boolean };
 export type Operation = { fields: Record<string, Field>; campaign: boolean; paid: boolean; step: string; requiresTTY: boolean };
 const campaign: Field = { kind: 'id', required: true, positional: true };
 const id = (required = false): Field => ({ kind: 'id', required, positional: true });
@@ -12,6 +13,10 @@ const operation = (step: string, fields: Record<string, Field>, paid = false, ca
 /** All command vectors originate here; callers cannot supply flags or executable paths. */
 export const operations: Readonly<Record<string, Operation>> = {
   init: operation('init', {}, false, false), doctor: operation('doctor', {}, false, false),
+  'project new': operation('project', { project: id(true), repo: option('repo', '--repo'), url: { ...option('url', '--url'), multiple: true }, note: { ...option('text', '--note'), multiple: true } }, false, false),
+  'project list': operation('project', {}, false, false),
+  'project rename': operation('project', { project: id(true), destination: id(true) }, false, false),
+  'campaign rename': operation('campaign', { source: { kind: 'campaign', required: true, positional: true }, destination: { kind: 'campaign', required: true, positional: true } }, false, false),
   new: operation('new', { campaign, ...inputs }, true),
   brief: operation('brief', { campaign, ...inputs }),
   plan: operation('plan', { campaign, ...scope }, true),
@@ -38,14 +43,15 @@ export const operations: Readonly<Record<string, Operation>> = {
   'feedback rm': operation('feedback', { campaign, id: id(true) }),
 };
 const slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-/** A single identity seam, replaceable by the project/campaign resolver. */
 export function campaignRef(value: unknown): string {
-  if (typeof value !== 'string' || value.length > 100 || !slug.test(value)) throw new UserError('Invalid campaign address');
+  if (typeof value !== 'string') throw new UserError('Invalid campaign address');
+  parseCampaignRef(value);
   return value;
 }
 function validate(value: unknown, kind: Kind, key: string): string | boolean {
   if (kind === 'bool') { if (typeof value !== 'boolean') throw new UserError(`Invalid ${key}`); return value; }
   if (typeof value !== 'string' || !value || value.length > 4096 || value.includes('\0')) throw new UserError(`Invalid ${key}`);
+  if (kind === 'campaign') return campaignRef(value);
   if (kind === 'id' && !slug.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'ids' && !value.split(',').every(s => slug.test(s))) throw new UserError(`Invalid ${key}`);
   if (kind === 'number' && !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) throw new UserError(`Invalid ${key}`);
@@ -66,13 +72,17 @@ export function buildOperation(name: string, raw: unknown, options: { imageProvi
   for (const [key, field] of Object.entries(op.fields)) {
     const v = values[key];
     if (v === undefined) { if (field.required) throw new UserError(`Missing ${key}`); continue; }
-    const parsed = key === 'campaign' ? campaignRef(v) : validate(v, field.kind, key);
-    if (key === 'campaign') ref = parsed as string;
-    if (field.positional) positional.push(String(parsed));
-    else if (field.flag && parsed !== false) {
-      if (parsed === true) flags.push(field.flag);
-      else if (field.flag === '--assets' || field.flag === '--platforms' || ['brief', 'new', 'revise', 'export', 'feedback'].includes(cmd)) flags.push(`${field.flag}=${parsed}`);
-      else flags.push(field.flag, String(parsed));
+    const items = field.multiple && Array.isArray(v) ? v : [v];
+    if (!items.length) throw new UserError(`Invalid ${key}`);
+    for (const item of items) {
+      const parsed = key === 'campaign' ? campaignRef(item) : validate(item, field.kind, key);
+      if (name === 'project new' && key === 'repo' && parsed === 'local') throw new UserError('Invalid repo');
+      if (key === 'campaign') ref = parsed as string;
+      if (field.positional) positional.push(String(parsed));
+      else if (field.flag && parsed !== false) {
+        if (parsed === true) flags.push(field.flag);
+        else flags.push(`${field.flag}=${parsed}`);
+      }
     }
   }
   // Feedback syntax places the action after its campaign.

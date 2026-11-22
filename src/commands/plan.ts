@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse, stringify } from 'yaml';
-import { loadConfig, projectDir } from '../config.ts';
+import { loadConfig, campaignDir } from '../config.ts';
 import { loadPacks } from '../packs.ts';
 import { readPlan, validatePlan } from '../plan.ts';
 import { snapshot } from '../history.ts';
@@ -13,12 +13,13 @@ import type { PlanEntry } from '../types.ts';
 import { authorFiles } from './make.ts';
 
 export const run: Command = async (args, io) => {
-  const usage = 'usage: bstudio plan <slug> [--platforms ids] [--assets ids]';
+  const usage = 'usage: bstudio plan <project>/<campaign> [--platforms ids] [--assets ids]';
   let parsed;
-  try { parsed = parseArgs({ args, allowPositionals: true, options: { platforms: { type: 'string' }, assets: { type: 'string' } } }); }
+  try { parsed = parseArgs({ args, allowPositionals: true, options: { platforms: { type: 'string' }, assets: { type: 'string' }, help: { type: 'boolean', short: 'h' } } }); }
   catch { throw new UserError(usage); }
+  if (parsed.values.help) { io.out(`${usage}\nExample: bstudio plan acme/launch --platforms bluesky`); return 0; }
   if (parsed.positionals.length !== 1 || parsed.positionals[0].startsWith('-')) throw new UserError(usage);
-  const config = loadConfig(io), project = projectDir(config, parsed.positionals[0]), packs = loadPacks();
+  const config = loadConfig(io), project = campaignDir(config, parsed.positionals[0]), packs = loadPacks();
   const scoped = parsed.values.platforms !== undefined || parsed.values.assets !== undefined;
   const prior = scoped ? readPlan(project) : [];
   const platforms = parsed.values.platforms === undefined ? undefined : new Set(parsed.values.platforms.split(',').filter(Boolean));

@@ -30,8 +30,8 @@ test('shared assets are allowed unless their kind or aspect conflicts; validatio
   assert.throws(() => readPlan(dir), (error: Error) => /linkedin\.type "bad"/.test(error.message) && /linkedin\.assets\[0\]\.kind "image"/.test(error.message) && /linkedin\.assets\[0\]\.aspect "9:16"/.test(error.message));
 });
 test('plan repairs once in the same workspace and retains rejected plan', async () => {
-  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/brief.md': '## [E1] Idea\nTest\n' });
-  const project = join(root, 'projects/demo'); let calls = 0, cwd = '';
+  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/campaigns/launch/brief.md': '## [E1] Idea\nTest\n' });
+  const project = join(root, 'projects/demo/campaigns/launch'); let calls = 0, cwd = '';
   const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root }, run: async (_cmd, args, opts) => {
     calls++; if (calls === 1) cwd = opts!.cwd!; else assert.equal(opts!.cwd, cwd);
     assert.notEqual(opts!.env!.TMPDIR, opts!.cwd);
@@ -40,12 +40,12 @@ test('plan repairs once in the same workspace and retains rejected plan', async 
     writeFileSync(join(cwd, 'plan.yml'), stringify([{ ...item, type: calls === 1 ? 'wrong' : 'article' }]));
     return '';
   } });
-  assert.equal(await planCommand(['demo'], io), 0); assert.equal(calls, 2);
+  assert.equal(await planCommand(['demo/launch'], io), 0); assert.equal(calls, 2);
   assert.match(readFileSync(join(project, '.rejected/plan.yml'), 'utf8'), /wrong/);
   assert.equal(readPlan(project)[0].type, 'article');
 });
 test('maker repairs invalid post and asset, preserving rejected files', async () => {
-  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/brief.md': '## [E1] Idea\nTest\n', 'projects/demo/plan.yml': stringify([{ ...item, assets: [{ id: 'card', kind: 'card', brief: 'x' }] }]) });
+  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/campaigns/launch/brief.md': '## [E1] Idea\nTest\n', 'projects/demo/campaigns/launch/plan.yml': stringify([{ ...item, assets: [{ id: 'card', kind: 'card', brief: 'x' }] }]) });
   let calls = 0;
   const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root }, run: async (_cmd, args, opts) => {
     calls++; const dir = opts!.cwd!; mkdirSync(join(dir, 'posts'), { recursive: true }); mkdirSync(join(dir, 'assets/card'), { recursive: true });
@@ -54,12 +54,12 @@ test('maker repairs invalid post and asset, preserving rejected files', async ()
     writeFileSync(join(dir, 'assets/card/asset.yml'), stringify({ id: 'card', kind: calls === 1 ? 'bad' : 'card' }));
     return '';
   } });
-  assert.equal(await makeCommand(['demo'], io), 0); assert.equal(calls, 2);
-  assert.equal(readFileSync(join(root, 'projects/demo/.rejected/posts/devto.md'), 'utf8'), 'not frontmatter');
-  assert.match(readFileSync(join(root, 'projects/demo/.rejected/assets/card/asset.yml'), 'utf8'), /bad/);
+  assert.equal(await makeCommand(['demo/launch'], io), 0); assert.equal(calls, 2);
+  assert.equal(readFileSync(join(root, 'projects/demo/campaigns/launch/.rejected/posts/devto.md'), 'utf8'), 'not frontmatter');
+  assert.match(readFileSync(join(root, 'projects/demo/campaigns/launch/.rejected/assets/card/asset.yml'), 'utf8'), /bad/);
 });
 test('maker validates self reviews and warns when they are absent', async () => {
-  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/brief.md': 'Brief', 'projects/demo/plan.yml': stringify([{ ...item, assets: [{ id: 'card', kind: 'card', brief: 'x' }] }]) });
+  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/campaigns/launch/brief.md': 'Brief', 'projects/demo/campaigns/launch/plan.yml': stringify([{ ...item, assets: [{ id: 'card', kind: 'card', brief: 'x' }] }]) });
   let calls = 0;
   const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root }, run: async (_cmd, args, opts) => {
     calls++;
@@ -72,7 +72,7 @@ test('maker validates self reviews and warns when they are absent', async () => 
     writeFileSync(join(dir, 'assets/card/asset.yml'), stringify({ id: 'card', kind: 'card', ...(calls === 1 ? { selfReview: { checks: [], summary: 'x', iterations: 'one' } } : {}) }));
     return '';
   } });
-  assert.equal(await makeCommand(['demo'], io), 0);
+  assert.equal(await makeCommand(['demo/launch'], io), 0);
   assert.equal(calls, 2);
   assert.ok(io.stderr.some(line => line.includes('posts/devto.md is missing selfReview')));
   assert.ok(io.stderr.some(line => line.includes('assets/card/asset.yml is missing selfReview')));
@@ -85,11 +85,11 @@ test('post self review survives serialization', () => {
   assert.throws(() => parsePost('posts/devto.md', text.replace('pass: true', 'pass: yes')), /selfReview/);
 });
 test('a second invalid plan fails with all errors and rejected path', async () => {
-  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/brief.md': 'Brief' }); let calls = 0;
+  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/campaigns/launch/brief.md': 'Brief' }); let calls = 0;
   const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root }, run: async (_cmd, _args, opts) => {
     calls++; writeFileSync(join(opts!.cwd!, 'plan.yml'), stringify([{ ...item, type: 'wrong', angle: '' }])); return '';
   } });
-  await assert.rejects(planCommand(['demo'], io), (error: Error) => /devto\.type "wrong"/.test(error.message) && /devto\.angle ""/.test(error.message) && error.message.includes('.rejected/plan.yml'));
+  await assert.rejects(planCommand(['demo/launch'], io), (error: Error) => /devto\.type "wrong"/.test(error.message) && /devto\.angle ""/.test(error.message) && error.message.includes('.rejected/plan.yml'));
   assert.equal(calls, 2);
 });
 test('ignored outputs are summarized and runtime temp files stay separate', async () => {
@@ -115,7 +115,7 @@ test('agent receives no credentials and only allowed files copy back', async () 
   assert.deepEqual(result.copied, ['posts/devto.md']); assert.ok(result.ignored.includes('secret.txt')); assert.equal(existsSync(join(dir, 'assets/a/out/leak.txt')), false);
 });
 test('slow: renders HTML, carousel and logo and inherits embedded AI provenance', async () => {
-  const dir = tempStudio(), slug = 'demo', project = join(dir, 'projects', slug);
+  const dir = tempStudio(), slug = 'demo/launch', project = join(dir, 'projects/demo/campaigns/launch');
   const entries = [{ ...item, assets: [{ id: 'card', kind: 'card', brief: 'card' }, { id: 'slides', kind: 'carousel', brief: 'slides' }, { id: 'logo', kind: 'logo', brief: 'logo' }] }];
   const write = (path: string, value: string) => { mkdirSync(join(project, path, '..'), { recursive: true }); writeFileSync(join(project, path), value); };
   write('plan.yml', stringify(entries));
@@ -128,14 +128,14 @@ test('slow: renders HTML, carousel and logo and inherits embedded AI provenance'
   const card = parse(readFileSync(join(project, 'assets/card/asset.yml'), 'utf8')); assert.equal(card.aiGenerated, true); assert.equal(card.outputs[0].file, 'out/image.png'); assert.ok(card.metrics.length);
 });
 test('slow: shared carousel renders once for identical platform dimensions and updates both posts', async () => {
-  const root = tempStudio(), project = join(root, 'projects/demo');
+  const root = tempStudio(), project = join(root, 'projects/demo/campaigns/launch');
   const asset = { id: 'shared', kind: 'carousel', brief: 'Explain', aspect: '1:1' };
   const write = (path: string, data: string) => { const target = join(project, path); mkdirSync(join(target, '..'), { recursive: true }); writeFileSync(target, data); };
   write('plan.yml', stringify([{ ...item, platform: 'linkedin', assets: [asset] }, { ...item, platform: 'instagram', assets: [asset] }]));
   write('assets/shared/asset.yml', stringify({ id: 'shared', kind: 'carousel', provider: 'template', outputs: [], license: 'OFL', aiGenerated: false, size: { width: 160, height: 160 } }));
   write('assets/shared/source/01.html', '<html><body style="margin:20px">Hello</body></html>');
   for (const platform of ['linkedin', 'instagram']) write(`posts/${platform}.md`, `---\nplatform: ${platform}\nevidence: [E1]\nmedia:\n  - asset: shared\n    file: old.png\n    alt: Slide\n    kind: image\n---\nHello\n`);
-  await render(['demo'], fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root } }));
+  await render(['demo/launch'], fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root } }));
   const meta = parse(readFileSync(join(project, 'assets/shared/asset.yml'), 'utf8'));
   assert.equal(meta.outputs.filter((o: { file: string }) => o.file.endsWith('.png')).length, 1);
   for (const platform of ['linkedin', 'instagram']) assert.match(readFileSync(join(project, `posts/${platform}.md`), 'utf8'), /assets\/shared\/out\/slide-1\.png/);
@@ -143,7 +143,7 @@ test('slow: shared carousel renders once for identical platform dimensions and u
 
 test('agent cannot assert human asset rights; confirmation records them', async () => {
   const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [bluesky]\n' });
-  const project = join(root, 'projects/demo'); mkdirSync(project, { recursive: true });
+  const project = join(root, 'projects/demo/campaigns/launch'); mkdirSync(project, { recursive: true });
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') }, run: async (_cmd, _args, opts) => {
     const dir = join(opts!.cwd!, 'assets/logo'); mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'asset.yml'), stringify({ id: 'logo', kind: 'logo', trademarkChecked: true, license: 'forged', selfReview: { checks: [{ item: 'Contrast', pass: true }], iterations: 2, summary: 'Reviewed' } }));
@@ -154,7 +154,7 @@ test('agent cannot assert human asset rights; confirmation records them', async 
   assert.equal(parse(readFileSync(file, 'utf8')).trademarkChecked, undefined);
   assert.equal(parse(readFileSync(file, 'utf8')).license, undefined);
   assert.deepEqual(parse(readFileSync(file, 'utf8')).selfReview, { checks: [{ item: 'Contrast', pass: true }], iterations: 2, summary: 'Reviewed' });
-  await confirm(['demo', 'logo', '--trademark-checked', '--license', 'CC0'], io);
+  await confirm(['demo/launch', 'logo', '--trademark-checked', '--license', 'CC0'], io);
   assert.equal(parse(readFileSync(file, 'utf8')).trademarkChecked, true);
   assert.equal(parse(readFileSync(file, 'utf8')).license, 'CC0');
 });

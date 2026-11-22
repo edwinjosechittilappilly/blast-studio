@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { parseDocument } from "yaml";
+import { containedPath, parseCampaignRef, validateId, type CampaignRef } from "./campaigns.ts";
 import type { IO } from "./io.ts";
 import { PLATFORM_IDS, UserError, type PlatformId, type StudioConfig } from "./types.ts";
 
@@ -114,9 +115,15 @@ export function loadConfig(io: IO): StudioConfig {
     marketBlaster: { command: command(market.command, ["mblast"], "marketBlaster.command"), ...(typeof market.project === "string" ? { project: market.project } : {}) },
   };
 }
-export function projectDir(config: StudioConfig, slug: string): string {
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new UserError("Project slug must contain lowercase letters, numbers and single hyphens");
-  return join(config.root, "projects", slug);
+export function projectRoot(config: StudioConfig, project: string): string {
+  return containedPath(config.root, "projects", validateId(project));
+}
+export function campaignDir(config: StudioConfig, ref: CampaignRef | string): string {
+  const identity = typeof ref === "string" ? parseCampaignRef(ref) : { project: validateId(ref.project), campaign: validateId(ref.campaign) };
+  const project = projectRoot(config, identity.project);
+  if (existsSync(join(project, "brief.md")) || existsSync(join(project, ".bstudio-migration.json")))
+    throw new UserError(`Campaign migration is incomplete for ${project}; resolve the migration warning before retrying`);
+  return containedPath(project, "campaigns", identity.campaign);
 }
 export function writeConfigField(config: StudioConfig, path: string[], value: unknown): void {
   if (!path.length) throw new UserError("Config field path must not be empty");

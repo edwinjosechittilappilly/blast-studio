@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 import { startDashboard } from '../src/dashboard/server.ts';
@@ -16,11 +16,14 @@ test('media actions remain visible in both themes and viewer controls work', asy
   });
   // One 1200 × 1200 VP9 frame, so the browser exercises the video height limit.
   writeFileSync(join(root, 'projects/launch/assets/poster/out/video.webm'), Buffer.from('GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAKVEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHWTbuMU6uEElTDZ1OsggE0TbuMU6uEHFO7a1OsggJ/7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsCrXsYMPQkBNgIxMYXZmNjMuMS4xMDJXQYxMYXZmNjMuMS4xMDJEiYhARAAAAAAAABZUrmvZrgEAAAAAAABQ14EBc8WIkIvw/nOMCuOcgQAitZyDdW5kiIEAhoVWX1ZQOYOBASPjg4QCYloA4JKwggSwuoIEsJqBAlWwhFW5gQFV7oEA7AEAAAAAAAACAAASVMNn/nNzn2PAgGfImUWjh0VOQ09ERVJEh4xMYXZmNjMuMS4xMDJzc9ljwItjxYiQi/D+c4wK42fIpEWjh0VOQ09ERVJEh5dMYXZjNjMuMS4xMDIgbGlidnB4LXZwOWfIoUWjiERVUkFUSU9ORIeTMDA6MDA6MDAuMDQwMDAwMDAwAB9DtnVAwueBAKNAvIEAAICCSYNCAErwSvYAOCQcGEoYAEBh9j/jsqR4H9HX0jsL/w4AAAAAHhI9a1NMbIBMoKpUpgr1cqUyWCuVSZLBXqpUpgr1IAAAACQSPWtTTGyASIglgqlK9VKV6mUrlMlXKYKqUwVUlgqpLBVKVAAAAAAkEj1rU0xsgEiIJYKpSvVSleplK5TJVymCqlMFVJYKqSwVSlQAEj1rU0xsgEiIJYKpSvVSleplK5TJVymCqlMFVJYKqSwVSlQAHFO7a5G7j7OBALeK94EB8YIBt/CBAw==', 'base64'));
+  mkdirSync(join(root, 'projects/acme/campaigns'), { recursive: true });
+  renameSync(join(root, 'projects/launch'), join(root, 'projects/acme/campaigns/launch'));
+  writeFileSync(join(root, 'projects/acme/project.yml'), 'name: Acme\ncreatedAt: 2026-01-01\n');
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') } });
   const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
   const browser = await chromium.launch({ headless: true }); t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await page.goto(started.url); await page.getByRole('link', { name: 'launch', exact: true }).click();
+  await page.goto(started.url); await page.getByRole('link', { name: 'acme/launch', exact: true }).click();
   await page.getByRole('tab', { name: /linkedin/ }).click();
   for (const theme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: theme });

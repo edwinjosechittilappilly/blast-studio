@@ -1,13 +1,19 @@
-# Campaign package v2 (`<slug>.campaign.zip`)
+# Campaign package v2 (`<project>--<campaign>.campaign.zip`)
 
 One zip holds one whole campaign: where to publish, what to publish, the sources behind it, and the review results.
-`bstudio export <slug>` writes it, and `mblast import <file.zip>` reads it. Manifest v1 (an unzipped export
-directory) is still accepted by `mblast import <dir>`.
+`bstudio export <project>/<campaign>` writes it, and `mblast import <file.zip>` reads it. Manifest v1 (an unzipped export
+directory, selected with `--dir`) is still accepted by `mblast import <dir>`.
+
+## Identity and collisions
+
+Both the v1 manifest and v2 `campaign.json` carry top-level `project` and `campaign` fields for the original address and a `slug` formed as `<project>--<campaign>`. For example, `acme/media-launch` has `project: "acme"`, `campaign: "media-launch"`, and `slug: "acme--media-launch"`. The zip is named `acme--media-launch.campaign.zip`. When Studio invokes Market Blaster, it passes this composite slug as `--slug` to import and uses it for the subsequent check.
+
+Individual project and campaign slugs cannot contain consecutive hyphens, so the `--` separator unambiguously identifies the boundary: distinct addresses produce distinct composite slugs. Market Blaster can overwrite existing unapproved drafts with a warning; approved drafts require `--force`. Inspect the target before importing.
 
 ## Layout
 
 ```text
-<slug>.campaign.zip
+<project>--<campaign>.campaign.zip
 ├── campaign.json            manifest v2 (below)
 ├── brief.md                 the Studio brief with ## [E<n>] anchors
 ├── sources/
@@ -32,7 +38,9 @@ directory) is still accepted by `mblast import <dir>`.
 {
   "version": 2,
   "kind": "blast-studio-campaign",
-  "slug": "media-launch",
+  "project": "acme",
+  "campaign": "media-launch",
+  "slug": "acme--media-launch",
   "title": "Market Blaster now attaches images and video",
   "generatedAt": "2026-11-22T08:00:00.000Z",
   "generator": { "name": "blast-studio", "version": "0.1.0" },
@@ -57,6 +65,8 @@ directory) is still accepted by `mblast import <dir>`.
 
 | Field | Notes |
 |---|---|
+| `project`, `campaign` | Original components of the Studio campaign address; also present in the v1 manifest |
+| `slug` | Composite `<project>--<campaign>` Market Blaster identity |
 | `destinations[].mode` | `api` or `handoff`, as decided by the Market Blaster mapping table in [the design](blast-studio.md) |
 | `destinations[].post` | Path inside the zip. `null` for `ai: none` destinations (HN). Market Blaster builds those from the canonical home |
 | `destinations[].tags` | Optional array of post tags, also included in the post frontmatter and v1 manifest |

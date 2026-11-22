@@ -23,7 +23,7 @@ export interface IO {
   run(
     cmd: string,
     args: string[],
-    opts?: { cwd?: string; env?: Env; input?: string; timeoutMs?: number; onOutput?: (line: string) => void },
+    opts?: { cwd?: string; env?: Env; input?: string; timeoutMs?: number; onOutput?: (line: string) => void; onStderr?: (text: string) => void },
   ): Promise<string>;
   /** Reads a credential from the macOS Keychain; undefined in tests so no test can touch the real Keychain. */
   keychain?: (key: string) => string | undefined;

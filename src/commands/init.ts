@@ -1,3 +1,4 @@
+import { parseArgs } from "node:util";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { configFile, DEFAULT_CONFIG, loadConfig } from "../config.ts";
@@ -5,7 +6,9 @@ import type { Command } from "../io.ts";
 import { UserError } from "../types.ts";
 
 export const run: Command = async (args, io) => {
-  if (args.length) throw new UserError("usage: bstudio init");
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean", short: "h" } } });
+  if (values.help) { io.out("Usage: bstudio init\n\nExample:\n  bstudio init"); return 0; }
+  if (positionals.length) throw new UserError("usage: bstudio init");
   const file = configFile(io);
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   try {

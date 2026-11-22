@@ -1,6 +1,6 @@
 # Review
 
-Run `bstudio review <slug>` after making and rendering a project. It writes a JSON review for each post in `reviews/` and an editorial summary in `review.md`. Scores are editorial judgments, not predictions of reach.
+Run `bstudio review <project>/<campaign>` after making and rendering a campaign. It writes a JSON review for each post in `reviews/` and an editorial summary in `review.md`. Scores are editorial judgments, not predictions of reach.
 
 ## Gates
 
@@ -28,12 +28,12 @@ A post is `pass` when gates pass and its score meets the threshold. A failed gat
 
 ## Fix or accept
 
-Edit the post or asset sources, then render and review again. `bstudio revise <slug>` asks the author agent to address findings, renders and reviews again for up to `review.maxRounds` rounds (two by default). It stops on blocked reviews for human resolution; reaching the round limit does not imply a pass.
+Edit the post or asset sources, then render and review again. `bstudio revise <project>/<campaign>` asks the author agent to address findings, renders and reviews again for up to `review.maxRounds` rounds (two by default). It stops on blocked reviews for human resolution; reaching the round limit does not imply a pass.
 
 A human can override a score after inspecting the content:
 
 ```sh
-bstudio accept release-note linkedin --reason "Reviewed the draft and accepted the editorial tradeoff"
+bstudio accept acme/release-note linkedin --reason "Reviewed the draft and accepted the editorial tradeoff"
 ```
 
 Acceptance requires a current review and passing gates. The command recalculates gates and refuses to override a failure. It records the reason in the review JSON. Changes to the title, body, media filenames, alt text or media file contents make the review stale; run review again before acceptance or export.

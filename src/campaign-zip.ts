@@ -6,6 +6,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import { strToU8, zipSync } from 'fflate';
 import { stringify } from 'yaml';
 import { parseBrief } from './brief.ts';
+import { compositeSlug, type CampaignRef } from './campaigns.ts';
 import { UserError } from './types.ts';
 import type { PlatformPack, Post, Review } from './types.ts';
 
@@ -20,7 +21,8 @@ const validate = ajv.compile(schema);
 type Prepared = { post: Post; review: Review; hash: string; pack: PlatformPack };
 type ExtraMedia = Post['media'][number] & { cover?: boolean; lang?: string; captions?: string };
 
-export function writeCampaignZip(project: string, slug: string, prepared: Prepared[], sourceFile: (project: string, path: string) => string): string {
+export function writeCampaignZip(project: string, identity: CampaignRef, prepared: Prepared[], sourceFile: (project: string, path: string) => string): string {
+  const slug = compositeSlug(identity);
   const files: Record<string, Uint8Array> = {};
   let total = 0;
   const checkSize = (path: string, size: number) => {
@@ -73,7 +75,7 @@ export function writeCampaignZip(project: string, slug: string, prepared: Prepar
   const reviewPath = join(project, 'review.md');
   text('review/review.md', existsSync(reviewPath) ? readFileSync(reviewPath, 'utf8') : ['# Editorial review', '', ...prepared.map(({ post, review }) => `- ${post.platform}: ${review.verdict}${review.total === null ? '' : ` (${review.total}%)`}`), ''].join('\n'));
   const timestamps = prepared.map(({ review }) => review.at).filter(at => typeof at === 'string' && Number.isFinite(Date.parse(at))).sort();
-  const manifest = { version: 2, kind: 'blast-studio-campaign', slug, title: brief.match(/^#\s+(.+)$/m)?.[1]?.trim() || slug,
+  const manifest = { version: 2, kind: 'blast-studio-campaign', slug, project: identity.project, campaign: identity.campaign, title: brief.match(/^#\s+(.+)$/m)?.[1]?.trim() || slug,
     generatedAt: timestamps.length ? new Date(timestamps[timestamps.length - 1]).toISOString() : '1980-01-01T00:00:00.000Z', generator: { name: 'blast-studio', version }, canonicalHome: destinations.some(destination => destination.id === 'devto') ? 'devto' : null, sources, destinations, manual };
   if (!validate(manifest)) throw new UserError(`Invalid campaign manifest: ${ajv.errorsText(validate.errors)}`);
   text('campaign.json', JSON.stringify(manifest, null, 2) + '\n');

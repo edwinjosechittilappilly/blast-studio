@@ -1,3 +1,4 @@
+import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
 import { loadConfig } from "../config.ts";
@@ -6,7 +7,9 @@ import type { Command } from "../io.ts";
 import { UserError } from "../types.ts";
 
 export const run: Command = async (args, io) => {
-  if (args.length) throw new UserError("usage: bstudio doctor");
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean", short: "h" } } });
+  if (values.help) { io.out("Usage: bstudio doctor\n\nExample:\n  bstudio doctor"); return 0; }
+  if (positionals.length) throw new UserError("usage: bstudio doctor");
   const config = loadConfig(io);
   let failed = false;
   const major = Number(process.versions.node.split(".")[0]);

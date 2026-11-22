@@ -43,14 +43,15 @@ bstudio doctor
 Edit `~/.config/blast-studio/studio.yml` for your brand, platforms and agent commands. The default studio root is `~/BlastStudio`, outside the repository. Paid generation is disabled until you set a budget.
 
 ```bash
-bstudio brief launch --idea "Explain the feature and who it helps"
-# Add evidence and caveats to ~/BlastStudio/projects/launch/brief.md
-bstudio plan launch
-bstudio make launch
-bstudio render launch
-bstudio review launch
-bstudio revise launch                      # if revisions are needed
-bstudio export launch --mb /path/to/market-blaster-project
+bstudio project new acme
+bstudio brief acme/launch --idea "Explain the feature and who it helps"
+# Add evidence and caveats to ~/BlastStudio/projects/acme/campaigns/launch/brief.md
+bstudio plan acme/launch
+bstudio make acme/launch
+bstudio render acme/launch
+bstudio review acme/launch
+bstudio revise acme/launch                 # if revisions are needed
+bstudio export acme/launch --mb /path/to/market-blaster-project
 ```
 
 The agent commands must be installed and configured before planning, making or reviewing. Inspect the content and review before exporting. See [getting started](docs/getting-started.md) for requirements and alternatives.
