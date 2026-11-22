@@ -8,7 +8,7 @@ Deterministic gates run before a post can pass:
 
 - Policy checks generated text against the pack's AI policy, including bullet-only outlines where required.
 - Disclosure checks require the disclosure fields specified by the pack for applicable text, AI-generated media and voice.
-- Specification checks compare text, title and media metadata with known pack limits.
+- Specification checks compare text, title and media metadata with known pack limits. They also reject placeholder markers (`[PLACEHOLDER]`, `TODO`, `TBD`, `lorem ipsum`, `{{ }}`, `<your-…>`, `REPLACE_ME`, `xxx`) in post titles, bodies, threads, alt text, VTT captions and measured rendered text, naming the affected field or file and the matched marker. Code in backticks or fenced blocks is exempt, and uppercase `TODO`/`TBD` match only as whole words, so ordinary prose and snippets pass.
 - Accessibility checks include image alt text, video captions and available rendered text size, contrast and overflow metrics.
 - Fabricated-metrics checks compare numeric claims with the brief and configured `grounding.waive` entries. Ungrounded metrics fail; other ungrounded numbers produce warnings.
 - Rights checks include provider licenses, embedded asset metadata and the trademark-search flag for logos.

@@ -175,3 +175,36 @@ test('video duration does not ground product claims and VTT cue metadata is igno
     assert.ok(!result.warnings.some(w => /Ungrounded version or identifier/.test(w)));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('specs reject placeholders in post fields, captions and rendered text', () => {
+  const markers = ['[PLACEHOLDER] paste the install command', 'PLACEHOLDER]', 'TODO', 'TBD', 'lorem ipsum', '{{ name }}', '<your-token>', 'REPLACE_ME', 'xxx'];
+  for (const marker of markers) {
+    const result = gate('specs', { ...post, body: marker });
+    assert.equal(result.pass, false, marker);
+    assert.match(result.message, /x\.md body/);
+  }
+  for (const ok of ['A todo list and todos for tomorrow.', 'Paste the command into your terminal.', 'Set `token: ${{ secrets.NPM_TOKEN }}` in the workflow.', '```yaml\nenv:\n  TOKEN: ${{ secrets.X }} # TODO rotate\n```']) assert.equal(gate('specs', { ...post, body: ok }).pass, true, ok);
+  const dir = mkdtempSync(join(tmpdir(), 'bstudio-placeholders-'));
+  try {
+    mkdirSync(join(dir, 'assets', 'v'), { recursive: true });
+    writeFileSync(join(dir, 'assets', 'v', 'captions.vtt'), 'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n[PLACEHOLDER] paste the install command\n');
+    const video: AssetMeta = { id: 'v', kind: 'video', provider: 'hyperframes', outputs: [{ file: 'video.mp4', bytes: 4 }, { file: 'captions.vtt', bytes: 4 }], license: null, aiGenerated: false, metrics: [{ file: 'video.mp4', minFontPx: 30, minContrast: 5, overflow: false, texts: ['[PLACEHOLDER] paste the install command'] }] };
+    const draft: Post = { ...post, media: [{ asset: 'v', file: 'assets/v/video.mp4', alt: 'TODO', kind: 'video' }] };
+    const result = runGates(draft, pack, [video], brief, config, dir).find(g => g.id === 'specs')!;
+    assert.equal(result.pass, false);
+    assert.match(result.message, /alt text.*TODO/);
+    assert.match(result.message, /video\.mp4 rendered text.*\[PLACEHOLDER/);
+    assert.match(result.message, /captions\.vtt captions.*\[PLACEHOLDER/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('rendered code and captions with snippet syntax are not placeholders', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bstudio-codecard-'));
+  try {
+    mkdirSync(join(dir, 'assets', 'c'), { recursive: true });
+    writeFileSync(join(dir, 'assets', 'c', 'captions.vtt'), 'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nSet TOKEN: ${{ secrets.X }} # TODO rotate\n');
+    const card: AssetMeta = { id: 'c', kind: 'card', provider: 'template', outputs: [{ file: 'image.png', width: 1080, bytes: 4 }, { file: 'captions.vtt', bytes: 4 }], license: null, aiGenerated: false, metrics: [{ file: 'image.png', minFontPx: 30, minContrast: 5, overflow: false, texts: ['TOKEN: ${{ secrets.X }}', '# TODO rotate the key', 'id: xxx'] }] };
+    const withCard: Post = { ...post, media: [{ asset: 'c', file: 'assets/c/image.png', alt: 'Workflow snippet', kind: 'image' }] };
+    assert.equal(runGates(withCard, pack, [card], brief, config, dir).find(g => g.id === 'specs')!.message.includes('Placeholder'), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
