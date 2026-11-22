@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { run as exportCommand } from '../src/commands/export.ts';
@@ -31,10 +32,17 @@ test('refuses nonpassing, failed gates and stale reviews', async () => {
   f.review.gates[0].pass = true; f.review.postHash = 'stale'; f.save(); await assert.rejects(exportCommand(['demo'], f.io), /bluesky.*stale/);
 });
 
-test('market-blaster imports manifest and media', async () => {
+test('market-blaster imports manifest and media', async t => {
+  const marketBlaster = process.env.MARKET_BLASTER_DIR
+    ? resolve(process.env.MARKET_BLASTER_DIR)
+    : fileURLToPath(new URL('../../market-blaster/', import.meta.url));
+  if (!existsSync(marketBlaster)) {
+    t.skip('set MARKET_BLASTER_DIR to a market-blaster checkout to run the import integration test');
+    return;
+  }
   const f = fixture(); await exportCommand(['demo'], f.io);
   writeFileSync(join(f.root, 'market-blaster.yml'), 'brand: { name: Demo }\ndestinations: [bluesky]\n');
-  const result = spawnSync(process.execPath, ['/Users/edwinjose/Documents/GitHub/market-blaster/bin/mblast.mjs', 'import', join(f.project, 'export'), '--slug', 'demo'], { cwd: f.root, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [join(marketBlaster, 'bin/mblast.mjs'), 'import', join(f.project, 'export'), '--slug', 'demo'], { cwd: f.root, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   const draft = readFileSync(join(f.root, 'campaigns/demo/drafts/bluesky.md'), 'utf8');
   assert.match(draft, /reviewHash/); const path = draft.match(/path: (media\/[^\s]+)/)?.[1]; assert.ok(path); assert.ok(existsSync(join(f.root, 'campaigns/demo', path)));

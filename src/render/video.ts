@@ -26,9 +26,9 @@ function captionScript(vtt: string, aspect: string, config: StudioConfig): strin
     cues.push({ start, end, text: lines.slice(line + 1).join("\n").replace(/<[^>]*>/g, "") });
   }
   if (!cues.length) throw new UserError("Caption burn-in requires at least one WebVTT cue");
-  const font = config.brand?.fonts?.text || "sans-serif";
+  const font = config.brand?.fonts?.text ? `${JSON.stringify(config.brand.fonts.text)}, BstudioCaption` : "BstudioCaption";
   const data = JSON.stringify({ cues, font, bottom: aspect === "9:16" ? "17%" : "8%" }).replace(/</g, "\\u003c");
-  return `<script>(() => {
+  return `<style>@font-face { font-family: BstudioCaption; src: url("./bstudio-caption-font.woff2") format("woff2"); }</style><script>(() => {
     const {cues, font, bottom} = ${data};
     const root = document.querySelector('[data-composition-id]');
     for (const cue of cues) {
@@ -118,6 +118,7 @@ export async function renderVideo(assetDir: string, config: StudioConfig, io: IO
         temp = mkdtempSync(join(tmpdir(), "bstudio-caption-"));
         project = join(temp, "project");
         cpSync(original, project, { recursive: true });
+        copyFileSync(fileURLToPath(new URL("../../templates/fonts/IBMPlexSans.woff2", import.meta.url)), join(project, "bstudio-caption-font.woff2"));
         const index = join(project, "index.html"), html = readFileSync(index, "utf8");
         if (!/<\/body\s*>/i.test(html)) throw new UserError(`Composition source/${aspect}/index.html needs a closing body tag for captions`);
         writeFileSync(index, html.replace(/<\/body\s*>/i, `${captionScript(readFileSync(caption, "utf8"), aspect, config)}</body>`));

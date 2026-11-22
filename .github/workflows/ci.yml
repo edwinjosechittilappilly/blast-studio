@@ -25,8 +25,21 @@ jobs:
           cache: npm
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - run: npm ci
+      - name: Set up Market Blaster integration
+        env:
+          MB_CHECKOUT_TOKEN: ${{ secrets.MB_CHECKOUT_TOKEN }}
+        run: |
+          if [ -n "$MB_CHECKOUT_TOKEN" ]; then
+            git -c credential.helper= -c 'credential.helper=!f() { echo username=x-access-token; echo "password=$MB_CHECKOUT_TOKEN"; }; f' \
+              clone https://github.com/edwinjosechittilappilly/market-blaster.git ../market-blaster
+            npm ci --prefix ../market-blaster
+          fi
       - run: npx playwright install --with-deps chromium
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Install D2
+        run: |
+          curl -fsSL https://d2lang.com/install.sh | sh -s -- --version v0.9.0
+          d2 --version
       - run: npm test
       - run: npm run typecheck
       - run: make docs

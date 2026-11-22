@@ -115,6 +115,8 @@ npm run typecheck
 make docs-serve
 ```
 
+The Market Blaster import integration test uses a checkout at `../market-blaster` by default. Set `MARKET_BLASTER_DIR` to use another checkout, and run `npm ci` there first. The test skips when the checkout is absent. CI runs it when the `MB_CHECKOUT_TOKEN` repository secret provides access to the Market Blaster repository.
+
 ## License
 
 [Apache-2.0](LICENSE).
