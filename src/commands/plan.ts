@@ -27,7 +27,7 @@ Example:
       kind: carousel
       brief: Explain the change in three slides
       aspect: "1:1"
-Ground claims in the brief and distinguish planned from shipped. Allowed platforms: ${allowed.join(', ')}. Never create a plan for ai: none. For ai: outline use type: text and no assets, for human-authored talking points.
+Ground claims in the brief and distinguish planned from shipped. Choose a concrete outcome and audience for each angle, and plan assets that can meet the pack's format, safe zones and accessibility requirements. Use only commands and output supplied by the brief. Allowed platforms: ${allowed.join(', ')}. Never create a plan for ai: none. For ai: outline use type: text and no assets, for human-authored talking points.
 Providers: images.provider is ${config.images.provider} and voice.provider is ${config.voice.provider}.${config.images.provider === 'none' ? ' Do not plan illustration assets; use cards, posters, diagrams or carousels built from templates instead.' : ''}${config.voice.provider === 'none' ? ' Do not plan voiceover assets; videos carry captions only.' : ''}`,
     validate: dir => {
       let plan;

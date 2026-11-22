@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import { stringify, parse } from 'yaml';
 import { loadConfig } from '../src/config.ts';
 import { readPlan } from '../src/plan.ts';
+import { parsePost, serializePost } from '../src/posts.ts';
 import { runAgentInWorkspace } from '../src/workspace.ts';
 import { run as render } from '../src/commands/render.ts';
 import { run as planCommand } from '../src/commands/plan.ts';
@@ -56,6 +57,32 @@ test('maker repairs invalid post and asset, preserving rejected files', async ()
   assert.equal(await makeCommand(['demo'], io), 0); assert.equal(calls, 2);
   assert.equal(readFileSync(join(root, 'projects/demo/.rejected/posts/devto.md'), 'utf8'), 'not frontmatter');
   assert.match(readFileSync(join(root, 'projects/demo/.rejected/assets/card/asset.yml'), 'utf8'), /bad/);
+});
+test('maker validates self reviews and warns when they are absent', async () => {
+  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/brief.md': 'Brief', 'projects/demo/plan.yml': stringify([{ ...item, assets: [{ id: 'card', kind: 'card', brief: 'x' }] }]) });
+  let calls = 0;
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root }, run: async (_cmd, args, opts) => {
+    calls++;
+    assert.match(args.at(-1)!, /bstudio render-preview/);
+    assert.match(args.at(-1)!, /selfReview/);
+    const dir = opts!.cwd!;
+    mkdirSync(join(dir, 'posts'), { recursive: true }); mkdirSync(join(dir, 'assets/card'), { recursive: true });
+    const postReview = calls === 1 ? 'selfReview: {checks: bad, summary: nope}\n' : '';
+    writeFileSync(join(dir, 'posts/devto.md'), `---\nplatform: devto\nevidence: []\nmedia: []\n${postReview}---\nHello\n`);
+    writeFileSync(join(dir, 'assets/card/asset.yml'), stringify({ id: 'card', kind: 'card', ...(calls === 1 ? { selfReview: { checks: [], summary: 'x', iterations: 'one' } } : {}) }));
+    return '';
+  } });
+  assert.equal(await makeCommand(['demo'], io), 0);
+  assert.equal(calls, 2);
+  assert.ok(io.stderr.some(line => line.includes('posts/devto.md is missing selfReview')));
+  assert.ok(io.stderr.some(line => line.includes('assets/card/asset.yml is missing selfReview')));
+});
+
+test('post self review survives serialization', () => {
+  const text = '---\nplatform: devto\nevidence: [E1]\nmedia: []\nselfReview:\n  checks:\n    - item: Grounding\n      pass: true\n      note: Supported\n  summary: Reviewed\n---\nHello\n';
+  const post = parsePost('posts/devto.md', text);
+  assert.deepEqual(parsePost('posts/devto.md', serializePost(post)), post);
+  assert.throws(() => parsePost('posts/devto.md', text.replace('pass: true', 'pass: yes')), /selfReview/);
 });
 test('a second invalid plan fails with all errors and rejected path', async () => {
   const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/brief.md': 'Brief' }); let calls = 0;
@@ -119,13 +146,14 @@ test('agent cannot assert human asset rights; confirmation records them', async 
   const project = join(root, 'projects/demo'); mkdirSync(project, { recursive: true });
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') }, run: async (_cmd, _args, opts) => {
     const dir = join(opts!.cwd!, 'assets/logo'); mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'asset.yml'), 'id: logo\nkind: logo\ntrademarkChecked: true\nlicense: forged\n');
+    writeFileSync(join(dir, 'asset.yml'), stringify({ id: 'logo', kind: 'logo', trademarkChecked: true, license: 'forged', selfReview: { checks: [{ item: 'Contrast', pass: true }], iterations: 2, summary: 'Reviewed' } }));
     return '';
   } });
   await runAgentInWorkspace({ config: loadConfig(io), io, projectDir: project, files: {}, allowOut: [/^assets\/logo\/asset\.yml$/], prompt: 'create asset', timeoutMs: 1000 });
   const file = join(project, 'assets/logo/asset.yml');
   assert.equal(parse(readFileSync(file, 'utf8')).trademarkChecked, undefined);
   assert.equal(parse(readFileSync(file, 'utf8')).license, undefined);
+  assert.deepEqual(parse(readFileSync(file, 'utf8')).selfReview, { checks: [{ item: 'Contrast', pass: true }], iterations: 2, summary: 'Reviewed' });
   await confirm(['demo', 'logo', '--trademark-checked', '--license', 'CC0'], io);
   assert.equal(parse(readFileSync(file, 'utf8')).trademarkChecked, true);
   assert.equal(parse(readFileSync(file, 'utf8')).license, 'CC0');
