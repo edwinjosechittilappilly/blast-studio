@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parse, stringify } from "yaml";
 import { UserError, type StudioConfig } from "./types.ts";
@@ -71,7 +71,6 @@ export function listProjects(config: StudioConfig): { project: string; campaigns
     if (!existsSync(metadata)) return [];
     const campaigns = containedPath(config.root, "projects", e.name, "campaigns");
     const entries = existsSync(campaigns) ? readdirSync(campaigns, { withFileTypes: true }).filter(c => c.isDirectory()) : [];
-    const times = [statSync(metadata).mtimeMs, statSync(dir).mtimeMs, ...entries.map(c => lastUpdated(containedPath(config.root, "projects", e.name, "campaigns", c.name)))];
-    return [{ project: e.name, campaigns: entries.length, updatedAt: new Date(Math.max(...times)) }];
+    return [{ project: e.name, campaigns: entries.length, updatedAt: new Date(lastUpdated(dir)) }];
   }).sort((a, b) => a.project.localeCompare(b.project));
 }

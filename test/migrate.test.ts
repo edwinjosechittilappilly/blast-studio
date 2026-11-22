@@ -44,6 +44,16 @@ test("migration refuses conflicts without overwriting either version", () => {
   assert.equal(readFileSync(join(root, "projects/demo/campaigns/demo/brief.md"), "utf8"), "destination");
 });
 
+test("an interrupted migration preserves both sides of a later conflict", () => {
+  const { root, run } = setup({ "projects/demo/brief.md": "source", "projects/demo/campaigns/demo/brief.md": "destination" });
+  const dir = join(root, "projects/demo");
+  writeFileSync(join(dir, ".bstudio-migration.json"), JSON.stringify({ entries: ["brief.md"], createdAt: "2026-01-01T00:00:00.000Z" }));
+  assert.throws(run, /Migration conflict/);
+  assert.equal(readFileSync(join(dir, "brief.md"), "utf8"), "source");
+  assert.equal(readFileSync(join(dir, "campaigns/demo/brief.md"), "utf8"), "destination");
+  assert.ok(existsSync(join(dir, ".bstudio-migration.json")));
+});
+
 test("CLI startup migrates before project listing", async () => {
   const { root } = setup({ "projects/demo/brief.md": "brief" });
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, "studio.yml") } });
