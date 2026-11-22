@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "blast_studio",
+  "project_id": "af78fb3d-f97f-4c43-99f1-ed1046fc040d"
+}
