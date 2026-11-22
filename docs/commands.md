@@ -1,6 +1,6 @@
 # Command reference
 
-Run `bstudio help`, `bstudio --help`, or `bstudio -h` for the command list. Project and campaign slugs contain lowercase letters, numbers, and single hyphens between components. Campaign commands take a full `<project>/<campaign>` address; below, `<address>` means that address.
+Run `bstudio help`, `bstudio --help`, or `bstudio -h` for the command list; `bstudio --version` prints the installed version. Project and campaign slugs contain lowercase letters, numbers, and single hyphens between components. Campaign commands take a full `<project>/<campaign>` address; below, `<address>` means that address.
 
 ## Setup
 
@@ -28,7 +28,7 @@ bstudio brief <address> [--idea text] [--note text] [--url url] [--pr number]
   [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force]
 ```
 
-At least one input is required. `--note` and `--url` can be repeated. `--repo` alone collects repository information; PRs require a GitHub repository and commits can use `local`. `--mb-brief` imports evidence sections from a Market Blaster brief. `--force` overwrites an existing brief. Inputs are stored as evidence in `brief.md`.
+At least one input or shared project evidence is required. `--note` and `--url` can be repeated. `--repo` alone collects repository information; PRs require a GitHub repository and commits can use `local`. `--mb-brief` imports evidence sections from a Market Blaster brief. `--force` overwrites an existing brief. Shared and campaign inputs are stored as evidence in `brief.md`.
 
 - `bstudio plan <address> [--platforms=id,...] [--assets=id,...]` asks the agent for a plan for enabled destinations permitted by their AI policies. Scoped planning retains unselected entries.
 - `bstudio make <address> [--platforms=id,...] [--assets=id,...]` writes selected posts and asset sources using the agent. Both commands also accept `--platforms id,...` and `--assets id,...`.
