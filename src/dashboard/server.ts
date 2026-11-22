@@ -1,18 +1,30 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync, realpathSync, statSync, createReadStream, mkdirSync, openSync, closeSync } from 'node:fs';
+import { existsSync, realpathSync, statSync, createReadStream, mkdirSync, openSync, closeSync, readSync, readdirSync, unlinkSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { addFeedback } from '../feedback.ts';
 import { loadConfig, projectDir, writeConfigField } from '../config.ts';
-import { loadLibrary, projectDetails, latestSources } from '../library.ts';
+import { loadLibrary, projectReview, latestSources } from '../library.ts';
 import { monthToDate, projectTotal, providerTotals } from '../budget/ledger.ts';
 import type { IO } from '../io.ts';
 
 const staticDir = join(dirname(fileURLToPath(import.meta.url)), 'static');
+const buildDir = join(dirname(fileURLToPath(import.meta.url)), 'build');
+function tailLog(path: string) {
+  const fd = openSync(path, 'r');
+  try {
+    const size = statSync(path).size, length = Math.min(size, 65536), buffer = Buffer.alloc(length);
+    const read = readSync(fd, buffer, 0, length, size - length);
+    const text = buffer.subarray(0, read).toString('utf8');
+    const lines = (size > length ? text.slice(text.indexOf('\n') + 1) : text).split(/\r?\n/);
+    if (!lines.at(-1)) lines.pop();
+    return lines.slice(-50);
+  } finally { closeSync(fd); }
+}
 const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.mp4': 'video/mp4', '.webm': 'video/webm', '.pdf': 'application/pdf', '.vtt': 'text/vtt; charset=utf-8' };
 function send(res: ServerResponse, status: number, value: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
@@ -69,7 +81,7 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
         if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; }
         if (req.method === 'GET' && action === 'status') {
           const run = runs.get(slug);
-          const lines = run && existsSync(run.log) ? readFileSync(run.log, 'utf8').split(/\r?\n/).filter((line, index, all) => line || index < all.length - 1).slice(-50) : [];
+          const lines = run && existsSync(run.log) ? tailLog(run.log) : [];
           send(res, 200, { running: run?.running ?? false, exitCode: run?.exitCode ?? null, lines }); return;
         }
         if (req.method === 'POST' && (action === 'feedback' || action === 'revise')) {
@@ -77,16 +89,18 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
           if (action === 'feedback') {
             const data = await body(req), target = data.target;
             if (!target || typeof target !== 'object' || Array.isArray(target) || Object.keys(target).some(key => key !== 'platform' && key !== 'asset') || typeof data.note !== 'string' || !data.note.trim() || data.note.length > 4000) { send(res, 400, { error: 'Invalid feedback' }); return; }
-            const selection = target as { platform?: unknown; asset?: unknown }, project = projectDetails(config, slug);
-            if ((selection.platform !== undefined && (typeof selection.platform !== 'string' || !project.posts.some(post => post.platform === selection.platform))) || (selection.asset !== undefined && (typeof selection.asset !== 'string' || !project.assets.some(asset => asset.id === selection.asset)))) { send(res, 400, { error: 'Unknown feedback target' }); return; }
+            const selection = target as { platform?: unknown; asset?: unknown };
+            if ((selection.platform !== undefined && typeof selection.platform !== 'string') || (selection.asset !== undefined && typeof selection.asset !== 'string') || (selection.platform !== undefined && selection.asset !== undefined)) { send(res, 400, { error: 'Invalid feedback target' }); return; }
             send(res, 201, addFeedback(dir, selection as { platform?: string; asset?: string }, data.note.trim())); return;
           }
-          if (runs.get(slug)?.running) { send(res, 409, { error: 'Revision already running' }); return; }
+          if (runs.get(slug)?.running || existsSync(join(dir, '.revise.lock'))) { send(res, 409, { error: 'Revision already running' }); return; }
           const logs = join(dir, 'logs'); mkdirSync(logs, { recursive: true });
+          const oldLogs = readdirSync(logs).filter(name => /^revise-.*\.log$/.test(name)).sort().reverse();
+          for (const name of oldLogs.slice(9)) unlinkSync(join(logs, name));
           const log = join(logs, `revise-${Date.now()}-${randomBytes(4).toString('hex')}.log`), fd = openSync(log, 'a');
           const run = { running: true, exitCode: null as number | null, log }; runs.set(slug, run);
           try {
-            const child: ChildProcess = spawnRevise(process.execPath, [fileURLToPath(new URL('../../bin/bstudio.mjs', import.meta.url)), 'revise', slug], { detached: true, stdio: ['ignore', fd, fd], env: { ...process.env, ...io.env, BSTUDIO_HOME: config.root, BSTUDIO_CONFIG: config.file } });
+            const child: ChildProcess = spawnRevise(process.execPath, [fileURLToPath(new URL('../../bin/bstudio.mjs', import.meta.url)), 'revise', slug, '--feedback-only'], { detached: true, stdio: ['ignore', fd, fd], env: { ...process.env, ...io.env, BSTUDIO_HOME: config.root, BSTUDIO_CONFIG: config.file } });
             child.once('error', () => { run.running = false; run.exitCode = 1; });
             child.once('exit', code => { run.running = false; run.exitCode = code ?? 1; });
             child.unref();
@@ -98,7 +112,7 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
         if (pathname === '/api/library') { send(res, 200, loadLibrary(config, url.searchParams.get('q') ?? '')); return; }
         if (pathname === '/api/budget') { send(res, 200, { cap: config.budget.monthlyUsd, perProject: config.budget.perProjectUsd, mtd: monthToDate(config.root), providerTotals: providerTotals(config.root), projects: Object.fromEntries(loadLibrary(config).map(p => [p.slug, projectTotal(config.root, p.slug)])), providers: { images: config.images.provider, voice: config.voice.provider }, brand: config.brand }); return; }
         if (pathname === '/api/sources') { send(res, 200, latestSources(config)); return; }
-        if (pathname.startsWith('/api/project/')) { const slug = decodeURIComponent(pathname.slice(13)); const dir = projectDir(config, slug); if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; } send(res, 200, projectDetails(config, slug)); return; }
+        if (pathname.startsWith('/api/project/')) { const slug = decodeURIComponent(pathname.slice(13)); const dir = projectDir(config, slug); if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; } send(res, 200, projectReview(config, slug)); return; }
         if (pathname.startsWith('/media/')) {
           const parts = pathname.slice(7).split('/').map(decodeURIComponent), slug = parts.shift() ?? '';
           const project = projectDir(config, slug), base = realpathSync(project), root = realpathSync(join(config.root, 'projects'));
@@ -108,7 +122,7 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
           serveFile(req, res, file, true); return;
         }
         const staticFile = pathname === '/' ? 'index.html' : pathname === '/app.js' ? 'app.js' : pathname === '/app.css' ? 'app.css' : '';
-        if (staticFile) { serveFile(req, res, join(staticDir, staticFile)); return; }
+        if (staticFile) { const built = join(buildDir, staticFile); serveFile(req, res, staticFile !== 'index.html' && existsSync(built) ? built : join(staticDir, staticFile)); return; }
       }
       if (req.method === 'PUT' && (pathname === '/api/budget' || pathname === '/api/providers')) {
         if (req.headers['x-requested-with'] !== 'bstudio') { send(res, 403, { error: 'Missing request header' }); return; }

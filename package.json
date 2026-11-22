@@ -26,8 +26,8 @@
   "scripts": {
     "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "build:ui": "esbuild src/dashboard/ui/app.js --bundle --format=esm --outfile=src/dashboard/build/app.js && esbuild src/dashboard/ui/app.css --bundle --outfile=src/dashboard/build/app.css",
-    "dev:ui": "esbuild src/dashboard/ui/app.js src/dashboard/ui/app.css --bundle --format=esm --outdir=src/dashboard/build --watch",
+    "build:ui": "esbuild src/dashboard/ui/app.js --bundle --format=esm --outfile=src/dashboard/build/app.js && esbuild src/dashboard/ui/app.css --bundle --loader:.woff2=dataurl --outfile=src/dashboard/build/app.css",
+    "dev:ui": "esbuild src/dashboard/ui/app.js src/dashboard/ui/app.css --bundle --format=esm --loader:.woff2=dataurl --outdir=src/dashboard/build --watch",
     "build": "npm run build:ui && tsc -p tsconfig.build.json && node -e \"require('node:fs').cpSync('src/dashboard/static', 'dist/dashboard/static', { recursive: true }); require('node:fs').cpSync('src/dashboard/build', 'dist/dashboard/static', { recursive: true })\"",
     "prepack": "npm run build"
   },
