@@ -16,9 +16,9 @@ Prerequisites: reconcile merged/merging PRs #7 (feedback.yml), #9 (dashboard rev
 
 ## 2. Slice B — Export and Market Blaster naming
 
-- [ ] 2.1 Update v1 and v2 manifest schemas and exporters with project/campaign fields and composite slug; test archive name, manifests, gates and collision handling.
+- [ ] 2.1 Update v1 and v2 manifest schemas and exporters with project/campaign fields and `<project>--<campaign>` composite slug; test archive name, manifests, gates and distinct hyphenated pairs.
 - [ ] 2.2 Pass composite slug to Market Blaster import/check and test actual importer compatibility and failure propagation without changing Market Blaster.
-- [ ] 2.3 Support local export without MB, optional project-level target and explicit validated `--mb` path, `--dir` and `--force`; suggest force after duplicate import and test local, target and duplicate paths.
+- [ ] 2.3 Support local export without MB, optional project-level target and explicit validated `--mb` path, `--dir` and `--force`; surface overwrite warnings, suggest force for approved-draft refusals and test both paths.
 - [ ] 2.4 Preserve timestamped export history and correctly derive exported state for zip and directory exports; test repeated exports remain downloadable and library shows exported.
 
 ## 3. Slice C — Job runner API
@@ -46,6 +46,6 @@ Prerequisites: reconcile merged/merging PRs #7 (feedback.yml), #9 (dashboard rev
 
 ## 6. Slice F — Documentation and Slipway end-to-end
 
-- [ ] 6.1 Update CLI, storage/migration/recovery, package/manifest, dashboard security/offline and component inventory documentation; document breaking addresses, composite collisions, CLI-only `install-skills`, `render-preview`, `sources propose`, `review --calibrate`, and P1/P2 deferral to beads.
+- [ ] 6.1 Update CLI, storage/migration/recovery, package/manifest, dashboard security/offline and component inventory documentation; document breaking addresses, unambiguous composite naming, CLI-only `install-skills`, `render-preview`, `sources propose`, `review --calibrate`, and P1/P2 deferral to beads.
 - [ ] 6.2 Add a Slipway end-to-end test creating a project with shared evidence and multiple campaigns, streaming jobs, exercising blockers and feedback, snapshot/restore, scoped reruns, local and MB export history/download and grouped status.
 - [ ] 6.3 Run focused migration, CLI, schema/import, shared-lock/restart, feedback/blocker, history, API security/job, offline and accessible responsive tests, plus the Slipway end-to-end test; verify no Market Blaster changes are required.

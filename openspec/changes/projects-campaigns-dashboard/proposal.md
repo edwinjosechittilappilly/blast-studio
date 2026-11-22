@@ -8,7 +8,7 @@ Blast Studio currently treats each campaign as a project, duplicating shared evi
 
 - **BREAKING**: Introduce projects containing campaigns; require `<project>/<campaign>` wherever the CLI previously accepted a campaign slug, and automatically migrate legacy single-campaign projects without losing files.
 - Add project metadata and shared evidence creation, merge shared and campaign-specific evidence into briefs, and group library and status by project.
-- **BREAKING**: Name campaign archives and Market Blaster import slugs `<project>-<campaign>` and include both identities in manifests, preserving Market Blaster compatibility without changes to it.
+- **BREAKING**: Name campaign archives and Market Blaster import slugs `<project>--<campaign>` and include both identities in manifests, preserving Market Blaster compatibility without changes to it.
 - Provide dashboard parity for supported workflows through validated, allowlisted jobs and narrow feedback writes; `install-skills`, `render-preview`, `sources propose`, and `review --calibrate` remain CLI-only.
 - Bundle IBM Carbon web components locally and provide an accessible, responsive, reusable review and command interface with a documented component inventory.
 - Add durable shared CLI/dashboard jobs and streamed progress, actionable blockers and review reasons, feedback management, scoped reruns, export history and downloads, and snapshots with restore.
