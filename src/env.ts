@@ -21,3 +21,21 @@ export function loadEnv(root: string, processEnv: Env = process.env, keychain?: 
   for (const key of ["GEMINI_API_KEY", "OPENAI_API_KEY"]) if (!env[key]) env[key] = keychain?.(key);
   return env;
 }
+
+export function loadEnvWithSources(
+  root: string, processEnv: Env, keychain: ((key: string) => string | undefined) | undefined, keys: string[],
+): { env: Env; sources: Record<string, "shell" | ".env" | "keychain" | "unset"> } {
+  const file = join(root, ".env");
+  const fileEnv = existsSync(file) ? parseDotenv(readFileSync(file, "utf8")) : {};
+  const env: Env = {};
+  const sources: Record<string, "shell" | ".env" | "keychain" | "unset"> = {};
+  for (const key of keys) {
+    if (processEnv[key]) { env[key] = processEnv[key]; sources[key] = "shell"; }
+    else if (fileEnv[key]) { env[key] = fileEnv[key]; sources[key] = ".env"; }
+    else {
+      env[key] = keychain?.(key);
+      sources[key] = env[key] ? "keychain" : "unset";
+    }
+  }
+  return { env, sources };
+}

@@ -32,13 +32,18 @@ export const run: Command = async (args, io) => {
   await check("VHS", "vhs", ["--version"], "install: brew install vhs");
   await check("Mermaid (mmdc)", "npx", ["--no-install", "mmdc", "--version"], "install: npm install (Mermaid is an optional dependency)", true);
   await check("D2", "d2", ["--version"], "install: brew install d2");
-  await check("Market Blaster", config.marketBlaster.command[0], [...config.marketBlaster.command.slice(1), "--help"], "install: npm install -g market-blaster");
+  await check("Market Blaster", config.marketBlaster.command[0], [...config.marketBlaster.command.slice(1), "--help"],
+    "install: gh repo clone edwinjosechittilappilly/market-blaster && cd market-blaster && npm install && npm link");
   const env = loadEnv(config.root, io.env, io.keychain);
-  for (const key of ["GEMINI_API_KEY", "OPENAI_API_KEY"]) {
-    const required = (key === "GEMINI_API_KEY" && config.images.provider === "gemini") ||
-      (key === "OPENAI_API_KEY" && (config.images.provider === "openai" || config.voice.provider === "openai"));
-    io.out(`${key}: ${env[key] ? "present" : `not set${required ? " (required)" : ""}; set it in the environment, studio .env, or Keychain`}`);
-    if (required && !env[key]) failed = true;
+  const keyNeeded: Record<string, boolean> = {
+    GEMINI_API_KEY: config.images.provider === "gemini",
+    OPENAI_API_KEY: config.images.provider === "openai" || config.voice.provider === "openai",
+  };
+  for (const [key, required] of Object.entries(keyNeeded)) {
+    // Only report keys for providers you selected; unused providers need no key.
+    if (!required) continue;
+    io.out(`${key}: ${env[key] ? "present" : "not set (required); run: bstudio auth set " + key + " or add it to the studio .env"}`);
+    if (!env[key]) failed = true;
   }
   const omp = await check("omp generate_image.enabled", "omp", ["config", "get", "generate_image.enabled"],
     "install: https://github.com/can1357/oh-my-pi; enable generate_image.enabled in omp config", config.images.provider === "omp");

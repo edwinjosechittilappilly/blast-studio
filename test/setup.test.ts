@@ -46,8 +46,14 @@ test("doctor reports tool status without leaking keys and fails on required fail
   const io = fakeIO({ cwd: home, env: { HOME: home, BSTUDIO_CONFIG: join(home, "studio.yml"), GEMINI_API_KEY: "secret" },
     run: async (cmd, args) => { calls.push(`${cmd} ${args.join(" ")}`); return cmd === "omp" ? "false" : "v1"; } });
   assert.equal(await main(["doctor"], io), 0);
-  assert.match(io.text(), /GEMINI_API_KEY: present/);
-  assert.doesNotMatch(io.text(), /secret/);
+  assert.doesNotMatch(io.text(), /GEMINI_API_KEY/, "no key line while images.provider is none");
+  const configFile = join(home, "studio.yml");
+  writeFileSync(configFile, `${readFileSync(configFile, "utf8")}images:\n  provider: gemini\n`);
+  const withGemini = fakeIO({ cwd: home, env: { HOME: home, BSTUDIO_CONFIG: configFile, GEMINI_API_KEY: "secret" },
+    run: async (cmd) => cmd === "omp" ? "false" : "v1" });
+  assert.equal(await main(["doctor"], withGemini), 0);
+  assert.match(withGemini.text(), /GEMINI_API_KEY: present/);
+  assert.doesNotMatch(withGemini.text(), /secret/);
   assert.match(io.text(), /Budget: \$0\/month/);
   assert.ok(calls.some((call) => call.startsWith("ffmpeg -version")));
   const missing = fakeIO({ cwd: home, env: { HOME: home, BSTUDIO_CONFIG: join(home, "studio.yml") }, run: async () => { throw new Error("missing"); } });

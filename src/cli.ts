@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { createInterface, type Interface } from "node:readline/promises";
 import { run as accept } from "./commands/accept.ts";
+import { run as auth } from "./commands/auth.ts";
 import { run as brief } from "./commands/brief.ts";
 import { run as budget } from "./commands/budget.ts";
 import { run as dashboard } from "./commands/dashboard.ts";
@@ -39,6 +40,7 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
   revise: { summary: "apply review findings, re-render, re-review: revise <slug>", run: revise },
   accept: { summary: "human override of scores (never gates): accept <slug> <platform> --reason …", run: accept },
   budget: { summary: "paid generation caps: budget [show | set <usd> | set-project <usd>]", run: budget },
+  auth: { summary: "provider keys in the macOS Keychain: auth set <KEY> [--stdin] | auth list", run: auth },
   export: { summary: "hand passed posts to Market Blaster: export <slug> [--mb <project>] [--force]", run: exportProject },
   mark: { summary: "record a manual post (Shorts, Reels, TikTok, daily.dev): mark <slug> <platform> --url U", run: mark },
   status: { summary: "projects, verdicts, spend and source health: status [<slug>]", run: status },
