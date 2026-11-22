@@ -10,7 +10,7 @@ import { command, notice, runJob, table, tag } from './health.js';
 
 const money = value => `$${Number(value || 0).toFixed(2)}`;
 function field(tagName, label, value, helper) {
-  const node = el(tagName); node.setAttribute('label-text', label); if (helper) node.setAttribute('helper-text', helper); if (value != null) node.value = String(value); return node;
+  const node = el(tagName); node.setAttribute(tagName === 'cds-select' ? 'label-text' : 'label', label); if (helper) node.setAttribute('helper-text', helper); if (value != null) node.value = String(value); return node;
 }
 function select(label, value, options) {
   const node = field('cds-select', label, null); for (const [id, text] of options) { const item = el('cds-select-item', text); item.setAttribute('value', id); if (id === value) item.setAttribute('selected', ''); node.append(item); } node.value = value; return node;

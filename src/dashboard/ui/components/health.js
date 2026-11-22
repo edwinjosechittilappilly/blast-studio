@@ -42,7 +42,7 @@ export function parseDoctor(log) {
   return log.split(/\r?\n/).filter(Boolean).map(line => {
     const match = /^([^:]+):\s*(.*)$/.exec(line);
     if (!match) return { tool: 'Studio', status: /disabled|missing|error/i.test(line) ? 'Attention' : 'Info', version: '', hint: line };
-    const [, tool, result] = match, parts = result.split(/;\s*/, 2), problem = /^(missing|not set)/i.test(result) || /requires Node/i.test(result);
+    const [, tool, result] = match, parts = result.split(/;\s*/, 2), problem = /^(missing|not set)/i.test(result) || /requires Node/i.test(result) || (tool === 'omp generate_image.enabled' && /^(false|disabled)$/i.test(result));
     return { tool, status: problem ? 'Attention' : 'Available', version: parts[0], hint: parts[1] || '' };
   });
 }

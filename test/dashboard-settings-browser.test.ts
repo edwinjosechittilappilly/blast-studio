@@ -33,7 +33,7 @@ test('health check renders doctor job results and a copyable fix', async t => {
   await page.route('**/api/jobs/health-job', route => route.fulfill({ json: { id: 'health-job', state: 'failed' } }));
   await page.goto(url); await page.getByRole('link', { name: 'Health check' }).click();
   await page.getByRole('button', { name: 'Run health check' }).click();
-  await page.getByText('Playwright Chromium').waitFor();
+  await page.getByRole('cell', { name: 'Playwright Chromium', exact: true }).waitFor();
   assert.equal(await page.getByText('Attention', { exact: true }).count(), 1);
   assert.equal(await page.getByRole('button', { name: 'Copy fix' }).count(), 1);
   assert.equal(await page.getByRole('button', { name: 'Run again' }).count(), 1);
