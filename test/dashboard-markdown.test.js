@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseMarkdown, parseInline, renderMarkdown } from '../src/dashboard/static/markdown.js';
 import { campaignPath } from '../src/dashboard/ui/components/api.js';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { runInNewContext } from 'node:vm';
 
@@ -57,8 +59,11 @@ test('markdown DOM rendering creates only safe links and text', () => {
 });
 
 test('built dashboard assets contain no external HTTPS references', () => {
-  execFileSync(process.execPath, ['src/dashboard/ui/build.mjs']);
-  for (const file of ['src/dashboard/build/app.css', 'src/dashboard/build/app.js']) assert.doesNotMatch(readFileSync(file, 'utf8'), /https:\/\//);
+  const dir = mkdtempSync(join(tmpdir(), 'bstudio-ui-build-'));
+  try {
+    execFileSync(process.execPath, ['src/dashboard/ui/build.mjs'], { env: { ...process.env, BSTUDIO_UI_OUTDIR: dir } });
+    for (const file of ['app.css', 'app.js']) assert.doesNotMatch(readFileSync(join(dir, file), 'utf8'), /https:\/\//);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 function dashboardHarness() {
