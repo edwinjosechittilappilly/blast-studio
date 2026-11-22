@@ -92,6 +92,7 @@ export interface PlatformPack {
   textLimit?: Sourced<number>;
   titleLimit?: Sourced<number>;
   media: MediaSpec[];
+  accessibility?: { minFontPx?: number; minContrast?: number; minContrastLarge?: number; largeTextPx?: number };
   disclosure: { text: DisclosureRule; media: DisclosureRule; voice: DisclosureRule };
   sponsorship?: DisclosureRule;
   rubric: Criterion[];
@@ -162,7 +163,8 @@ export interface Post {
   platform: PlatformId;
   title?: string;
   evidence: string[];
-  disclosure?: { text?: string; media?: string; voice?: string };
+  disclosure?: { text?: string; media?: string; voice?: string; sponsorship?: string };
+  sponsored?: boolean;
   media: PostMedia[];
   /** Thread items after the first post (exported as a handoff file). */
   thread?: string[];
@@ -184,7 +186,7 @@ export interface AssetMeta {
   /** Logos only: a human ran a trademark search. */
   trademarkChecked?: boolean;
   /** Render metrics per output (stills): smallest text, worst contrast (null when text sits on an image), overflow. */
-  metrics?: { file: string; minFontPx: number; minContrast: number | null; overflow: boolean }[];
+  metrics?: { file: string; minFontPx: number | null; minContrast: number | null; overflow: boolean; texts?: string[]; nodes?: { text: string; fontPx: number; bold?: boolean; contrast: number | null; overflow: boolean }[] }[];
 }
 
 export interface GateResult {
@@ -207,6 +209,7 @@ export type Verdict = "pass" | "revise" | "blocked" | "accepted";
 export interface Review {
   platform: PlatformId;
   postHash: string;
+  mediaHash?: string;
   gates: GateResult[];
   warnings: string[];
   scores: ScoreResult[];

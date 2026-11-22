@@ -1,6 +1,5 @@
-import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { loadConfig, projectDir } from '../config.ts';
@@ -13,6 +12,7 @@ import { UserError, type AssetMeta, type Criterion, type Post, type ScoreResult,
 import { runGates } from '../review/gates.ts';
 import { runReviewer } from '../review/reviewer.ts';
 import { totalScore, verdict } from '../review/score.ts';
+import { mediaContentHash, reviewHash } from '../review-hash.ts';
 
 export function agreement(rows: { expected: ScoreResult[]; actual: ScoreResult[] }[]): Record<string, number> {
   const counts: Record<string, { total: number; match: number }> = {};
@@ -27,8 +27,8 @@ async function calibrate(config: StudioConfig, io: IO): Promise<void> {
   const dir = fileURLToPath(new URL('../../test/fixtures/reviews/', import.meta.url));
   const rows: { expected: ScoreResult[]; actual: ScoreResult[] }[] = [];
   for (const file of readdirSync(dir).filter(f => f.endsWith('.json')).sort()) {
-    const fixtures = JSON.parse(readFileSync(join(dir, file), 'utf8')) as { post: Post; brief: string; expected: ScoreResult[]; rubric: Criterion[] }[];
-    for (const fixture of fixtures) rows.push({ expected: fixture.expected, actual: await runReviewer({ config, io, post: fixture.post, brief: fixture.brief, rubric: fixture.rubric }) });
+    const fixtures = JSON.parse(readFileSync(join(dir, file), 'utf8')) as { post: Post; brief: string; expected: ScoreResult[]; rubric: Criterion[]; hooks?: string[] }[];
+    for (const fixture of fixtures) rows.push({ expected: fixture.expected, actual: await runReviewer({ config, io, post: fixture.post, brief: fixture.brief, rubric: fixture.rubric, hooks: fixture.hooks }) });
   }
   for (const [id, percent] of Object.entries(agreement(rows))) io.out(`${id}: ${percent.toFixed(1)}% exact agreement`);
 }
@@ -48,22 +48,28 @@ export const run: Command = async (args, io) => {
   for (const post of posts.values()) {
     const pack = loadPack(post.platform), entry = plan.find(p => p.platform === post.platform);
     if (!entry) throw new UserError(`No plan for ${post.platform}`);
-    const gates = runGates(post, pack, assets, brief, config);
+    const gates = runGates(post, pack, assets, brief, config, dir);
     const rubric = pack.ai === 'outline' ? pack.outlineRubric ?? [] : pack.rubric;
     const visualFiles = post.media.map(m => m.file);
     for (const media of post.media.filter(m => m.kind === 'video')) {
       const frames = join('assets', media.asset, 'out', 'frames'), absolute = join(dir, frames);
       if (existsSync(absolute)) visualFiles.push(...readdirSync(absolute).filter(f => f.endsWith('.png')).map(f => join(frames, f)));
     }
-    const scores = config.reviewer.command ? await runReviewer({ config, io, post, brief: JSON.stringify(brief), rubric, hooks: entry.hooks, projectDir: dir, visualFiles, evidence: { assets, gates, warnings: gates.warnings, visualFiles } }) : [];
+    const scores: ScoreResult[] & { hookComparisons?: { preferred: string | null; evidence: string }[] } = config.reviewer.command ? await runReviewer({ config, io, post, brief: JSON.stringify(brief), rubric, hooks: entry.hooks, projectDir: dir, visualFiles, evidence: { assets, gates, warnings: gates.warnings, visualFiles } }) : [];
     for (const criterion of rubric) if (criterion.appliesTo && !criterion.appliesTo.includes(entry.type)) {
       const score = scores.find(s => s.criterion === criterion.id); if (score) score.score = null;
     }
     const total = totalScore(scores, rubric, entry.type);
-    const hashInput = `${post.title ?? ''}\n---\n${post.body.trim()}\n---\n${post.media.map(m => `${basename(m.file)}|${m.alt.trim()}`).join('\n')}`;
-    const review = { platform: post.platform, postHash: createHash('sha256').update(hashInput).digest('hex'), gates: [...gates], warnings: gates.warnings, scores, total, verdict: verdict(gates, total, config.review.threshold), reviewer: config.reviewer.command?.join(' ') ?? 'deterministic', at: new Date().toISOString() };
+    const postHash = reviewHash({ ...post, media: post.media.map(m => ({ path: m.file, alt: m.alt })) });
+    const mediaHash = mediaContentHash(dir, post.media);
+    const reviewFile = join(dir, 'reviews', `${post.platform}.json`);
+    let prior: { postHash?: string; mediaHash?: string; gates?: typeof gates; verdict?: string; acceptedReason?: string } | undefined;
+    try { prior = JSON.parse(readFileSync(reviewFile, 'utf8')); } catch { /* no previous review */ }
+    const preserve = prior?.verdict === 'accepted' && prior.postHash === postHash && prior.mediaHash === mediaHash && JSON.stringify(prior.gates) === JSON.stringify([...gates]);
+    const review = { platform: post.platform, postHash, mediaHash, gates: [...gates], warnings: gates.warnings, scores, ...(scores.hookComparisons ? { hookComparisons: scores.hookComparisons } : {}), total, verdict: preserve ? 'accepted' : verdict(gates, total, config.review.threshold), ...(preserve ? { acceptedReason: prior?.acceptedReason } : {}), reviewer: config.reviewer.command?.join(' ') ?? 'deterministic', at: new Date().toISOString() };
     writeFileSync(join(dir, 'reviews', `${post.platform}.json`), JSON.stringify(review, null, 2) + '\n');
     summaries.push(`## ${post.platform}: ${review.verdict}${total === null ? '' : ` (${total.toFixed(1)}%)`}`, ...gates.filter(g => !g.pass).map(g => `- ${g.id}: ${g.message}`), ...gates.warnings.map(w => `- Warning: ${w}`), ...scores.map(s => `- ${s.criterion}: ${s.score ?? 'N/A'} — ${s.evidence}; ${s.fix}`), ...(!config.reviewer.command ? rubric.map(c => `- [ ] ${c.question}`) : []), '');
+    for (const comparison of scores.hookComparisons ?? []) summaries.push(`- Hook preference: ${comparison.preferred ?? 'N/A'} — ${comparison.evidence}`);
     io.out(`${post.platform}: ${review.verdict}${total === null ? '' : ` (${total.toFixed(1)}% editorial judgment)`}`);
     if (!config.reviewer.command) for (const criterion of rubric) io.out(`[ ] ${criterion.question}`);
   }

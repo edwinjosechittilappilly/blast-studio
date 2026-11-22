@@ -1,0 +1,17 @@
+[
+  {"body":"In 2024 we released v2.1 with 3 features.","brief":"","pass":true},
+  {"body":"1. First\n2. Second\n`version 3.5`","brief":"","pass":true},
+  {"body":"5%","brief":"15%","pass":false},
+  {"body":"5%","brief":"0.5%","pass":false},
+  {"body":"2x","brief":"12x","pass":false},
+  {"body":"$500","brief":"","pass":false},
+  {"body":"10X faster","brief":"","pass":false},
+  {"body":"3× faster","brief":"","pass":false},
+  {"body":"50 percent","brief":"","pass":false},
+  {"body":"three users","brief":"","pass":false},
+  {"body":"20 stars","brief":"","pass":false},
+  {"body":"1,000 downloads","brief":"1k downloads","pass":true},
+  {"body":"three users","brief":"3 users","pass":true},
+  {"body":"50 percent","brief":"50%","pass":true},
+  {"body":"3× faster","brief":"3x faster","pass":true}
+]

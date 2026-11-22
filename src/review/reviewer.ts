@@ -9,7 +9,7 @@ import { analyzeSlop } from './slop.ts';
 
 const schema = JSON.parse(readFileSync(fileURLToPath(new URL('../../schemas/review.schema.json', import.meta.url)), 'utf8')) as object;
 const validate = new Ajv({ allErrors: true }).compile(schema);
-export async function runReviewer(input: { config: StudioConfig; io: IO; post: Post; rubric: Criterion[]; brief: string; hooks?: string[]; evidence?: unknown; projectDir?: string; visualFiles?: string[] }): Promise<ScoreResult[]> {
+export async function runReviewer(input: { config: StudioConfig; io: IO; post: Post; rubric: Criterion[]; brief: string; hooks?: string[]; evidence?: unknown; projectDir?: string; visualFiles?: string[] }): Promise<ScoreResult[] & { hookComparisons?: { preferred: string | null; evidence: string }[] }> {
   const { config, io, post, rubric } = input;
   const command = config.reviewer.command;
   if (!command?.length) throw new UserError('No reviewer configured');
@@ -29,32 +29,35 @@ export async function runReviewer(input: { config: StudioConfig; io: IO; post: P
   }
   const calls = input.hooks && input.hooks.length > 1 ? 2 : 1;
   const results: ScoreResult[][] = [];
-  let attempts = 0;
+  const comparisons: { preferred: string | null; evidence: string }[] = [];
   try {
     for (let order = 0; order < calls; order++) {
       const hooks = input.hooks && (order ? [...input.hooks].reverse() : input.hooks);
-      const prompt = `${base}\n<untrusted-hooks>${JSON.stringify(hooks ?? []).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}</untrusted-hooks>`;
-      let parsed: { scores: ScoreResult[] } | undefined;
+      const prompt = `${base}\n${calls > 1 ? 'Also return hookComparison: {"preferred": index or null, "evidence": "reason"}, with the zero-based index of the preferred hook in the displayed order.' : ''}\n<untrusted-hooks>${JSON.stringify(hooks ?? []).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}</untrusted-hooks>`;
+      let parsed: { scores: ScoreResult[]; hookComparison?: { preferred: number | null; evidence: string } } | undefined;
       for (let attempt = 0; attempt < 2; attempt++) {
-        if (++attempts > 2) throw new UserError('Reviewer call limit reached after invalid response');
         const raw = await io.run(command[0], [...command.slice(1), prompt + (attempt ? '\nYour prior response was invalid; return schema-compliant JSON only.' : '')], { cwd: dir, env, timeoutMs: config.reviewer.timeoutSeconds * 1000 });
         try {
-          const value: unknown = JSON.parse(raw);
+          const fenced = raw.trim().match(/^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/i);
+          const value: unknown = JSON.parse(fenced ? fenced[1] : raw);
           if (validate(value)) {
-            const candidate = value as { scores: ScoreResult[] };
+            const candidate = value as { scores: ScoreResult[]; hookComparison?: { preferred: number | null; evidence: string } };
             const ids = candidate.scores.map(s => s.criterion);
-            if (ids.length === rubric.length && new Set(ids).size === rubric.length && rubric.every(c => ids.includes(c.id))) parsed = candidate;
+            const comparison = candidate.hookComparison;
+            if (ids.length === rubric.length && new Set(ids).size === rubric.length && rubric.every(c => ids.includes(c.id)) && (calls === 1 || comparison && (comparison.preferred === null || comparison.preferred < hooks!.length))) parsed = candidate;
           }
         } catch { /* retry malformed JSON */ }
         if (parsed) break;
       }
       if (!parsed) throw new UserError('Reviewer returned invalid JSON twice');
       results.push(parsed.scores);
+      if (calls > 1 && parsed.hookComparison) comparisons.push({ preferred: parsed.hookComparison.preferred === null ? null : hooks![parsed.hookComparison.preferred], evidence: parsed.hookComparison.evidence });
     }
     if (results.length === 1) return results[0];
-    return results[0].map(first => {
+    const scores = results[0].map(first => {
       const second = results[1].find(s => s.criterion === first.criterion)!;
-      return { ...first, score: first.score === null || second.score === null ? null : Math.min(first.score, second.score) as 0 | 1 | 2, evidence: `${first.evidence} / reverse order: ${second.evidence}`, fix: first.fix === second.fix ? first.fix : `${first.fix}; reverse order: ${second.fix}` };
+      return { ...first, score: first.score === null ? second.score : second.score === null ? first.score : Math.min(first.score, second.score) as 0 | 1 | 2, evidence: `${first.evidence} / reverse order: ${second.evidence}`, fix: first.fix === second.fix ? first.fix : `${first.fix}; reverse order: ${second.fix}` };
     });
+    return Object.assign(scores, { hookComparisons: comparisons });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 }

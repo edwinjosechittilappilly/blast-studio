@@ -4,6 +4,15 @@
   "additionalProperties": false,
   "required": ["scores"],
   "properties": {
+    "hookComparison": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preferred", "evidence"],
+      "properties": {
+        "preferred": { "type": ["integer", "null"], "minimum": 0 },
+        "evidence": { "type": "string", "minLength": 1 }
+      }
+    },
     "scores": {
       "type": "array",
       "items": {
