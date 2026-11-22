@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { request } from 'node:http';
 import { loadConfig } from '../src/config.ts';
-import { loadLibrary } from '../src/library.ts';
+import { loadLibrary, latestSources } from '../src/library.ts';
 import { startDashboard } from '../src/dashboard/server.ts';
 import { run as status } from '../src/commands/status.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
@@ -17,7 +17,7 @@ function fixture() {
     'projects/launch/reviews/linkedin.json': JSON.stringify({ platform: 'linkedin', verdict: 'pass', total: 90, scores: [] }),
     'projects/launch/assets/card/asset.yml': 'id: card\nkind: card\noutputs: []\naiGenerated: false\ncostUsd: 0\n',
     'projects/launch/published.json': '{"linkedin":{"url":"https://example.com"}}',
-    'updates/2099-01-01.md': '# Report\n## source-a: failed\n## source-b: manual\n',
+    'updates/2099-01-01.md': '# Report\n## source-a: failed\n## source-b: manual\n## source-c: changed\n',
   });
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') } });
   return { root, io };
@@ -32,7 +32,19 @@ test('library and status derive live project data', async () => {
   assert.ok(loadLibrary(config)[0].published);
   writeFileSync(join(root, 'projects/launch/posts/linkedin.md'), '---\nplatform: linkedin\nevidence: []\nmedia: []\n---\nChanged text');
   assert.equal(loadLibrary(config, 'changed').length, 1);
-  await status([], io); assert.match(io.text(), /linkedin: pass \(90\/100\)/); assert.match(io.text(), /source-a: failed/); assert.match(io.text(), /source-b: manual/);
+  const unverified = latestSources(config).unverified;
+  assert.ok(unverified.length > 0);
+  const platformCount = new Set(unverified.map(field => field.split('.')[0])).size;
+  await status([], io);
+  assert.match(io.text(), /linkedin: pass \(90\/100\)/);
+  assert.match(io.text(), /source-a: failed/);
+  assert.match(io.text(), /source-c: changed/);
+  assert.ok(io.stdout.includes(`Unverified pack fields: ${unverified.length} across ${platformCount} platforms (bstudio sources verify <id>)`));
+  assert.ok(!io.stdout.includes(`  ${unverified[0]}`));
+  assert.doesNotMatch(io.text(), /source-b: manual/);
+  const verbose = fakeIO({ cwd: root, env: io.env });
+  await status(['launch', '--verbose'], verbose);
+  assert.ok(unverified.every(field => verbose.stdout.includes(`  ${field}`)));
 });
 test('dashboard authenticates, contains media and validates settings', async t => {
   const { root, io } = fixture(); const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());

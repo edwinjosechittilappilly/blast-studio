@@ -5,11 +5,13 @@ import type { Command } from '../io.ts';
 import { UserError } from '../types.ts';
 
 export const run: Command = async (args, io) => {
-  if (args.length > 1) throw new UserError('usage: bstudio status [<slug>]');
-  const config = loadConfig(io);
-  if (args[0]) projectDir(config, args[0]);
-  const projects = loadLibrary(config).filter(p => !args[0] || p.slug === args[0]);
-  if (args[0] && !projects.length) throw new UserError(`Project not found: ${args[0]}`);
+  const verbose = args.includes('--verbose');
+  const positional = args.filter(arg => arg !== '--verbose');
+  if (positional.length > 1 || args.filter(arg => arg === '--verbose').length > 1 || positional.some(arg => arg.startsWith('--'))) throw new UserError('usage: bstudio status [<slug>] [--verbose]');
+  const config = loadConfig(io), slug = positional[0];
+  if (slug) projectDir(config, slug);
+  const projects = loadLibrary(config).filter(p => !slug || p.slug === slug);
+  if (slug && !projects.length) throw new UserError(`Project not found: ${slug}`);
   for (const project of projects) {
     io.out(project.slug);
     for (const platform of new Set([...project.posts.map(p => p.platform), ...project.reviews.map(r => r.platform)])) {
@@ -20,6 +22,9 @@ export const run: Command = async (args, io) => {
   io.out(`Month to date: $${monthToDate(config.root).toFixed(2)} / $${config.budget.monthlyUsd.toFixed(2)}`);
   const sources = latestSources(config);
   io.out(`Last source check: ${sources.lastCheck ?? 'never'}`);
-  for (const line of [...sources.failed, ...sources.unverified]) io.out(line);
+  for (const line of [...sources.failed, ...sources.changed]) io.out(line);
+  const platforms = new Set(sources.unverified.map(field => field.split('.')[0]));
+  io.out(`Unverified pack fields: ${sources.unverified.length} across ${platforms.size} platforms (bstudio sources verify <id>)`);
+  if (verbose) for (const field of sources.unverified) io.out(`  ${field}`);
   return 0;
 };
