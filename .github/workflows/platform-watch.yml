@@ -103,14 +103,26 @@ jobs:
       contents: write
       pull-requests: write
     steps:
+      - id: app_credentials
+        env:
+          APP_ID: ${{ secrets.PLATFORM_WATCH_APP_ID }}
+          APP_PRIVATE_KEY: ${{ secrets.PLATFORM_WATCH_APP_PRIVATE_KEY }}
+        run: |
+          if [ -n "$APP_ID" ] && [ -n "$APP_PRIVATE_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Using GITHUB_TOKEN; CI will not automatically run for this pull request."
+          fi
       - uses: actions/create-github-app-token@67018539274d69449ef7c02e8e71183d1719ab42 # v2.1.4
+        if: steps.app_credentials.outputs.available == 'true'
         id: app
         with:
           app-id: ${{ secrets.PLATFORM_WATCH_APP_ID }}
           private-key: ${{ secrets.PLATFORM_WATCH_APP_PRIVATE_KEY }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ steps.app.outputs.token }}
+          token: ${{ steps.app.outputs.token || github.token }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -121,7 +133,7 @@ jobs:
           path: ${{ runner.temp }}/proposal
       - name: Apply restricted patch and open PR
         env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
         run: |
           patch="$RUNNER_TEMP/proposal/proposal.patch"
           if [ -s "$patch" ]; then git apply --check "$patch"; git apply "$patch"; fi
