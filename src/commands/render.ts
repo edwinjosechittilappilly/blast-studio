@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse, stringify } from 'yaml';
@@ -45,7 +45,7 @@ export const run: Command = async (args, io) => {
       const variants = [...new Map(dimensions.map(d => [`${d.width}x${d.height}`, d])).values()];
       const { width, height } = variants[0];
       const html = (file: string) => { const text = readFileSync(file, 'utf8'), base = `<base href="${pathToFileURL(`${dirname(file)}/`).href}">`; return /<head(?:\s[^>]*)?>/i.test(text) ? text.replace(/<head(?:\s[^>]*)?>/i, `$&${base}`) : base + text; };
-      const still = async (source: string, dest: string, width: number, height: number) => { const result = await renderHtml({ html: html(source), width, height, out: dest, assetDir: dir, projectDir: project }); add(dest, width, height); metrics.push({ file: `out/${basename(dest)}`, minFontPx: result.metrics.minFontPx, minContrast: result.metrics.minContrast, overflow: result.metrics.overflow, nodes: result.metrics.nodes, texts: result.metrics.nodes.map(n => n.text) }); for (const file of result.loadedFiles) { const parts = relative(join(project, 'assets'), file).split(sep); if (parts.length >= 3 && parts[1] === 'out' && parts[0] !== '..' && parts[0] !== asset.id) raw.embeds = [...new Set([...(raw.embeds ?? []), parts[0]])]; } };
+      const still = async (source: string, dest: string, width: number, height: number) => { const result = await renderHtml({ html: html(source), width, height, out: dest, assetDir: dir, projectDir: project }); add(dest, width, height); metrics.push({ file: `out/${basename(dest)}`, minFontPx: result.metrics.minFontPx, minContrast: result.metrics.minContrast, overflow: result.metrics.overflow, nodes: result.metrics.nodes, texts: result.metrics.nodes.map(n => n.text) }); for (const file of result.loadedFiles) { const parts = relative(realpathSync(join(project, 'assets')), file).split(sep); if (parts.length >= 3 && parts[1] === 'out' && parts[0] !== '..' && parts[0] !== asset.id) raw.embeds = [...new Set([...(raw.embeds ?? []), parts[0]])]; } };
       if (asset.kind === 'video' || asset.kind === 'terminal-demo') {
         const voiceId = (raw as AssetMeta & { voiceover?: string }).voiceover;
         let voice: string | undefined;
