@@ -126,14 +126,14 @@ export const run: Command = async (args, io) => {
     if (!reviews.length) { if (pending.length) break; throw new UserError('Run review before revise'); }
     if (reviews.every(r => r.verdict === 'pass' || r.verdict === 'accepted')) { if (!pending.length && round === 0) io.out('Nothing to revise'); break; }
     if (reviews.some(r => r.verdict === 'blocked')) throw new UserError(`Blocked rights require human resolution before revision: ${reviews.flatMap(r => (r.gates ?? []).filter(g => g.id === 'rights' && !g.pass).map(g => g.message)).join('; ')}`);
-    if (round >= config.review.maxRounds) throw new UserError(`Revision round limit (${config.review.maxRounds}) reached without a passing review`);
     const failing = reviews.filter(r => r.verdict !== 'pass' && r.verdict !== 'accepted');
     const findings = failing.map(review => ({ ...review, gates: (review.gates ?? []).map(gate => {
       if (gate.id !== 'specs' || gate.pass) return gate;
       const remaining = gate.message.split('; ').filter(message => !message.startsWith('Blocker in '));
       return { ...gate, pass: remaining.length === 0, message: remaining.join('; ') || 'Passed' };
     }) }));
-    if (failing.some(r => (r.gates ?? []).some(g => !g.pass && g.id === 'specs' && g.message.includes('Blocker in '))) && findings.every(r => r.gates.every(g => g.pass) && !(r.scores ?? []).some(score => score.score !== null && score.score < 2))) throw new UserError(`Resolve blockers in the brief or artifact metadata, then run bstudio review ${slug}`);
+    if (failing.some(r => (r.gates ?? []).some(g => !g.pass && g.id === 'specs' && g.message.includes('Blocker in '))) && findings.every(r => r.gates.every(g => g.pass) && !(r.scores ?? []).some(score => score.score !== null && score.score < 2))) throw new UserError(`${groups.size ? 'Feedback applied; resolve' : 'Resolve'} blockers in the brief or artifact metadata, then run bstudio review ${slug}`);
+    if (round >= config.review.maxRounds) throw new UserError(`Revision round limit (${config.review.maxRounds}) reached without a passing review`);
     const posts = loadPosts(dir);
     const assetClosure = (ids: string[]) => {
       const result = new Set<string>();

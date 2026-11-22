@@ -29,7 +29,7 @@ Projects are stored in the studio root and copied into temporary agent workspace
 
 Scope reruns with `--platforms=bluesky` or `--assets=logo` (space forms also work). Unknown IDs fail before the agent runs. Agent-declared blockers appear after make and fail the specs gate; review prints failing gates, suggested fixes and the review file path.
 
-Blockers are arrays of non-empty strings in post frontmatter or asset metadata. Resolve the underlying issue in the brief or source, then remove the resolved blocker from that file or run a fresh make; revise preserves existing blockers and cannot clear them. Re-run review afterward.
+Blockers are arrays of non-empty strings in post frontmatter or asset metadata; an empty `blockers:` field is treated as absent. Resolve the underlying issue in the brief or source, then remove the resolved blocker from that file or run a fresh make; revise preserves existing blockers and cannot clear them. Re-run review afterward.
 
 ## Render, review and revise
 

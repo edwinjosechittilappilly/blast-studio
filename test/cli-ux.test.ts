@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -13,6 +15,7 @@ import { run as review } from '../src/commands/review.ts';
 import { run as render } from '../src/commands/render.ts';
 import { loadFeedback, markApplied } from '../src/feedback.ts';
 import { historyEntries, snapshot } from '../src/history.ts';
+import { UserError } from '../src/types.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 function fixture() {
@@ -101,6 +104,7 @@ test('scoped plan adds newly enabled platforms and snapshots the previous plan',
   const text = readFileSync(join(dir, 'plan.yml'), 'utf8');
   assert.match(text, /bluesky/); assert.match(text, /threads/);
   assert.match(readFileSync(join(dir, 'history', historyEntries(dir)[0], 'plan.yml'), 'utf8'), /bluesky/);
+  assert.equal(io.stderr.some(line => line.includes('plan.scoped.yml')), false);
 });
 
 test('empty and incompatible scopes fail before agent invocation', async () => {
@@ -164,6 +168,41 @@ test('history retains 20 snapshots, links unchanged output, and restores removed
   assert.equal(existsSync(join(dir, 'assets/logo/out/new.png')), false);
   assert.equal(readFileSync(join(dir, 'assets/logo/out/image.png'), 'utf8'), 'image');
   assert.equal(historyEntries(dir).length, 20);
+});
+
+test('snapshot falls back to copies when hardlinks are unavailable', t => {
+  const { dir } = fixture();
+  mkdirSync(join(dir, 'assets/logo/out'), { recursive: true });
+  writeFileSync(join(dir, 'assets/logo/out/image.png'), 'image');
+  snapshot(dir, 'make');
+  writeFileSync(join(dir, 'posts/bluesky.md'), 'changed');
+  let calls = 0;
+  t.mock.method(fs, 'linkSync', () => { calls++; throw Object.assign(new Error('unsupported'), { code: 'EPERM' }); });
+  syncBuiltinESMExports();
+  try { snapshot(dir, 'render'); }
+  finally { t.mock.restoreAll(); syncBuiltinESMExports(); }
+  assert.ok(calls > 0);
+  const entries = historyEntries(dir);
+  assert.equal(entries.length, 2);
+  assert.equal(readFileSync(join(dir, 'history', entries[0], 'assets/logo/out/image.png'), 'utf8'), 'image');
+  assert.notEqual(statSync(join(dir, 'history', entries[0], 'assets/logo/out/image.png')).ino, statSync(join(dir, 'history', entries[1], 'assets/logo/out/image.png')).ino);
+});
+
+test('feedback on a missing project reports a user error', async () => {
+  const { io } = fixture();
+  for (const args of [['missing', 'add', '--note', 'Note'], ['missing', 'rm', 'id']]) {
+    await assert.rejects(feedback(args, io), (error: unknown) => error instanceof UserError && error.message === 'Project not found: missing');
+  }
+});
+
+test('empty blockers in frontmatter are treated as absent', async () => {
+  const { dir, io } = fixture();
+  for (const value of ['', 'null', '[]']) {
+    writeFileSync(join(dir, 'posts/bluesky.md'), `---\nplatform: bluesky\nevidence: [E1]\nmedia: []\nblockers: ${value}\n---\nOriginal\n`);
+    await review(['demo'], io);
+    const result = JSON.parse(readFileSync(join(dir, 'reviews/bluesky.json'), 'utf8'));
+    assert.equal(result.gates.find((gate: { id: string }) => gate.id === 'specs').pass, true);
+  }
 });
 
 test('feedback writes respect revision lock', async () => {

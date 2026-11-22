@@ -1,4 +1,4 @@
-import { closeSync, openSync, unlinkSync } from 'node:fs';
+import { closeSync, existsSync, openSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadConfig, projectDir } from '../config.ts';
@@ -11,6 +11,7 @@ export const run: Command = async (args, io) => {
   const usage = 'usage: bstudio feedback <slug> list | add --note <text> [--asset <id> | --platform <id>] | rm <id>';
   if (!slug || !action) throw new UserError(usage);
   const dir = projectDir(loadConfig(io), slug);
+  if (!existsSync(dir)) throw new UserError(`Project not found: ${slug}`);
   let lock: number | undefined;
   if (action === 'add' || action === 'rm') {
     try { lock = openSync(join(dir, '.revise.lock'), 'wx'); }

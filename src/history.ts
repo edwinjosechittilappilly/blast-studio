@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { closeSync, cpSync, existsSync, linkSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
+import { cpSync, existsSync, linkSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { UserError } from './types.ts';
 
@@ -13,16 +13,7 @@ export function historyEntries(dir: string): string[] {
 function sameFile(a: string, b: string): boolean {
   if (!existsSync(b)) return false;
   const as = statSync(a), bs = statSync(b);
-  if (!as.isFile() || !bs.isFile() || as.size !== bs.size || Math.abs(as.mtimeMs - bs.mtimeMs) >= 1) return false;
-  const af = openSync(a, 'r'), bf = openSync(b, 'r');
-  try {
-    const ab = Buffer.allocUnsafe(65536), bb = Buffer.allocUnsafe(65536);
-    for (;;) {
-      const n = readSync(af, ab, 0, ab.length, null), m = readSync(bf, bb, 0, bb.length, null);
-      if (n !== m || !ab.subarray(0, n).equals(bb.subarray(0, m))) return false;
-      if (!n) return true;
-    }
-  } finally { closeSync(af); closeSync(bf); }
+  return as.isFile() && bs.isFile() && as.size === bs.size && Math.abs(as.mtimeMs - bs.mtimeMs) < 1;
 }
 
 function same(a: string, b: string): boolean {
@@ -40,8 +31,13 @@ function copySnapshot(source: string, target: string, previous: string): void {
   if (st.isDirectory()) {
     mkdirSync(target, { recursive: true });
     for (const name of readdirSync(source)) copySnapshot(join(source, name), join(target, name), join(previous, name));
-  } else if (sameFile(source, previous)) linkSync(previous, target);
-  else cpSync(source, target, { preserveTimestamps: true });
+  } else if (sameFile(source, previous)) {
+    try { linkSync(previous, target); }
+    catch (error) {
+      if (!['EPERM', 'EXDEV', 'ENOTSUP', 'EMLINK'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+      cpSync(source, target, { preserveTimestamps: true });
+    }
+  } else cpSync(source, target, { preserveTimestamps: true });
 }
 
 export function snapshot(dir: string, step: string, preserve?: string): string | undefined {
