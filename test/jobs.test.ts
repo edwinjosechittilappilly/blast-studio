@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -72,6 +72,11 @@ test('cancelling a foreground CLI job terminates its agent and grandchild', { ti
       if (match) {
         grandchild = Number(match[1]);
         const job = listJobs(root).find(item => item.operation === 'plan' && item.state === 'running');
+        const competing = spawnSync(process.execPath, ['bin/bstudio.mjs', 'plan', 'demo'], {
+          cwd: process.cwd(), env: { ...process.env, BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') }, encoding: 'utf8',
+        });
+        assert.equal(competing.status, 1);
+        assert.match(competing.stderr, /locked by/);
         assert.ok(job); cancelJob(root, job.id); break;
       }
     }
