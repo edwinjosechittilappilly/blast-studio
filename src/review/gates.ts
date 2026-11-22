@@ -30,6 +30,16 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
   post.media.forEach(m => visit(m.asset));
   const selected = assets.filter(a => used.has(a.id));
   const add = (id: GateResult['id'], message: string) => failures[id].push(message);
+  // Code is exempt: snippets legitimately contain `${{ secrets.X }}`, TODO comments or `xxx` sample values.
+  const checkPlaceholder = (field: string, text: string) => {
+    const prose = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
+    const match = prose.match(/\b(?:TODO|TBD)\b/) ?? prose.match(/\[PLACEHOLDER|PLACEHOLDER\]|\blorem\s+ipsum\b|\{\{|\}\}|<your-|\bREPLACE_ME\b|\bxxx\b/i);
+    if (match) add('specs', `Placeholder in ${field}: ${match[0]}`);
+  };
+  if (post.title) checkPlaceholder(`${post.path} title`, post.title);
+  checkPlaceholder(`${post.path} body`, post.body);
+  post.thread?.forEach((item, index) => checkPlaceholder(`${post.path} thread ${index + 1}`, item));
+  post.media.forEach(media => checkPlaceholder(`${post.path} alt text for ${media.file}`, media.alt ?? ''));
   for (const id of used) if (!byId.has(id)) add('rights', `Missing asset metadata for ${id}`);
   if (pack.ai === 'none' && post.body.trim()) add('policy', 'Generated text is not permitted');
   if (pack.ai === 'outline' && post.body.split('\n').some(line => {
@@ -105,6 +115,7 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
     if (['gemini', 'openai', 'omp'].includes(asset.provider) && !asset.license?.trim()) add('rights', `Missing license for ${asset.id}`);
     if (asset.kind === 'logo' && !asset.trademarkChecked) add('rights', `Trademark search not checked for ${asset.id}`);
     for (const metric of asset.metrics ?? []) {
+      for (const text of metric.texts ?? []) checkPlaceholder(`assets/${asset.id}/${metric.file} rendered text`, text);
       for (const kind of metric.unmeasurable ?? []) warnings.push(`Text cannot be checked in ${kind} in ${metric.file}`);
       const width = asset.outputs.find(o => o.file === metric.file)?.width ?? 1080;
       const minimum = (pack.accessibility?.minFontPx ?? 24) * width / 1080;
@@ -128,7 +139,10 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
   const waived = new Set(config.grounding.waive.flatMap(w => metrics(w).map(m => m.key)));
   const captions = projectDir ? selected.flatMap(asset => asset.outputs.filter(o => /\.vtt$/i.test(o.file)).flatMap(o => {
     const path = join(projectDir, 'assets', asset.id, o.file);
-    return existsSync(path) ? [readFileSync(path, 'utf8').replace(/^WEBVTT[^\n]*\n?/i, '').replace(/^(?:[^\n]*\n)?[^\n]*-->[^\n]*$/gm, '')] : [];
+    if (!existsSync(path)) return [];
+    const text = readFileSync(path, 'utf8').replace(/^WEBVTT[^\n]*\n?/i, '').replace(/^(?:[^\n]*\n)?[^\n]*-->[^\n]*$/gm, '');
+    checkPlaceholder(`assets/${asset.id}/${o.file} captions`, text);
+    return [text];
   })) : [];
   const text = [post.title ?? '', post.body, ...(post.thread ?? []), ...post.media.map(m => m.alt), ...selected.flatMap(a => (a.metrics ?? []).flatMap(m => m.texts ?? [])), ...captions].join('\n').replace(/https?:\/\/\S+/g, '').replace(/\b[a-z][\w]*-\d[\w.-]*/gi, '').replace(/^\s*\d+[.)]\s+/gm, '');
   const seen = new Set<string>();

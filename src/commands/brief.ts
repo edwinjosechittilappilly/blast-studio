@@ -85,6 +85,18 @@ export const run: Command = async (args, io) => {
       ? await io.run("git", ["log", "-1", "--format=%H%n%s%n%b"], { cwd: io.cwd })
       : await io.run("gh", ["repo", "view", values.repo, "--json", "nameWithOwner,description,url"], { cwd: io.cwd });
     add("Repository", undefined, raw, values.repo);
+    if (values.repo !== "local") {
+      let readme: string | undefined;
+      try {
+        readme = await io.run("gh", ["api", `repos/${values.repo}/readme`, "-H", "Accept: application/vnd.github.raw"], { cwd: io.cwd });
+      } catch (error) {
+        if (!(error instanceof Error) || !/\b404\b/.test(error.message)) throw error;
+      }
+      if (readme !== undefined) {
+        const limit = 40_000;
+        add("Repository README", undefined, readme.length > limit ? `${readme.slice(0, limit)}\n\n[README truncated at ${limit} characters]` : readme, `https://github.com/${values.repo}#readme`);
+      }
+    }
   }
   if (values["mb-brief"]) {
     const file = resolve(io.cwd, values["mb-brief"]);
