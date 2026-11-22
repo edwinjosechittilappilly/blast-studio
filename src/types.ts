@@ -31,7 +31,7 @@ export type AiPolicy = "draft" | "outline" | "none";
 export type Sourced<T> = { value: T; source: string; verified?: string } | "unknown";
 
 /** Disclosure rule per content kind: required rule text, recommended only, or unknown. */
-export type DisclosureRule = { rule: string; source: string } | "recommended" | "unknown";
+export type DisclosureRule = { rule: string; source: string; verified?: string } | "recommended" | "unknown";
 
 export type PostType =
   | "text"
@@ -119,7 +119,7 @@ export interface StudioConfig {
   file: string;
   brand: BrandKit;
   platforms: PlatformId[];
-  agent: { command: string[]; timeoutSeconds: number };
+  agent: { command: string[]; timeoutSeconds: number; passEnv?: string[] };
   /** Reviewer agent; null = deterministic gates plus a human checklist only. */
   reviewer: { command: string[] | null; timeoutSeconds: number };
   review: { threshold: number; maxRounds: number };

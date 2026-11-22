@@ -3,9 +3,13 @@ import { createInterface, type Interface } from "node:readline/promises";
 import { run as accept } from "./commands/accept.ts";
 import { run as brief } from "./commands/brief.ts";
 import { run as budget } from "./commands/budget.ts";
+import { run as dashboard } from "./commands/dashboard.ts";
 import { run as doctor } from "./commands/doctor.ts";
+import { run as exportProject } from "./commands/export.ts";
 import { run as init } from "./commands/init.ts";
 import { run as installSkills } from "./commands/install-skills.ts";
+import { run as library } from "./commands/library.ts";
+import { run as mark } from "./commands/mark.ts";
 import { run as make } from "./commands/make.ts";
 import { run as newProject } from "./commands/new.ts";
 import { run as plan } from "./commands/plan.ts";
@@ -13,6 +17,8 @@ import { run as render } from "./commands/render.ts";
 import { run as renderPreview } from "./commands/render-preview.ts";
 import { run as review } from "./commands/review.ts";
 import { run as revise } from "./commands/revise.ts";
+import { run as sources } from "./commands/sources.ts";
+import { run as status } from "./commands/status.ts";
 import { keychainGet } from "./keychain.ts";
 import type { Command, IO } from "./io.ts";
 import { UserError } from "./types.ts";
@@ -33,6 +39,12 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
   revise: { summary: "apply review findings, re-render, re-review: revise <slug>", run: revise },
   accept: { summary: "human override of scores (never gates): accept <slug> <platform> --reason …", run: accept },
   budget: { summary: "paid generation caps: budget [show | set <usd> | set-project <usd>]", run: budget },
+  export: { summary: "hand passed posts to Market Blaster: export <slug> [--mb <project>] [--force]", run: exportProject },
+  mark: { summary: "record a manual post (Shorts, Reels, TikTok, daily.dev): mark <slug> <platform> --url U", run: mark },
+  status: { summary: "projects, verdicts, spend and source health: status [<slug>]", run: status },
+  library: { summary: "everything you have made: library [search <query>]", run: library },
+  dashboard: { summary: "local web dashboard: dashboard [--port 4848]", run: dashboard },
+  sources: { summary: "keep platform packs current: sources check | propose | verify <id>…", run: sources },
   "render-preview": {
     summary: "render one html/svg/mmd/d2 file offline: render-preview <file> --size WxH --out <png>",
     run: renderPreview,

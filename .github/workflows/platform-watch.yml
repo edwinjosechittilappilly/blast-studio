@@ -1,0 +1,125 @@
+name: Platform watch
+on:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      agent_key_var:
+        description: Agent API key environment variable
+        default: ANTHROPIC_API_KEY
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+      key_available: ${{ steps.check.outputs.key_available }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: npm ci
+      - uses: actions/cache/restore@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: platforms/snapshots
+          key: platform-snapshots-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: platform-snapshots-
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+        run: |
+          set +e
+          node bin/bstudio.mjs sources check
+          status=$?
+          set -e
+          if [ "$status" -gt 2 ]; then exit "$status"; fi
+          echo "changed=$([ "$status" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "key_available=$([ -n "$MODEL_API_KEY" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          if [ "$status" -ne 0 ]; then
+            report="updates/$(date -u +%F).md"
+            [ -f "$report" ] || exit 1
+            number=$(gh issue list --state open --search 'in:title "Platform sources changed"' --json number,title --jq '.[] | select(.title == "Platform sources changed") | .number' | head -n 1)
+            if [ -n "$number" ]; then gh issue edit "$number" --body-file "$report"; else gh issue create --title 'Platform sources changed' --body-file "$report"; fi
+          fi
+      - uses: actions/cache/save@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: platforms/snapshots
+          key: platform-snapshots-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: source-check
+          path: |
+            updates/*.json
+            updates/*.md
+            platforms/snapshots/
+
+  propose:
+    needs: check
+    if: needs.check.outputs.changed == 'true' && needs.check.outputs.key_available == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+      - run: npm ci && npm install --global @anthropic-ai/claude-code@2.1.63
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: source-check
+      - name: Propose pack changes
+        env:
+          MODEL_API_KEY: ${{ secrets.MODEL_API_KEY }}
+          AGENT_KEY_VAR: ${{ inputs.agent_key_var || 'ANTHROPIC_API_KEY' }}
+        run: |
+          [[ "$AGENT_KEY_VAR" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || exit 1
+          export "$AGENT_KEY_VAR=$MODEL_API_KEY"
+          mkdir -p "$RUNNER_TEMP/config/blast-studio"
+          printf 'agent:\n  command: [claude, -p]\n  passEnv: [%s]\n' "$AGENT_KEY_VAR" > "$RUNNER_TEMP/config/blast-studio/studio.yml"
+          export BSTUDIO_CONFIG="$RUNNER_TEMP/config/blast-studio/studio.yml" BSTUDIO_HOME="$RUNNER_TEMP/studio"
+          node bin/bstudio.mjs sources propose
+          git diff --binary -- 'platforms/*/pack.yml' > "$RUNNER_TEMP/proposal.patch"
+      - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: proposal
+          path: ${{ runner.temp }}/proposal.patch
+
+  pr:
+    needs: propose
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: proposal
+          path: ${{ runner.temp }}/proposal
+      - name: Apply restricted patch and open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          patch="$RUNNER_TEMP/proposal/proposal.patch"
+          [ -s "$patch" ] || exit 0
+          git apply --check "$patch"
+          git apply "$patch"
+          while IFS= read -r file; do
+            [[ "$file" =~ ^platforms/[^/]+/pack\.yml$ ]] || { echo "Forbidden patch path: $file"; exit 1; }
+          done < <(git diff --name-only)
+          branch="updates/$(date -u +%F)"
+          git switch -c "$branch"
+          git add -- 'platforms/*/pack.yml'
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Update platform packs'
+          git push origin "$branch"
+          gh pr create --head "$branch" --title 'Update platform packs' --body 'Review source evidence and verify these proposed pack changes before merging.'

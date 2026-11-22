@@ -11,8 +11,9 @@ import { recordAgentRun } from './budget/ledger.ts';
 const root = fileURLToPath(new URL('../', import.meta.url));
 import { parsePost } from './posts.ts';
 function safePath(path: string): boolean { return !!path && !isAbsolute(path) && normalize(path) === path && !path.split(/[\\/]/).some(p => p === '..' || p === '.'); }
+const deniedEnv = ['DEV_API_KEY', 'HASHNODE_TOKEN', 'GITHUB_TOKEN', 'BLUESKY_IDENTIFIER', 'BLUESKY_APP_PASSWORD', 'BLUESKY_HOST', 'MASTODON_TOKEN', 'MASTODON_HOST', 'LINKEDIN_ACCESS_TOKEN', 'LINKEDIN_CLIENT_ID', 'LINKEDIN_CLIENT_SECRET', 'LINKEDIN_TOKEN_ISSUED', 'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET', 'NOSTR_PRIVATE_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY'];
 
-export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string>; allowOut: RegExp[]; prompt: string; timeoutMs: number }): Promise<{ copied: string[]; ignored: string[] }> {
+export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs, passEnv = [] }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string>; allowOut: RegExp[]; prompt: string; timeoutMs: number; passEnv?: string[] }): Promise<{ copied: string[]; ignored: string[] }> {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-agent-'));
   const copied: string[] = [], ignored: string[] = [];
   try {
@@ -27,6 +28,10 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
     writeFileSync(shim, `#!/bin/sh\nif [ "$1" != render-preview ]; then echo 'Only render-preview is available' >&2; exit 1; fi\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(cli)} "$@"\n`); chmodSync(shim, 0o755);
     const env: Record<string, string | undefined> = { PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${io.env.PATH ?? '/usr/bin:/bin'}`, HOME: dir, TMPDIR: dir };
     for (const key of ['LANG', 'LC_ALL', 'TERM', 'USER', 'SYSTEMROOT']) if (io.env[key]) env[key] = io.env[key];
+    for (const key of passEnv) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || deniedEnv.includes(key.toUpperCase()) || ['PATH', 'HOME', 'TMPDIR'].includes(key.toUpperCase())) throw new UserError(`Disallowed agent environment variable: ${key}`);
+      if (io.env[key] !== undefined) env[key] = io.env[key];
+    }
     const started = Date.now();
     let report: string;
     try {
@@ -38,12 +43,12 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
     const visit = (base: string, relative = '') => {
       for (const name of readdirSync(base)) {
         const rel = relative ? `${relative}/${name}` : name, path = join(base, name);
-        if (rel === '.bin' || rel === 'templates' || rel === 'skills') continue;
+        if (rel === '.bin' || rel === 'templates') continue;
         const st = lstatSync(path);
         if (st.isSymbolicLink()) { ignored.push(rel); continue; }
         if (st.isDirectory()) { visit(path, rel); continue; }
         const permitted = allowOut.some(re => { re.lastIndex = 0; return re.test(rel); });
-        if (Object.hasOwn(files, rel) && (!permitted || readFileSync(path, 'utf8') === files[rel])) continue;
+        if (st.isFile() && Object.hasOwn(files, rel) && readFileSync(path, 'utf8') === files[rel]) continue;
         if (!st.isFile() || !permitted) { ignored.push(rel); continue; }
         const data = readFileSync(path);
         try { if (/\.ya?ml$/i.test(rel)) { const parsed = parse(data.toString('utf8')); if (!parsed || typeof parsed !== 'object') throw new Error('expected object or array'); } } catch { throw new UserError(`Invalid YAML output: ${rel}`); }

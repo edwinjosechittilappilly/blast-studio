@@ -92,11 +92,12 @@ export function loadConfig(io: IO): StudioConfig {
   if (!["none", "openai"].includes(String(voiceProvider))) throw new UserError("Unknown voice.provider");
   if (providers.allowUpload !== undefined && typeof providers.allowUpload !== "boolean") throw new UserError("providers.allowUpload must be boolean");
   if (grounding.waive !== undefined && (!Array.isArray(grounding.waive) || grounding.waive.some((v) => typeof v !== "string"))) throw new UserError("grounding.waive must be a list of strings");
+  if (agent.passEnv !== undefined && (!Array.isArray(agent.passEnv) || agent.passEnv.some(v => typeof v !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(v)))) throw new UserError("agent.passEnv must be a list of environment variable names");
   return {
     root: expand(root, home, io.cwd), file,
     brand: { ...brand, name: typeof brand.name === "string" ? brand.name : "My brand" } as StudioConfig["brand"],
     platforms: platforms as PlatformId[],
-    agent: { command: command(agent.command, ["omp", "-p"], "agent.command"), timeoutSeconds: number(agent.timeoutSeconds, 900, "agent.timeoutSeconds") },
+    agent: { command: command(agent.command, ["omp", "-p"], "agent.command"), timeoutSeconds: number(agent.timeoutSeconds, 900, "agent.timeoutSeconds"), passEnv: (agent.passEnv ?? []) as string[] },
     reviewer: { command: reviewer.command === null ? null : command(reviewer.command, ["omp", "-p", "--model", "@review"], "reviewer.command"), timeoutSeconds: number(reviewer.timeoutSeconds, 900, "reviewer.timeoutSeconds") },
     review: { threshold: number(review.threshold, 75, "review.threshold", 100), maxRounds: number(review.maxRounds, 2, "review.maxRounds") },
     images: { provider: imageProvider as StudioConfig["images"]["provider"], ...(typeof images.model === "string" ? { model: images.model } : {}) },
