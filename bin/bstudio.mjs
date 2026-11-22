@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
 
-// npm packages need compiled JavaScript; source checkouts can run TypeScript directly.
-const entry = new URL("../dist/cli.js", import.meta.url);
-const { main } = await import(existsSync(entry) ? entry.href : new URL("../src/cli.ts", import.meta.url).href);
+// A source checkout runs the TypeScript directly, so a dist/ left over from `npm pack` can never shadow newer
+// source. The npm package ships no src/, so installs run the compiled dist/.
+const source = new URL("../src/cli.ts", import.meta.url);
+const { main } = await import(existsSync(source) ? source.href : new URL("../dist/cli.js", import.meta.url).href);
 
 try {
   process.exitCode = await main(process.argv.slice(2));
