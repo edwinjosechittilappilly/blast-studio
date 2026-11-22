@@ -12,6 +12,7 @@
   ],
   "textLimit": "unknown",
   "titleLimit": "unknown",
+  "marketBlasterMedia": { "source": "mb-check", "allowedKinds": ["image", "document"], "maxCount": 20 },
   "media": [
     {
       "kind": "video",
@@ -127,6 +128,7 @@
     }
   ],
   "sources": [
+    "mb-check",
     "linkedin-1",
     "linkedin-2",
     "linkedin-3",

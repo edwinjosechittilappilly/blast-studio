@@ -31,7 +31,7 @@ export type AiPolicy = "draft" | "outline" | "none";
 export type Sourced<T> = { value: T; source: string; verified?: string; lastVerified?: string } | "unknown";
 
 /** Disclosure rule per content kind: required rule text, recommended only, or unknown. */
-export type DisclosureRule = { rule: string; source: string; verified?: string; lastVerified?: string; accepts?: string[] } | "recommended" | "unknown";
+export type DisclosureRule = { rule: string; source: string; verified?: string; lastVerified?: string; accepts?: string[]; acceptsWhenGenerated?: string[] } | "recommended" | "unknown";
 
 export type PostType =
   | "text"
@@ -92,6 +92,8 @@ export interface PlatformPack {
   textLimit?: Sourced<number>;
   titleLimit?: Sourced<number>;
   media: MediaSpec[];
+  /** Market Blaster's API attachment restrictions, separate from platform capabilities. */
+  marketBlasterMedia?: { source: string; allowedKinds: MediaSpec["kind"][]; exclusiveKinds?: MediaSpec["kind"][][]; maxCount?: number };
   accessibility?: { minFontPx?: number; minContrast?: number; minContrastLarge?: number; largeTextPx?: number };
   disclosure: { text: DisclosureRule; media: DisclosureRule; voice: DisclosureRule };
   sponsorship?: DisclosureRule;
@@ -181,6 +183,7 @@ export interface AssetMeta {
   outputs: { file: string; width?: number; height?: number; seconds?: number; bytes: number; aspect?: string }[];
   license: string | null;
   aiGenerated: boolean;
+  voiceGenerated?: boolean;
   /** Asset ids this composite embeds; it inherits their aiGenerated flag. */
   embeds?: string[];
   /** Logos only: a human ran a trademark search. */
@@ -188,7 +191,7 @@ export interface AssetMeta {
   /** Set when render skipped the asset because its provider is off (e.g. "voice.provider is none"). */
   skipped?: string;
   /** Render metrics per output (stills): smallest text, worst contrast (null when text sits on an image), cut-off text (`overflow`) and text inside the 5% edge margin (`edge`). */
-  metrics?: { file: string; minFontPx: number | null; minContrast: number | null; overflow: boolean; edge?: boolean; texts?: string[]; nodes?: { text: string; fontPx: number; bold?: boolean; contrast: number | null; overflow: boolean; edge?: boolean }[] }[];
+  metrics?: { file: string; minFontPx: number | null; minContrast: number | null; overflow: boolean; edge?: boolean; texts?: string[]; unmeasurable?: string[]; nodes?: { text: string; fontPx: number; bold?: boolean; contrast: number | null; overflow: boolean; edge?: boolean }[] }[];
 }
 
 export interface GateResult {

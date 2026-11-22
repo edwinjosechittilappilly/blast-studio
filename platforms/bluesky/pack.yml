@@ -15,9 +15,11 @@
     "source": "bluesky-12"
   },
   "titleLimit": "unknown",
+  "marketBlasterMedia": { "source": "mb-check", "allowedKinds": ["image", "video"], "exclusiveKinds": [["image", "video"]] },
   "media": [
     {
       "kind": "image",
+      "maxBytes": { "value": 2000000, "source": "mb-check" },
       "maxCount": {
         "value": 4,
         "source": "bluesky-11"
@@ -25,6 +27,8 @@
     },
     {
       "kind": "video",
+      "maxCount": { "value": 1, "source": "mb-check" },
+      "maxBytes": { "value": 300000000, "source": "mb-check" },
       "maxSeconds": {
         "value": 180,
         "source": "bluesky-11"
@@ -129,6 +133,7 @@
     }
   ],
   "sources": [
+    "mb-check",
     "bluesky-10",
     "bluesky-11",
     "bluesky-12",

@@ -1,5 +1,13 @@
 [
   {
+    "id": "mb-check",
+    "platform": "tool",
+    "url": "https://github.com/edwinjosechittilappilly/market-blaster/blob/main/src/check.ts",
+    "scope": "Market Blaster attachment checks",
+    "detector": { "kind": "git-path", "repo": "edwinjosechittilappilly/market-blaster", "path": "src/check.ts" },
+    "governs": ["marketBlasterMedia", "media"]
+  },
+  {
     "id": "linkedin-1",
     "platform": "linkedin",
     "url": "https://www.linkedin.com/help/linkedin/answer/a1499047",

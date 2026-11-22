@@ -42,6 +42,17 @@ test('metrics separate cut-off text from text near the edge, and report contrast
   assert.equal(result.metrics.minContrast, null);
 });
 
+test('render metrics include subframe and pseudo-element text and warn about unmeasurable graphics', { timeout: 20000 }, async () => {
+  const html = `<style>body{margin:40px}.label::before{content:"10x faster";font-size:12px;color:#ccc}.label::after{content:" 20% growth"}</style>
+    <div class="label">Label</div><iframe srcdoc="<p>50% more users</p>"></iframe>
+    <canvas width="20" height="20"></canvas><img width="20" height="20" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3C/svg%3E">`;
+  const result = await renderHtml({ html, width: 600, height: 500, out: join(dir, 'embedded.png') });
+  assert.ok(result.metrics.nodes.some(node => node.text.includes('10x faster') && node.fontPx === 12));
+  assert.ok(result.metrics.nodes.some(node => node.text.includes('20% growth')));
+  assert.ok(result.metrics.nodes.some(node => node.text.includes('50% more users')));
+  assert.deepEqual(new Set(result.metrics.unmeasurable), new Set(['canvas', 'SVG image']));
+});
+
 test('SVG logo renders required sizes', { timeout: 20000 }, () => {
   const input = join(dir, 'logo.svg');
   writeFileSync(input, '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="50"><rect width="100" height="50" fill="navy"/></svg>');

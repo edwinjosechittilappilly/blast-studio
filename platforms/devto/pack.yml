@@ -15,7 +15,8 @@
     "text": {
       "rule": "Select the applicable Hand Written, AI-Assisted or Fully Autonomous disclosure tier.",
       "source": "devto-28",
-      "accepts": ["Hand Written (No AI)", "AI-Assisted (Some AI)", "Fully Autonomous"]
+      "accepts": ["Hand Written (No AI)", "AI-Assisted (Some AI)", "Fully Autonomous"],
+      "acceptsWhenGenerated": ["AI-Assisted (Some AI)", "Fully Autonomous"]
     },
     "media": "unknown",
     "voice": "unknown"

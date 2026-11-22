@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { loadPack } from '../src/packs.ts';
 import { loadConfig } from '../src/config.ts';
 import { runGates } from '../src/review/gates.ts';
 import { totalScore, verdict } from '../src/review/score.ts';
@@ -114,4 +117,54 @@ test('accessibility handles large text and no-text assets', () => {
   const large: AssetMeta = { ...base, metrics: [{ file: 'out/image.png', minFontPx: 30, minContrast: 3.5, overflow: false, nodes: [{ text: 'Headline', fontPx: 30, contrast: 3.5, overflow: false }] }] };
   assert.equal(gate('accessibility', mediaPost, pack, [large]).pass, true);
   assert.equal(gate('accessibility', mediaPost, { ...pack, accessibility: { minContrastLarge: 4 } }, [large]).pass, false);
+});
+
+test('common numeric marketing claims and inline code require evidence', () => {
+  for (const body of ['10,000+ users', '2 million users', '3 times faster', '100+ customers', 'by half', 'double the speed', 'twice as fast', 'Builds are `10x` faster', '```\n10x faster\n```']) {
+    assert.equal(gate('fabricated-metrics', { ...post, body }).pass, false, body);
+  }
+  const result = runGates({ ...post, body: '2 million users and 3 times faster' }, pack, [], [{ ...brief[0], body: '2,000,000 users and 3x faster' }], config);
+  assert.equal(result.find(g => g.id === 'fabricated-metrics')!.pass, true);
+});
+test('hyphenated identifier names do not generate number warnings', () => {
+  const result = runGates({ ...post, body: 'SHA-256, H-264, ISO-8601 and UTF-8.' }, pack, [], brief, config);
+  assert.ok(!result.warnings.some(w => /Ungrounded version or identifier/.test(w)));
+});
+
+test('Market Blaster attachment restrictions are enforced by destination packs', () => {
+  const media: Post['media'][number] = { asset: 'a', file: 'assets/a/image.png', alt: 'Chart', kind: 'image' };
+  const asset = { ...image, outputs: [{ file: 'image.png', bytes: 3000000 }] };
+  for (const platform of ['hashnode', 'github-discussion', 'bluesky'] as const) {
+    assert.equal(gate('specs', { ...post, platform, title: 'Title', media: [media] }, loadPack(platform), [asset]).pass, false, platform);
+  }
+  for (const platform of ['bluesky', 'mastodon', 'linkedin'] as const) {
+    assert.equal(gate('specs', { ...post, platform, media: [{ ...media, file: 'assets/a/image.gif', kind: 'gif' }] }, loadPack(platform), [{ ...asset, outputs: [{ file: 'image.gif', bytes: 4 }] }]).pass, false, platform);
+  }
+  const video: AssetMeta = { ...asset, id: 'v', kind: 'video', outputs: [{ file: 'video.mp4', bytes: 4 }] };
+  const videoMedia: Post['media'][number] = { asset: 'v', file: 'assets/v/video.mp4', alt: 'Video', kind: 'video' };
+  assert.equal(gate('specs', { ...post, platform: 'bluesky', media: [media, videoMedia] }, loadPack('bluesky'), [{ ...asset, outputs: [{ file: 'image.png', bytes: 4 }] }, video]).pass, false);
+  assert.equal(gate('specs', { ...post, platform: 'linkedin', media: [videoMedia] }, loadPack('linkedin'), [video]).pass, false);
+});
+
+test('generated DEV text and generated voice require truthful disclosure', () => {
+  const dev = loadPack('devto');
+  assert.equal(gate('disclosure', { ...post, disclosure: { text: 'Hand Written (No AI)' } }, dev).pass, false);
+  assert.equal(gate('disclosure', { ...post, disclosure: { text: 'AI-Assisted (Some AI)' } }, dev).pass, true);
+  const voicePack: PlatformPack = { ...pack, disclosure: { ...pack.disclosure, voice: { rule: 'Disclose voice', source: 's' } } };
+  const video: AssetMeta = { ...image, kind: 'video', voiceGenerated: true };
+  const mediaPost: Post = { ...post, media: [{ asset: 'a', file: 'assets/a/image.png', alt: 'Video', kind: 'video' }] };
+  assert.equal(gate('disclosure', mediaPost, voicePack, [video]).pass, false);
+});
+
+test('video duration does not ground product claims and VTT cue metadata is ignored', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bstudio-captions-'));
+  try {
+    mkdirSync(join(dir, 'assets', 'v'), { recursive: true });
+    writeFileSync(join(dir, 'assets', 'v', 'captions.vtt'), 'WEBVTT\n\n1\n00:00:00.000 --> 00:00:01.000\nWelcome\n\n2\n00:00:01.000 --> 00:00:02.000\nThank you\n');
+    const video: AssetMeta = { id: 'v', kind: 'video', provider: 'hyperframes', outputs: [{ file: 'video.mp4', bytes: 4, seconds: 30 }, { file: 'captions.vtt', bytes: 4 }], license: null, aiGenerated: false };
+    const claim: Post = { ...post, body: 'Deploys in 30 seconds.', media: [{ asset: 'v', file: 'assets/v/video.mp4', alt: 'Demo', kind: 'video' }] };
+    const result = runGates(claim, pack, [video], brief, config, dir);
+    assert.equal(result.find(g => g.id === 'fabricated-metrics')!.pass, false);
+    assert.ok(!result.warnings.some(w => /Ungrounded version or identifier/.test(w)));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

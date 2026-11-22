@@ -4,13 +4,15 @@ import { join } from 'node:path';
 import type { AssetMeta, BriefSection, GateResult, PlatformPack, Post, StudioConfig } from '../types.ts';
 
 const numberWords: Record<string, number> = Object.fromEntries(['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'].map((word, n) => [word, n]));
-const metricPattern = /(?<![\w.])(\$\s*)?(\d[\d,]*(?:\.\d+)?(?!\d|\.\d)|(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b)\s*([km](?![a-z]))?\s*(%|percent\b|[x×](?!\w)|users?\b|customers?\b|stars?\b|downloads?\b|dollars?\b|ms\b|seconds?\b|minutes?\b|hours?\b|days?\b|weeks?\b|months?\b|years?\b|bytes?\b|[gmk]b\b)?/gi;
+const metricPattern = /(?<![\w.])(\$\s*)?(\d[\d,]*(?:\.\d+)?(?!\d|\.\d)|(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|half|double|twice)\b)\s*(thousand\b|million\b|billion\b|[kmb](?![a-z]))?\s*\+?\s*(%|percent\b|times\b|[x×](?!\w)|users?\b|customers?\b|stars?\b|downloads?\b|dollars?\b|ms\b|seconds?\b|minutes?\b|hours?\b|days?\b|weeks?\b|months?\b|years?\b|bytes?\b|[gmk]b\b)?/gi;
 function metrics(text: string): { token: string; key: string; metric: boolean }[] {
   const result: { token: string; key: string; metric: boolean }[] = [];
   for (const match of text.matchAll(metricPattern)) {
     const token = match[0].trim(), unit = match[4]?.toLowerCase();
-    const number = (numberWords[match[2].toLowerCase()] ?? Number(match[2].replace(/,/g, ''))) * (match[3]?.toLowerCase() === 'k' ? 1000 : match[3]?.toLowerCase() === 'm' ? 1000000 : 1);
-    const normalizedUnit = match[1] || unit?.startsWith('dollar') ? '$' : unit === 'percent' ? '%' : unit === '×' ? 'x' : unit?.replace(/s$/, '') ?? '';
+    const word = match[2].toLowerCase();
+    const multiplier = match[3]?.toLowerCase();
+    const number = (word === 'half' ? .5 : word === 'double' || word === 'twice' ? 2 : numberWords[word] ?? Number(word.replace(/,/g, ''))) * (multiplier === 'k' || multiplier === 'thousand' ? 1000 : multiplier === 'm' || multiplier === 'million' ? 1000000 : multiplier === 'b' || multiplier === 'billion' ? 1000000000 : 1);
+    const normalizedUnit = match[1] || unit?.startsWith('dollar') ? '$' : unit === 'percent' ? '%' : unit === '×' || unit === 'times' || ['half', 'double', 'twice'].includes(word) ? 'x' : unit?.replace(/s$/, '') ?? '';
     result.push({ token, key: `${number}:${normalizedUnit}`, metric: !!normalizedUnit });
   }
   return result;
@@ -37,11 +39,12 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
     return !bullet || bullet[1].trim().split(/\s+/).length > 20;
   })) add('policy', 'Only headings and brief outline bullets (at most 20 words) are permitted');
   for (const kind of ['text', 'media', 'voice'] as const) {
-    const applies = kind === 'text' ? !!post.body.trim() : kind === 'voice' ? selected.some(a => a.kind === 'voiceover' && a.aiGenerated) : selected.some(a => a.kind !== 'voiceover' && a.aiGenerated);
+    const applies = kind === 'text' ? !!post.body.trim() : kind === 'voice' ? selected.some(a => a.voiceGenerated || a.kind === 'voiceover' && a.aiGenerated) : selected.some(a => a.kind !== 'voiceover' && a.aiGenerated);
     if (!applies) continue;
     const rule = pack.disclosure[kind];
     const value = post.disclosure?.[kind]?.trim();
-    if (typeof rule === 'object' && (!value || rule.accepts?.length && !rule.accepts.some(option => option.toLowerCase() === value.toLowerCase()))) add('disclosure', `${kind} disclosure required: ${rule.rule} (${rule.source})`);
+    const accepts = typeof rule === 'object' && kind === 'text' && pack.ai === 'draft' ? rule.acceptsWhenGenerated ?? rule.accepts : typeof rule === 'object' ? rule.accepts : undefined;
+    if (typeof rule === 'object' && (!value || accepts?.length && !accepts.some(option => option.toLowerCase() === value.toLowerCase()))) add('disclosure', `${kind} disclosure required: ${rule.rule} (${rule.source})`);
     if (rule === 'unknown') warnings.push(`${kind} disclosure unknown; verify ${pack.sources.join(', ') || pack.id}`);
   }
   if (post.sponsored && typeof pack.sponsorship === 'object') {
@@ -71,6 +74,13 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
   if (['devto', 'hashnode', 'gist', 'github-discussion', 'reddit', 'substack', 'lemmy'].includes(post.platform) && !post.title?.trim()) add('specs', 'Missing required title');
   const anchors = new Set(brief.map(section => section.anchor));
   if (!post.evidence.length || post.evidence.some(anchor => !anchors.has(anchor))) add('specs', 'Missing or unknown evidence anchor');
+  const mb = pack.marketBlasterMedia;
+  if (mb) {
+    const kinds = new Set(post.media.map(m => m.kind));
+    for (const kind of kinds) if (!mb.allowedKinds.includes(kind) || kind === 'image' && post.media.some(m => m.kind === kind && /\.gif$/i.test(m.file))) add('specs', `Market Blaster does not support ${kind} media (${mb.source})`);
+    for (const group of mb.exclusiveKinds ?? []) if (group.filter(kind => kinds.has(kind)).length > 1) add('specs', `Market Blaster does not support combining ${group.join(' and ')} (${mb.source})`);
+    if (mb.maxCount !== undefined && post.media.length > mb.maxCount) add('specs', `Market Blaster attachment count exceeds ${mb.maxCount} (${mb.source})`);
+  }
   for (const media of post.media) {
     const spec = pack.media.find(s => s.kind === media.kind);
     const output = byId.get(media.asset)?.outputs.find(o => media.file === `assets/${media.asset}/${o.file}`);
@@ -95,6 +105,7 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
     if (['gemini', 'openai', 'omp'].includes(asset.provider) && !asset.license?.trim()) add('rights', `Missing license for ${asset.id}`);
     if (asset.kind === 'logo' && !asset.trademarkChecked) add('rights', `Trademark search not checked for ${asset.id}`);
     for (const metric of asset.metrics ?? []) {
+      for (const kind of metric.unmeasurable ?? []) warnings.push(`Text cannot be checked in ${kind} in ${metric.file}`);
       const width = asset.outputs.find(o => o.file === metric.file)?.width ?? 1080;
       const minimum = (pack.accessibility?.minFontPx ?? 24) * width / 1080;
       if (metric.minFontPx !== null && metric.minFontPx < minimum) add('accessibility', `Text too small in ${metric.file}`);
@@ -112,18 +123,17 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
       if (metric.edge) warnings.push(`Text sits within 5% of the edge in ${metric.file}; feeds may crop it`);
     }
   }
-  // Measured facts about the attached media (a video's own length, either whole second around it) are evidence too.
-  const measured = selected.flatMap(a => a.outputs.flatMap(o => o.seconds ? [Math.floor(o.seconds), Math.ceil(o.seconds)].map(s => `${s} seconds`).concat(`${o.seconds.toFixed(1)} seconds`) : []));
-  const evidence = new Set(metrics([...brief.map(s => `${s.title}\n${s.body}`), ...measured].join('\n')).map(m => m.key));
+  const measured = new Set(selected.filter(a => a.kind === 'video' || a.kind === 'terminal-demo').flatMap(a => a.outputs.flatMap(o => o.seconds ? [Math.floor(o.seconds), Math.ceil(o.seconds), Number(o.seconds.toFixed(1))].map(s => `${s}:second`) : [])));
+  const evidence = new Set(metrics(brief.map(s => `${s.title}\n${s.body}`).join('\n')).map(m => m.key));
   const waived = new Set(config.grounding.waive.flatMap(w => metrics(w).map(m => m.key)));
   const captions = projectDir ? selected.flatMap(asset => asset.outputs.filter(o => /\.vtt$/i.test(o.file)).flatMap(o => {
     const path = join(projectDir, 'assets', asset.id, o.file);
-    return existsSync(path) ? [readFileSync(path, 'utf8').replace(/^.*-->.*$/gm, '')] : [];
+    return existsSync(path) ? [readFileSync(path, 'utf8').replace(/^WEBVTT[^\n]*\n?/i, '').replace(/^(?:[^\n]*\n)?[^\n]*-->[^\n]*$/gm, '')] : [];
   })) : [];
-  const text = [post.title ?? '', post.body, ...(post.thread ?? []), ...post.media.map(m => m.alt), ...selected.flatMap(a => (a.metrics ?? []).flatMap(m => m.texts ?? [])), ...captions].join('\n').replace(/https?:\/\/\S+/g, '').replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '').replace(/^\s*\d+[.)]\s+/gm, '');
+  const text = [post.title ?? '', post.body, ...(post.thread ?? []), ...post.media.map(m => m.alt), ...selected.flatMap(a => (a.metrics ?? []).flatMap(m => m.texts ?? [])), ...captions].join('\n').replace(/https?:\/\/\S+/g, '').replace(/\b[a-z][\w]*-\d[\w.-]*/gi, '').replace(/^\s*\d+[.)]\s+/gm, '');
   const seen = new Set<string>();
-  for (const token of metrics(text)) {
-    if (seen.has(token.key) || evidence.has(token.key) || waived.has(token.key) || config.grounding.waive.some(w => w.toLowerCase() === token.token.toLowerCase())) continue;
+  for (const sentence of text.split(/(?<=[.!?])\s+|\n/)) for (const token of metrics(sentence)) {
+    if (seen.has(token.key) || evidence.has(token.key) || waived.has(token.key) || config.grounding.waive.some(w => w.toLowerCase() === token.token.toLowerCase()) || /\b(?:video|demo|clip|recording|shorts?)\b/i.test(sentence) && measured.has(token.key)) continue;
     seen.add(token.key);
     if (token.metric) add('fabricated-metrics', `Ungrounded metric: ${token.token}`);
     else if (/\d/.test(token.token)) warnings.push(`Ungrounded version or identifier: ${token.token}`);

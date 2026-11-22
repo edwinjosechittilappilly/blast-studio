@@ -13,6 +13,7 @@
     "source": "mastodon-16"
   },
   "titleLimit": "unknown",
+  "marketBlasterMedia": { "source": "mb-check", "allowedKinds": ["image", "video"], "maxCount": 4 },
   "media": [
     {
       "kind": "image",
@@ -122,6 +123,7 @@
     }
   ],
   "sources": [
+    "mb-check",
     "mastodon-15",
     "mastodon-16",
     "mastodon-17",
