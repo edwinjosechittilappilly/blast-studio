@@ -13,7 +13,7 @@
 
 # Blast Studio
 
-Blast Studio turns an idea, notes, links, a commit, a PR or a Market Blaster brief into platform-specific content. It keeps the evidence, editable sources, renders and reviews together in a private studio. Export hands reviewed content to [Market Blaster](https://github.com/edwinjosechittilappilly/market-blaster); publishing remains a separate step.
+Blast Studio turns an idea, notes, links, a commit, a PR or a Market Blaster brief into platform-specific content. It keeps the evidence, editable sources, renders and reviews together in a private studio. Export packages the reviewed campaign as one zip for [Market Blaster](https://github.com/edwinjosechittilappilly/market-blaster); publishing remains a separate step.
 
 ## Quickstart
 

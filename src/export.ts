@@ -3,6 +3,7 @@ import { copyFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFil
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
+import { writeCampaignZip } from './campaign-zip.ts';
 import { loadPacks } from './packs.ts';
 import { loadPosts } from './posts.ts';
 import { reviewHash } from './review-hash.ts';
@@ -42,7 +43,7 @@ function handoff(project: string, post: Post, name: string, notes: string[], gui
   writeFileSync(join(dir, 'README.md'), [`# ${name} manual handoff`, '', '- [ ] Open the platform publishing interface and select the correct account.', '- [ ] Copy the text from post.md and attach the listed media.', '- [ ] Enter the provided alt text, captions and disclosure where applicable.', '- [ ] Review and publish manually, then record the URL with bstudio mark when supported.', '', '## Media', ...media.map(m => `- ${m.file} (${m.kind}; alt: ${m.alt})${'captions' in m && m.captions ? `; captions: ${m.captions}` : ''}`), '', '## Disclosure', ...(disclosures.length ? disclosures : ['- None specified.']), '', '## Platform notes', ...notes.map(n => `- ${n}`), '', '## Platform checklist', checklist, ''].join('\n'));
 }
 
-export function exportProject(project: string, slug: string): string {
+export function exportProject(project: string, slug: string, directory = false): string {
   const posts = loadPosts(project), packs = loadPacks();
   if (!posts.size) throw new UserError('No posts to export');
   const prepared = [...posts.values()].map(post => {
@@ -61,6 +62,7 @@ export function exportProject(project: string, slug: string): string {
     }
     return { post, review, hash, pack };
   });
+  if (!directory) return writeCampaignZip(project, slug, prepared, sourceFile);
   const dir = join(project, 'export'); mkdirSync(dir, { recursive: true });
   const brief = readFileSync(join(project, 'brief.md'), 'utf8');
   const entries = prepared.flatMap(({ post, review, hash, pack }) => {

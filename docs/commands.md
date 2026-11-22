@@ -32,7 +32,7 @@ At least one input is required. `--note` and `--url` can be repeated. `--repo` a
 
 ## Handoff and records
 
-- `bstudio export <slug> [--mb <project>] [--force]` writes the handoff, then imports and checks it if `--mb` or `marketBlaster.project` identifies a Market Blaster project. `--force` is passed to that import.
+- `bstudio export <slug> [--mb <project>] [--force] [--dir]` writes `export/<slug>.campaign.zip` with reviewed content and handoffs, then imports and checks it if `--mb` or `marketBlaster.project` identifies a Market Blaster project. `--dir` writes the legacy v1 directory instead; `--force` is passed to the import.
 - `bstudio mark <slug> <platform> --url <https-url>` records a publication URL for `youtube-shorts`, `instagram`, `tiktok`, or `dailydev`. The URL host must match the destination and the post must exist.
 - `bstudio status [<slug>]` shows project verdicts, monthly spend, and source health.
 - `bstudio library [search <query>]` lists projects or searches the library.

@@ -7,11 +7,11 @@ import { UserError } from '../types.ts';
 
 export const run: Command = async (args, io) => {
   const parsed = (() => {
-    try { return parseArgs({ args, allowPositionals: true, options: { mb: { type: 'string' }, force: { type: 'boolean' } } }); }
-    catch { throw new UserError('usage: bstudio export <slug> [--mb <project>] [--force]'); }
+    try { return parseArgs({ args, allowPositionals: true, options: { mb: { type: 'string' }, force: { type: 'boolean' }, dir: { type: 'boolean' } } }); }
+    catch { throw new UserError('usage: bstudio export <slug> [--mb <project>] [--force] [--dir]'); }
   })();
-  if (parsed.positionals.length !== 1 || (parsed.values.mb !== undefined && (typeof parsed.values.mb !== 'string' || !parsed.values.mb.trim()))) throw new UserError('usage: bstudio export <slug> [--mb <project>] [--force]');
-  const slug = parsed.positionals[0], config = loadConfig(io), dir = exportProject(projectDir(config, slug), slug);
+  if (parsed.positionals.length !== 1 || (parsed.values.mb !== undefined && (typeof parsed.values.mb !== 'string' || !parsed.values.mb.trim()))) throw new UserError('usage: bstudio export <slug> [--mb <project>] [--force] [--dir]');
+  const slug = parsed.positionals[0], config = loadConfig(io), dir = exportProject(projectDir(config, slug), slug, parsed.values.dir);
   io.out(`Wrote ${dir}`);
   const mb = parsed.values.mb as string | undefined ?? config.marketBlaster.project;
   if (mb) {

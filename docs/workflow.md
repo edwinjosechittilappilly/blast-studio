@@ -36,8 +36,10 @@ bstudio export release-note
 bstudio export release-note --mb /path/to/market-blaster-project
 ```
 
-Export requires every post to have a current passing or accepted review with passing gates. It writes `export/manifest.json`, the brief and copied media. With `--mb`, or a configured `marketBlaster.project`, it also invokes Market Blaster's `import` and `check`; `--force` is passed to the import. Export does not publish content.
+Export requires every post to have a current passing or accepted review with passing gates. It writes `export/<slug>.campaign.zip`, containing the manifest, brief, sources, posts, media, handoffs and reviews. Use `--dir` for the legacy v1 directory export. With `--mb`, or a configured `marketBlaster.project`, it also invokes Market Blaster's `import` and `check`; `--force` is passed to the import. Export does not publish content.
 
-Manual destinations, threads, and LinkedIn PDF carousels also receive a handoff under `exports/<platform>/`. Follow its checklist, publish through the destination, and use `bstudio mark <slug> <platform> --url <https-url>` to record a publication for supported manual destinations: YouTube Shorts, Instagram, TikTok and daily.dev. The URL must belong to the destination's accepted host.
+The archive is deterministic for unchanged inputs. Its manifest timestamp uses the latest valid review timestamp (or the ZIP epoch for older reviews without one), so re-exporting does not change the package solely because the clock advanced.
+
+Manual destinations and threads are included under `handoff/` in the archive. Follow the platform checklist, publish through the destination, and use `bstudio mark <slug> <platform> --url <https-url>` to record a publication for supported manual destinations: YouTube Shorts, Instagram, TikTok and daily.dev. The URL must belong to the destination's accepted host.
 
 Use `bstudio status [<slug>]` and `bstudio library [search <query>]` to find work, or `bstudio dashboard` for the local interface.
