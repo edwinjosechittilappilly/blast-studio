@@ -6,7 +6,7 @@ import '@carbon/web-components/es/components/modal/index.js';
 import '@carbon/web-components/es/components/tile/index.js';
 import { api, headers } from './api.js';
 import { el, button } from './review.js';
-import { command, notice, runJob, table, tag } from './health.js';
+import { notice, runJob, table, tag } from './health.js';
 
 const money = value => `$${Number(value || 0).toFixed(2)}`;
 function field(tagName, label, value, helper) {
@@ -28,12 +28,11 @@ export async function renderSettings(container) {
   container.replaceChildren(el('h1', 'Budget & providers'), el('p', 'Loading settings…'));
   let data; try { data = await api('/api/budget'); } catch (error) { container.replaceChildren(el('h1', 'Budget & providers'), notice(error.message)); return; }
   const intro = el('p', 'Manage spending limits, generation providers and credentials.'), spend = el('div', null, 'summary-tiles');
-  for (const [label, value] of [['Spent this month', data.mtd], ['Monthly cap', data.cap], ...Object.entries(data.projects || {}).map(([name, amount]) => [`${name} spend`, amount])]) { const tile = el('cds-tile'); tile.append(el('strong', money(value)), el('span', label)); spend.append(tile); }
+  for (const [label, value] of [['Spent this month', data.mtd], ['Monthly cap', data.cap], ...Object.entries(data.providerTotals || {}).map(([name, amount]) => [`${name} spend`, amount]), ...Object.entries(data.projects || {}).map(([name, amount]) => [`${name} spend`, amount])]) { const tile = el('cds-tile'); tile.append(el('strong', money(value)), el('span', label)); spend.append(tile); }
   const form = el('form'); form.noValidate = true; const grid = el('div', null, 'settings-grid'), budget = el('section', null, 'surface'), providers = el('section', null, 'surface');
   const monthly = field('cds-number-input', 'Monthly cap (USD)', data.cap, 'Zero blocks paid calls.'), campaign = field('cds-number-input', 'Per-campaign cap (USD)', data.perProject, 'Zero means no campaign limit.');
   for (const input of [monthly, campaign]) { input.setAttribute('min', '0'); input.setAttribute('step', 'any'); input.setAttribute('invalid-text', 'Enter a non-negative amount.'); }
-  budget.append(el('h2', 'Spending limits'), monthly, campaign, el('h3', 'Spend by provider'));
-  const totals = Object.entries(data.providerTotals || {}); if (!totals.length) budget.append(el('p', 'No provider spend this month.')); else for (const [name, value] of totals) budget.append(el('p', `${name}: ${money(value)}`));
+  budget.append(el('h2', 'Spending limits'), monthly, campaign);
   const images = select('Images', data.providers.images, [['none', 'None — disabled'], ['gemini', 'Gemini — paid'], ['openai', 'OpenAI — paid'], ['omp', 'OMP']]);
   const voice = select('Voice', data.providers.voice, [['none', 'None — disabled'], ['openai', 'OpenAI — paid']]);
   const consent = el('cds-toggle'); consent.setAttribute('label-text', 'Allow uploads to external providers'); consent.checked = data.providers.allowUpload === true;
@@ -42,13 +41,17 @@ export async function renderSettings(container) {
   const clear = () => { result.replaceChildren(); for (const input of [monthly, campaign]) { const raw = String(input.value ?? '').trim(); input.invalid = !raw || !Number.isFinite(Number(raw)) || Number(raw) < 0; } };
   for (const event of ['input', 'change', 'cds-number-input', 'cds-select-selected', 'cds-toggle-changed']) form.addEventListener(event, () => queueMicrotask(clear));
   form.append(grid, result, save);
-  const credentials = el('section', null, 'surface'), authJob = el('div', null, 'job-status'), authStatus = el('div'); credentials.append(el('h2', 'Provider keys'), el('p', 'Keys are write-only and saved to macOS Keychain. Existing values are never displayed.'), authStatus, authJob);
+  const credentials = el('section', null, 'surface'), authStatus = el('div'); let keyStatus = null;
+  credentials.append(el('h2', 'Provider keys'), el('p', 'Saved to your macOS login keychain (shared by all studios). Existing values are never displayed.'), authStatus);
   const keyInputs = [];
   for (const [key, label] of [['GEMINI_API_KEY', 'Gemini API key'], ['OPENAI_API_KEY', 'OpenAI API key']]) { const input = field('cds-password-input', label, '', 'Leave blank to keep the existing key.'); input.setAttribute('autocomplete', 'off'); keyInputs.push([key, input]); credentials.append(input); }
   const keyResult = el('div'); keyResult.setAttribute('aria-live', 'polite'); credentials.append(keyResult);
   const saveSettings = async event => {
     event.preventDefault(); clear(); keyResult.replaceChildren();
     if (monthly.invalid || campaign.invalid) { (monthly.invalid ? monthly : campaign).focus(); return; }
+    const entered = keyInputs.filter(([, input]) => input.value).map(([key]) => key);
+    if (entered.length && !keyStatus) { keyResult.replaceChildren(notice('Credential status is unavailable. Reload before saving keys.')); return; }
+    if (entered.length && !window.confirm(`Save ${entered.join(', ')} to the login keychain? Any existing keychain values will be overwritten for all studios.`)) return;
     save.disabled = true;
     try {
       await api('/api/budget', { method: 'PUT', headers, body: JSON.stringify({ monthlyUsd: Number(monthly.value), perProjectUsd: Number(campaign.value) }) });
@@ -62,7 +65,12 @@ export async function renderSettings(container) {
   };
   save.addEventListener('click', saveSettings); form.addEventListener('submit', saveSettings);
   form.insertBefore(credentials, result); container.replaceChildren(el('h1', 'Budget & providers'), intro, spend, form);
-  async function refreshAuth() { await runJob(authJob, 'auth list', {}, (record, log) => { if (record.state !== 'succeeded') { authStatus.replaceChildren(notice('Could not read credential presence. See the job log.')); return; } const rows = log.split(/\r?\n/).map(line => /^(GEMINI_API_KEY|OPENAI_API_KEY):\s*(.+)$/.exec(line)).filter(Boolean); authStatus.replaceChildren(rows.length ? table(['Credential', 'Presence and source'], rows.map(row => [row[1], row[2]])) : el('p', 'No credential information was reported.')); }); }
+  async function refreshAuth() {
+    try {
+      keyStatus = await api('/api/secrets/status');
+      authStatus.replaceChildren(table(['Credential', 'Presence and source'], Object.entries(keyStatus).map(([key, status]) => [key, status.set ? `Set · ${status.source}` : 'Not set'])));
+    } catch (error) { keyStatus = null; authStatus.replaceChildren(notice(`Could not read credential presence: ${error.message}`)); }
+  }
   await refreshAuth();
 }
 
@@ -72,13 +80,28 @@ export async function renderSources(container) {
   async function load() {
     try {
       const data = await api('/api/sources'), rows = [];
-      for (const line of (data.report || '').split(/\r?\n/)) { const match = /^##\s+([^:]+):\s*(changed|failed|manual)(?:\s|$)/i.exec(line); if (match) rows.push([match[1], match[2].toLowerCase()]); }
+      for (const block of (data.report || '').split(/^## /m).slice(1)) {
+        const lines = block.split(/\r?\n/), match = /^([^:]+):\s*(changed|new|failed|manual)\b/i.exec(lines[0]);
+        if (match) rows.push({ id: match[1], status: match[2].toLowerCase(), title: lines.find(line => line.startsWith('Title: '))?.slice(7), url: lines.find(line => line.startsWith('URL: '))?.slice(5), fields: lines.find(line => line.startsWith('Fields: '))?.slice(8), error: lines.find(line => line.startsWith('Error: '))?.slice(7), previous: lines.find(line => line.startsWith('Previous: '))?.slice(10), current: lines.find(line => line.startsWith('Current: '))?.slice(9) });
+      }
       results.replaceChildren(el('h2', `Last checked: ${data.lastCheck || 'Never'}`));
       if (!rows.length) results.append(el('p', data.lastCheck ? 'No changed, failed or manual sources in the latest report.' : 'No source check has been run yet.'));
-      else results.append(table(['Source', 'Status', 'Action'], rows.map(([id, status]) => { const verify = button('Verify', 'ghost'); verify.addEventListener('click', () => confirmVerify(id, async () => { await runJob(job, 'sources verify', { source: id }, async record => { if (record.state === 'succeeded') await load(); }); })); return [id, tag(status === 'manual' ? 'Manual review' : status === 'changed' ? 'Changed' : 'Failed', status === 'failed' ? 'red' : 'warm-gray'), verify]; })));
-      if (data.unverified?.length) { const section = el('section'); section.append(el('h2', 'Unverified guidance'), el('p', 'These fields do not yet have verification metadata.')); const list = el('ul'); for (const item of data.unverified) list.append(el('li', item)); section.append(list); results.append(section); }
+      else results.append(table(['Source', 'Status', 'Details', 'Action'], rows.map(({ id, status, title, url, fields, error, previous, current }) => {
+        const source = el('div'); source.append(el('strong', title || id), el('p', id));
+        if (url && /^https?:\/\//i.test(url)) { const link = el('a', url); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; source.append(link); }
+        const details = el('details'); details.append(el('summary', 'What changed'), el('p', error || `Affected guidance: ${fields || 'Not reported'}`));
+        if (previous && current) { try { details.append(el('h4', 'Previous'), el('p', JSON.parse(previous)), el('h4', 'Current'), el('p', JSON.parse(current))); } catch { details.append(el('p', 'Snapshot details are unavailable.')); } }
+        const action = el('span', '—');
+        if (status === 'changed' || status === 'manual') { const verify = button('Verify', 'ghost'); verify.addEventListener('click', () => confirmVerify(id, async () => { await runJob(job, 'sources verify', { source: id }, async record => { if (record.state === 'succeeded') await load(); }); })); action.replaceChildren(verify); }
+        return [source, tag(status === 'manual' ? 'Manual review' : status[0].toUpperCase() + status.slice(1), status === 'failed' ? 'red' : 'warm-gray'), details, action];
+      })));
+      if (data.unverified?.length) {
+        const section = el('details'); section.append(el('summary', `Unverified guidance (${data.unverified.length})`), el('p', 'These fields do not yet have verification metadata.'));
+        const groups = new Map(); for (const item of data.unverified) { const platform = item.split('.')[0]; if (!groups.has(platform)) groups.set(platform, []); groups.get(platform).push(item); }
+        for (const [platform, items] of groups) { const group = el('details'), list = el('ul'); group.append(el('summary', `${platform} (${items.length})`)); for (const item of items) list.append(el('li', item)); group.append(list); section.append(group); } results.append(section);
+      }
     } catch (error) { results.replaceChildren(notice(error.message)); }
   }
-  run.addEventListener('click', async () => { run.disabled = true; await runJob(job, 'sources check', { write: true }, async record => { run.disabled = false; if (record.state === 'succeeded' || record.state === 'failed') await load(); }); if (!job.querySelector('details')) run.disabled = false; });
+  run.addEventListener('click', async () => { run.disabled = true; await runJob(job, 'sources check', {}, async record => { run.disabled = false; if (record.state === 'succeeded' || record.state === 'failed') await load(); }); if (!job.querySelector('details')) run.disabled = false; });
   await load();
 }

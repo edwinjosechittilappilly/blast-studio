@@ -9,7 +9,7 @@ bstudio sources propose
 bstudio sources verify source-id
 ```
 
-`check` compares results with `platforms/snapshots/<id>.txt` and writes dated Markdown and JSON reports in `updates/`. Add `--write` to update snapshots and SHA-256 files; without it, snapshots are unchanged. A first snapshot is reported as `new`; later differences are `changed`. The exit code is 2 if any source changed, otherwise 1 if any failed or is new, otherwise 0. Manual sources are reported for human review.
+`check` compares results with snapshots in the studio root, falling back to the installed `platforms/snapshots/<id>.txt` baseline, and writes dated Markdown and JSON reports under the studio root in `updates/`. Add `--write` to update snapshots and SHA-256 files. When run from a source checkout with `--write`, snapshots and reports instead go to that checkout for review; without `--write`, the checkout is never modified. A first snapshot is reported as `new`; later differences are `changed`. The exit code is 2 if any source changed, otherwise 1 if any failed or is new, otherwise 0. Manual sources are reported for human review.
 
 `propose` uses changed sources in the latest dated JSON report. It gives the configured agent the old and new snapshots and affected packs in a temporary workspace. Each changed leaf must have a verbatim supporting quote from a changed source governing that field. The proposal validates pack schemas and IDs before copying changes back, and writes `updates/<date>-proposal.md` with evidence. `--branch` creates `updates/<date>` before copying the proposed pack changes. Review the changes and evidence yourself; the command does not commit them.
 

@@ -30,7 +30,10 @@ export async function runJob(target, op, args = {}, onComplete = () => {}) {
   async function update() {
     try {
       const [current, output] = await Promise.all([api(`/api/jobs/${encodeURIComponent(job.id)}`), api(`/api/jobs/${encodeURIComponent(job.id)}/log?tail=1000`)]);
-      job = current; status.textContent = `Job ${job.state}${job.cancelRequested && (job.state === 'running' || job.state === 'queued') ? ' · cancellation requested' : ''}`; log.textContent = output.log || 'No output yet.';
+      job = current; log.textContent = output.log || 'No output yet.';
+      const findings = op === 'sources check' && job.state === 'failed' && job.exitCode === 2;
+      const counts = [...(output.log || '').matchAll(/^##\s+[^:]+:\s*(changed|new|failed|manual)\b/gmi)].reduce((all, match) => { const key = match[1].toLowerCase(); all[key] = (all[key] || 0) + 1; return all; }, {});
+      status.textContent = findings ? `Completed with findings · ${Object.entries(counts).map(([key, count]) => `${count} ${key}`).join(' · ')}` : `Job ${job.state}${job.cancelRequested && (job.state === 'running' || job.state === 'queued') ? ' · cancellation requested' : ''}`;
       if (job.state === 'running' || job.state === 'queued') { setTimeout(() => { if (target.isConnected) update(); }, 1000); return; }
       cancel.hidden = true; await onComplete(job, output.log || '');
     } catch (error) { status.textContent = 'Unable to refresh job status.'; target.append(notice(error.message)); cancel.hidden = true; await onComplete({ state: 'failed' }, ''); }
@@ -46,15 +49,20 @@ export function parseDoctor(log) {
     return { tool, status: problem ? 'Attention' : 'Available', version: parts[0], hint: parts[1] || '' };
   });
 }
-function fixCell(hint) {
-  const node = el('div'); if (!hint) { node.textContent = '—'; return node; }
-  node.append(el('span', hint)); const match = /^(?:install|run):\s*(.+)$/.exec(hint);
-  if (match && !match[1].includes('<') && !/^https?:/.test(match[1])) node.append(copyButton('Copy fix', match[1].replace(/ \(.*$/, '')));
+function fixCell(hint, tool, status) {
+  const node = el('div');
+  let fix = hint, copy = /^(?:install|run):\s*(.+)$/.exec(hint)?.[1]?.replace(/ \(.*$/, '').replace(/ or add it to the studio \.env$/, '');
+  if (status === 'Attention' && !copy) {
+    if (tool === 'Node') { fix = 'Install a supported Node.js version.'; copy = 'brew install node'; }
+    else if (tool.startsWith('omp generate_image')) { fix = 'Enable image generation in OMP configuration.'; copy = 'omp config set generate_image.enabled true'; }
+    else { fix ||= 'Review the health check output and rerun the check.'; copy = 'bstudio doctor'; }
+  }
+  node.append(el('span', fix || '—')); if (copy && !copy.includes('<') && !/^https?:/.test(copy)) node.append(copyButton('Copy fix', copy));
   return node;
 }
 export async function renderHealth(container) {
   const title = el('h1', 'Health check'), intro = el('p', 'Check local tools, provider credentials and budget configuration.'), run = button('Run health check', 'primary'), job = el('div', null, 'job-status'), results = el('div');
   container.replaceChildren(title, intro, run, job, results);
-  const execute = async () => { run.disabled = true; results.replaceChildren(); await runJob(job, 'doctor', {}, (record, log) => { run.disabled = false; run.textContent = 'Run again'; const rows = parseDoctor(log); if (rows.length) results.replaceChildren(el('h2', 'Results'), table(['Tool', 'Status', 'Version or detail', 'Suggested fix'], rows.map(row => [row.tool, tag(row.status, row.status === 'Attention' ? 'red' : row.status === 'Available' ? 'green' : 'gray'), row.version || '—', fixCell(row.hint)]))); else results.replaceChildren(el('p', record.state === 'succeeded' ? 'No checks were reported.' : 'No results were reported. See the job log.')); }); if (!job.querySelector('details')) run.disabled = false; };
+  const execute = async () => { run.disabled = true; results.replaceChildren(); await runJob(job, 'doctor', {}, (record, log) => { run.disabled = false; run.textContent = 'Run again'; const rows = parseDoctor(log); if (rows.length) results.replaceChildren(el('h2', 'Results'), table(['Tool', 'Status', 'Version or detail', 'Suggested fix'], rows.map(row => [row.tool, tag(row.status, row.status === 'Attention' ? 'red' : row.status === 'Available' ? 'green' : 'gray'), row.version || '—', fixCell(row.hint, row.tool, row.status)]))); else results.replaceChildren(el('p', record.state === 'succeeded' ? 'No checks were reported.' : 'No results were reported. See the job log.')); }); if (!job.querySelector('details')) run.disabled = false; };
   run.addEventListener('click', execute);
 }

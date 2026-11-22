@@ -61,6 +61,6 @@ bstudio brief acme/launch --commit abcd1234 --repo local --mb-brief brief.md
 ## Budget and platform sources
 
 - `bstudio budget [show]` displays spend and caps. `bstudio budget set <usd>` sets the monthly cap; `bstudio budget set-project <usd>` sets the per-project cap. See [budget](budget.md).
-- `bstudio sources check [--only id,...] [--write]` checks monitored sources. `--write` is accepted but snapshots are written by default.
+- `bstudio sources check [--only id,...] [--write]` checks monitored sources and stores reports in the studio root. `--write` updates snapshots; in a source checkout it writes snapshots and reports there for review. See [source updates](updater.md).
 - `bstudio sources propose [--branch]` proposes pack updates from the latest report, optionally creating an update branch.
 - `bstudio sources verify <id>...` stamps cited pack fields with today's verification date after human review. See [source updates](updater.md).

@@ -15,6 +15,7 @@ import { campaignLockStatus, JobConflict, jobLogTail, listJobs, startJob } from 
 import { containedPath, listProjects, readProject, validateId } from '../campaigns.ts';
 import { parseBrief } from '../brief.ts';
 import { historyEntries } from '../history.ts';
+import { loadEnvWithSources } from '../env.ts';
 
 const staticDir = join(dirname(fileURLToPath(import.meta.url)), 'static');
 const buildDir = join(dirname(fileURLToPath(import.meta.url)), 'build');
@@ -185,6 +186,12 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
           send(res, 200, id ? result[0] : result); return;
         }
         if (pathname === '/api/library') { send(res, 200, loadLibrary(config, url.searchParams.get('q') ?? '')); return; }
+        if (pathname === '/api/secrets/status') {
+          const keys = ['GEMINI_API_KEY', 'OPENAI_API_KEY'];
+          const { sources } = loadEnvWithSources(config.root, io.env, io.keychain, keys);
+          send(res, 200, Object.fromEntries(keys.map(key => [key, { set: sources[key] !== 'unset', source: sources[key] === 'shell' ? 'env' : sources[key] }])));
+          return;
+        }
         if (pathname === '/api/budget') { send(res, 200, { cap: config.budget.monthlyUsd, perProject: config.budget.perProjectUsd, mtd: monthToDate(config.root), providerTotals: providerTotals(config.root), projects: Object.fromEntries(loadLibrary(config).map(p => [p.slug, projectTotal(config.root, p.slug)])), providers: { images: config.images.provider, voice: config.voice.provider, allowUpload: config.providers.allowUpload }, brand: config.brand }); return; }
         if (pathname === '/api/sources') { send(res, 200, latestSources(config)); return; }
         if (pathname.startsWith('/api/project/')) { const slug = decodeURIComponent(pathname.slice(13)); const dir = campaignDir(config, slug); if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; } send(res, 200, projectReview(config, slug, { cwd: io.cwd, home: io.env.HOME || process.env.HOME || '' })); return; }
