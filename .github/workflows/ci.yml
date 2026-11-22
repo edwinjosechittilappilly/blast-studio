@@ -38,8 +38,9 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
       - name: Install D2
         run: |
-          curl -fsSL https://d2lang.com/install.sh | sh -s -- --version v0.9.0
-          d2 --version
+          curl -fsSL https://d2lang.com/install.sh | sh -s -- --method standalone --prefix "$HOME/.local" --version v0.9.0
+          "$HOME/.local/bin/d2" --version
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: npm test
       - run: npm run typecheck
       - run: make docs
