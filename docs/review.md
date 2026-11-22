@@ -19,6 +19,11 @@ Unknown or stale platform information can produce warnings. Reviewers should ver
 
 The configured reviewer evaluates the platform rubric with scores of 0, 1, 2 or N/A, plus evidence and a suggested fix. The total is the weighted percentage of available points for applicable, scored criteria. The default pass threshold is 75, configurable as `review.threshold`. With multiple hooks, the reviewer assesses both hook orders and retains the lower score per criterion.
 
+**Use a different model for the reviewer.** Review refuses to run when `reviewer.command` is identical to
+`agent.command`. It can't resolve aliases, though: `omp -p` and `omp -p --model @review` count as different even if
+your `review` role points at the same model as your default. Check `omp config get modelRoles` and make sure the
+review role names a different model (ideally from another vendor) than the one that writes the posts.
+
 A post is `pass` when gates pass and its score meets the threshold. A failed gate, missing total or low score yields `revise`. A rights failure marked unfixable, such as a missing generated-asset license, yields `blocked`. If `reviewer.command` is set to `null`, review prints a manual rubric checklist and does not produce a score, so the verdict is `revise` unless a gate blocks it.
 
 ## Fix or accept
