@@ -118,3 +118,12 @@ test("value options accept both equals and separated forms", async () => {
     ["--size=0x1", "--out=x"], ["--size", "0x1", "--out", "x"],
   ]) await assert.rejects(renderPreview(args, io), /usage: bstudio render-preview/);
 });
+
+test("version and project help work without configuration", async () => {
+  const home = tempStudio();
+  const io = fakeIO({ cwd: home, env: { HOME: home } });
+  assert.equal(await main(["--version"], io), 0);
+  assert.match(io.stdout[0], /^\d+\.\d+\.\d+/);
+  assert.equal(await main(["project", "new", "--help"], io), 0);
+  assert.match(io.text(), /Example: bstudio project new/);
+});

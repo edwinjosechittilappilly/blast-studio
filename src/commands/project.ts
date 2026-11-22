@@ -8,10 +8,12 @@ import type { Command } from "../io.ts";
 import { UserError, type ClaimStatus } from "../types.ts";
 
 const usage = "usage: bstudio project new <project> [--repo owner/repo] [--url URL]... [--note text]... | bstudio project list";
+const help = `${usage}\nExample: bstudio project new acme --repo org/repo --note 'Product context'`;
 export const run: Command = async (args, io) => {
   const [action, ...rest] = args;
-  if (action === "--help" || action === "-h" || action === "help") { io.out(usage); return 0; }
+  if (action === "--help" || action === "-h" || action === "help") { io.out(help); return 0; }
   if (action === "list") {
+    if (rest.length === 1 && (rest[0] === "--help" || rest[0] === "-h")) { io.out(help); return 0; }
     if (rest.length) throw new UserError(usage);
     const projects = listProjects(loadConfig(io));
     io.out("PROJECT\tCAMPAIGNS\tLAST UPDATED");
@@ -22,7 +24,7 @@ export const run: Command = async (args, io) => {
   const { values, positionals } = parseArgs({ args: rest, allowPositionals: true, options: {
     repo: { type: "string" }, url: { type: "string", multiple: true }, note: { type: "string", multiple: true }, help: { type: "boolean" },
   } });
-  if (values.help) { io.out(usage); return 0; }
+  if (values.help) { io.out(help); return 0; }
   if (positionals.length !== 1) throw new UserError(usage);
   const id = validateId(positionals[0]);
   if (values.repo && !/^[\w.-]+\/[\w.-]+$/.test(values.repo)) throw new UserError("--repo must be owner/repo");
