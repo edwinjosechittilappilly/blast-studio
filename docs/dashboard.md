@@ -24,6 +24,8 @@ Requests require the dashboard session cookie. Writes also require an `Origin` m
 
 Job records include `id`, `operation`, optional `campaign`, `state`, timestamps, `command`, and process or exit information when available. A campaign lock conflict returns 409; unknown jobs return 404.
 
+For dashboard jobs, `findings: true` means the command returned normally with a findings exit code: `doctor` returns 1 for checks needing attention, and `sources check` returns 1 for failed or new sources or 2 for changed sources. These jobs retain `state: "failed"` and their exit code for CLI compatibility, but the dashboard presents them as completed with findings. Exceptions, cancellation, and other nonzero exits are failures or cancellations, not findings. Older records without this field retain their recorded state.
+
 `GET /api/library` returns campaign entries including `updatedAt`, `pendingFeedback`, `exported`, and `published`. `GET /api/project/:campaign` returns campaign details; `platforms` is keyed by platform ID and contains `name`, `textLimit`, `titleLimit`, and `threadItemLimit`. Limits are sourced values or `unknown`.
  
 For dashboard development, run `npm run build:ui` to build the local Carbon assets, or run `npm run dev:ui` alongside the dashboard to rebuild them on changes.

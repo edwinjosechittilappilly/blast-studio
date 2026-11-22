@@ -59,6 +59,19 @@ test('home-relative export override expands and dashboard reports its configured
   const project = projectReview(loadConfig(f.io), 'acme/demo', { cwd: f.root, home: f.root });
   assert.equal(project.mbTarget, target); assert.equal(project.platforms.bluesky.delivery, 'marketBlaster');
 });
+test('dashboard review freshness follows post and media changes', () => {
+  const f = fixture(), config = loadConfig(f.io);
+  const stale = () => projectReview(config, 'acme/demo').reviews.find(review => review.platform === 'bluesky')?.stale;
+  assert.equal(stale(), false);
+  f.review.postHash = 'stale'; f.save();
+  assert.equal(stale(), true);
+  f.review.postHash = reviewHash({ title: 'T', body: 'Hello', media: [{ path: 'image.png', alt: 'Alt' }] }); f.save();
+  writeFileSync(join(f.project, 'assets/a/out/image.png'), 'changed');
+  assert.equal(stale(), true);
+  unlinkSync(join(f.project, 'assets/a/out/image.png'));
+  assert.equal(stale(), true);
+});
+
 test('refuses nonpassing, failed gates and stale reviews', async () => {
   const f = fixture();
   for (const verdict of ['revise', 'blocked']) { f.review.verdict = verdict; f.save(); await assert.rejects(exportCommand(['acme/demo'], f.io), /bluesky.*review/); }

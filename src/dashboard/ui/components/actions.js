@@ -25,13 +25,15 @@ function terminalCommand(op, schema, campaign, args) {
 export function jobRegion(container, ctx, options = {}) {
   const region = el('section', null, 'surface job-status actions-job'), status = el('div'), startError = el('div'), cancelError = el('div'), details = el('details'), log = el('pre', null, 'job-log actions-log'), cancel = button('Cancel job', 'secondary');
   details.append(el('summary', 'Job log'), log); cancel.hidden = true; region.append(el('h2', 'Job status'), startError, status, cancelError, cancel, details); container.append(region);
-  let current, timer, lastState;
+  let current, timer, lastState, lockConflict = false;
   async function refresh() {
     if (!region.isConnected) { clearTimeout(timer); return; }
     try {
-      const jobs = (await api(`/api/jobs?campaign=${encodeURIComponent(slugOf(ctx))}`)).filter(job => !options.operation || job.operation === options.operation);
+      const allJobs = await api(`/api/jobs?campaign=${encodeURIComponent(slugOf(ctx))}`);
+      if (lockConflict && !allJobs.some(job => job.state === 'queued' || job.state === 'running')) { startError.replaceChildren(); lockConflict = false; }
+      const jobs = allJobs.filter(job => !options.operation || job.operation === options.operation);
       const job = current ? jobs.find(item => item.id === current) : jobs[0];
-      if (!job) { status.replaceChildren(el('p', 'No jobs yet.', 'muted')); details.hidden = true; cancel.hidden = true; return; }
+      if (!job) { status.replaceChildren(el('p', 'No jobs yet.', 'muted')); details.hidden = true; cancel.hidden = true; if (lockConflict) timer = setTimeout(refresh, 2000); return; }
       current = job.id;
       const result = await api(`/api/jobs/${encodeURIComponent(job.id)}/log?tail=200`), lines = (result.log || '').trim().split('\n').filter(Boolean);
       log.textContent = result.log || 'No log output yet.'; details.hidden = false;
@@ -41,18 +43,18 @@ export function jobRegion(container, ctx, options = {}) {
       cancel.hidden = !running; cancel.disabled = !!job.cancelRequested;
       if (!running && lastState && lastState !== job.state) await options.onComplete?.(job);
       lastState = job.state;
-      if (running) timer = setTimeout(refresh, 2000);
+      if (running || lockConflict) timer = setTimeout(refresh, 2000);
     } catch (error) { status.replaceChildren(notice(error.message)); }
   }
   cancel.addEventListener('click', async () => { cancel.disabled = true; try { await api(`/api/jobs/${encodeURIComponent(current)}/cancel`, { method: 'POST', headers }); cancelError.replaceChildren(); await refresh(); } catch (error) { cancelError.replaceChildren(notice(error.message)); cancel.disabled = false; } });
   async function run(op, args = {}) {
-    try { const job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op, campaign: slugOf(ctx), args }) }); current = job.id; lastState = 'queued'; clearTimeout(timer); await refresh(); return true; }
+    try { const job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op, campaign: slugOf(ctx), args }) }); current = job.id; lastState = 'queued'; lockConflict = false; startError.replaceChildren(); clearTimeout(timer); await refresh(); return true; }
     catch (error) {
-      let message = error.message;
-      if (/campaign is locked/i.test(message)) {
+      let message = error.message; lockConflict = /campaign is locked/i.test(message);
+      if (lockConflict) {
         try { const jobs = await api(`/api/jobs?campaign=${encodeURIComponent(slugOf(ctx))}`); const running = jobs.find(job => job.state === 'running' || job.state === 'queued'); message = `Another job${running ? ` (${running.operation})` : ''} is running on this campaign. Wait for it or cancel it.`; } catch { message = 'Another job is running on this campaign. Wait for it or cancel it.'; }
       }
-      const n = el('cds-inline-notification'); n.setAttribute('kind', 'error'); n.setAttribute('title', message); startError.replaceChildren(n); if (error.command) startError.append(el('code', error.command), copyButton('Copy command', error.command)); return false;
+      const n = el('cds-inline-notification'); n.setAttribute('kind', 'error'); n.setAttribute('title', message); startError.replaceChildren(n); if (error.command) startError.append(el('code', error.command), copyButton('Copy command', error.command)); if (lockConflict) { clearTimeout(timer); timer = setTimeout(refresh, 2000); } return false;
     }
   }
   setTimeout(refresh, 0); return run;
@@ -93,13 +95,13 @@ export function renderActions(container, ctx) {
   const next = !project.plan.length ? 'plan' : !project.assets.length ? 'make' : !project.posts.length ? 'render' : project.reviews.length < project.posts.length ? 'review' : null;
   function action(op, label, group) {
     const schema = ctx.operations?.[op]; if (!schema) return;
-    const wrapper = el('div', null, 'actions-item'), b = button(label, op === next ? 'primary' : 'secondary'); wrapper.append(b); if (schema.paid) { const tag = el('cds-tag', 'Paid'); tag.setAttribute('type', 'purple'); wrapper.append(tag); } if (pipeline.some(([name]) => name === op)) wrapper.append(el('span', op === next ? 'Next step' : ({ plan: project.plan.length, make: project.assets.length, render: project.posts.length, review: project.reviews.length })[op] ? 'Available' : 'Not started', 'muted')); group.append(wrapper);
+    const wrapper = el('div', null, 'actions-item'), b = button(label, op === next ? 'primary' : 'secondary'); wrapper.append(b); if (schema.paid) { const tag = el('cds-tag', 'Paid'); tag.setAttribute('type', 'purple'); wrapper.append(tag); } if (pipeline.some(([name]) => name === op)) wrapper.append(el('span', op === next ? 'Next step' : ({ plan: project.plan.length, make: project.assets.length, render: project.posts.length, review: project.reviews.length })[op] ? 'Done' : 'Not run', 'muted')); group.append(wrapper);
     if (new URLSearchParams(location.hash.split('?')[1] || '').get('start') === op) setTimeout(() => { b.focus(); b.click(); }, 0);
     b.addEventListener('click', () => {
       const fields = [];
       if (schema.fields.platforms) fields.push(select('platforms', 'Platform', platforms()));
       if (schema.fields.assets) fields.push(select('assets', 'Asset', assets()));
-      if (op === 'accept') fields.push(select('platform', 'Platform', platforms(), true), input('reason', 'Reason', true, 'cds-textarea'));
+      if (op === 'accept') fields.push(select('platform', 'Platform', project.reviews.filter(review => review.verdict === 'revise' && Array.isArray(review.gates) && review.gates.length && review.gates.every(gate => gate?.pass === true) && project.posts.some(post => post.platform === review.platform)).map(review => review.platform), true), input('reason', 'Reason', true, 'cds-textarea'));
       if (op === 'confirm') fields.push(select('asset', 'Asset', assets(), true), check('trademarkChecked', 'Trademark checked'), input('license', 'License'));
       if (op === 'mark') fields.push(select('platform', 'Manual destination', platforms().filter(id => project.platforms[id]?.delivery === 'manual' && ['youtube-shorts', 'instagram', 'tiktok', 'dailydev'].includes(id)), true), input('url', 'Published URL', true));
       if (op === 'feedback add') fields.push(input('note', 'Feedback', true, 'cds-textarea'), select('platform', 'Platform', platforms()), select('asset', 'Asset', assets()));

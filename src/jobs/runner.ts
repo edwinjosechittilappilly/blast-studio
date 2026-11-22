@@ -10,7 +10,7 @@ import { buildOperation } from './registry.ts';
 import { exactProcess, linuxStat, processAlive, processStarted, sameProcess } from './process.ts';
 
 export type JobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
-export interface Job { id: string; operation: string; campaign?: string; state: JobState; createdAt: string; updatedAt: string; pid?: number; processStarted?: string; childStarted?: Record<string, string>; exitCode?: number | null; completed?: boolean; command: string; cancelRequested?: boolean; processGroup?: boolean; childPids?: number[] }
+export interface Job { id: string; operation: string; campaign?: string; state: JobState; createdAt: string; updatedAt: string; pid?: number; processStarted?: string; childStarted?: Record<string, string>; exitCode?: number | null; completed?: boolean; findings?: boolean; command: string; cancelRequested?: boolean; processGroup?: boolean; childPids?: number[] }
 export class JobConflict extends Error { owner: string; constructor(owner: string) { super(`Campaign is locked by ${owner}`); this.owner = owner; } }
 export class JobNotFound extends UserError { constructor() { super('Job not found'); } }
 export class JobNotRunning extends UserError { constructor() { super('Job is not running'); } }
@@ -154,11 +154,11 @@ export function startCliJob(root: string, ref: string, operation: string): { id:
   };
 }
 /** The spawned CLI records its outcome even if its launching dashboard has exited. */
-export function finishSpawnedJob(root: string, ref: string | undefined, id: string, code: number, cancelled = false): void {
+export function finishSpawnedJob(root: string, ref: string | undefined, id: string, code: number, cancelled = false, returned = false): void {
   const dir = logDir(root, ref);
   updateJob(root, dir, id, job => {
     if (job.campaign !== ref) throw new UserError('Invalid job record');
-    job.exitCode = code; job.completed = true; job.cancelRequested ||= cancelled; job.updatedAt = new Date().toISOString();
+    job.exitCode = code; job.completed = true; job.cancelRequested ||= cancelled; job.findings = !job.cancelRequested && returned && ((job.operation === 'doctor' && code === 1) || (job.operation === 'sources check' && (code === 1 || code === 2))); job.updatedAt = new Date().toISOString();
   });
   if (ref) releaseCampaignLock(root, lockPath(root, ref), id);
 }

@@ -24,6 +24,21 @@ function confirmVerify(id, action) {
   footer.append(cancel, verify); modal.append(header, body, footer); document.body.append(modal); modal.addEventListener('cds-modal-closed', () => modal.remove()); modal.open = true;
 }
 
+function confirmKeys(keys) {
+  return new Promise(resolve => {
+    const modal = el('cds-modal'), header = el('cds-modal-header'), body = el('cds-modal-body'), footer = el('cds-modal-footer');
+    header.append(el('cds-modal-heading', 'Save provider keys?'), el('cds-modal-close-button'));
+    body.append(el('p', `Save ${keys.join(', ')} to the login keychain? Existing keychain values will be overwritten for all studios.`));
+    const cancel = button('Cancel', 'secondary'), confirm = button('Save keys', 'primary');
+    const finish = confirmed => { modal.open = false; modal.remove(); resolve(confirmed); };
+    cancel.addEventListener('click', () => finish(false));
+    confirm.addEventListener('click', () => finish(true));
+    footer.append(cancel, confirm); modal.append(header, body, footer); document.body.append(modal);
+    modal.addEventListener('cds-modal-closed', () => finish(false));
+    modal.open = true;
+  });
+}
+
 export async function renderSettings(container) {
   container.replaceChildren(el('h1', 'Budget & providers'), el('p', 'Loading settings…'));
   let data; try { data = await api('/api/budget'); } catch (error) { container.replaceChildren(el('h1', 'Budget & providers'), notice(error.message)); return; }
@@ -44,20 +59,26 @@ export async function renderSettings(container) {
   const credentials = el('section', null, 'surface'), authStatus = el('div'); let keyStatus = null;
   credentials.append(el('h2', 'Provider keys'), el('p', 'Saved to your macOS login keychain (shared by all studios). Existing values are never displayed.'), authStatus);
   const keyInputs = [];
-  for (const [key, label] of [['GEMINI_API_KEY', 'Gemini API key'], ['OPENAI_API_KEY', 'OpenAI API key']]) { const input = field('cds-password-input', label, '', 'Leave blank to keep the existing key.'); input.setAttribute('autocomplete', 'off'); keyInputs.push([key, input]); credentials.append(input); }
+  for (const [key, label] of [['GEMINI_API_KEY', 'Gemini API key'], ['OPENAI_API_KEY', 'OpenAI API key']]) {
+    const input = field('cds-password-input', label, '', 'Leave blank to keep the existing key.');
+    input.setAttribute('autocomplete', 'off');
+    // Carbon's password input renders a label without associating it with its input.
+    input.updateComplete.then(() => input.shadowRoot.querySelector('label').setAttribute('for', 'input'));
+    keyInputs.push([key, input]); credentials.append(input);
+  }
   const keyResult = el('div'); keyResult.setAttribute('aria-live', 'polite'); credentials.append(keyResult);
   const saveSettings = async event => {
-    event.preventDefault(); clear(); keyResult.replaceChildren();
+    event.preventDefault(); if (save.disabled) return; clear(); keyResult.replaceChildren();
     if (monthly.invalid || campaign.invalid) { (monthly.invalid ? monthly : campaign).focus(); return; }
     const entered = keyInputs.filter(([, input]) => input.value).map(([key]) => key);
-    if (entered.length && !keyStatus) { keyResult.replaceChildren(notice('Credential status is unavailable. Reload before saving keys.')); return; }
-    if (entered.length && !window.confirm(`Save ${entered.join(', ')} to the login keychain? Any existing keychain values will be overwritten for all studios.`)) return;
     save.disabled = true;
+    const saveKeys = entered.length && keyStatus ? await confirmKeys(entered) : false;
+    if (entered.length && !saveKeys) keyResult.replaceChildren(notice(keyStatus ? 'Keys not saved.' : 'Keys not saved. Credential status is unavailable; reload before saving keys.'));
     try {
       await api('/api/budget', { method: 'PUT', headers, body: JSON.stringify({ monthlyUsd: Number(monthly.value), perProjectUsd: Number(campaign.value) }) });
       await api('/api/providers', { method: 'PUT', headers, body: JSON.stringify({ images: images.value, voice: voice.value, allowUpload: consent.checked }) });
       let savedKeys = false;
-      for (const [key, input] of keyInputs) if (input.value) { await api('/api/secrets', { method: 'POST', headers, body: JSON.stringify({ key, value: input.value }) }); input.value = ''; savedKeys = true; }
+      if (saveKeys) for (const [key, input] of keyInputs) if (input.value) { await api('/api/secrets', { method: 'POST', headers, body: JSON.stringify({ key, value: input.value }) }); input.value = ''; savedKeys = true; }
       result.replaceChildren(notice('Settings saved.', 'success'));
       if (savedKeys) await refreshAuth();
     } catch (error) { result.replaceChildren(notice(`Could not save all settings: ${error.message}`)); }
@@ -87,7 +108,7 @@ export async function renderSources(container) {
       results.replaceChildren(el('h2', `Last checked: ${data.lastCheck || 'Never'}`));
       if (!rows.length) results.append(el('p', data.lastCheck ? 'No changed, failed or manual sources in the latest report.' : 'No source check has been run yet.'));
       else results.append(table(['Source', 'Status', 'Details', 'Action'], rows.map(({ id, status, title, url, fields, error, previous, current }) => {
-        const source = el('div'); source.append(el('strong', title || id), el('p', id));
+        const source = el('div'); source.append(el('strong', title || id)); if (title && title !== id) source.append(el('p', id));
         if (url && /^https?:\/\//i.test(url)) { const link = el('a', url); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; source.append(link); }
         const details = el('details'); details.append(el('summary', 'What changed'), el('p', error || `Affected guidance: ${fields || 'Not reported'}`));
         if (previous && current) { try { details.append(el('h4', 'Previous'), el('p', JSON.parse(previous)), el('h4', 'Current'), el('p', JSON.parse(current))); } catch { details.append(el('p', 'Snapshot details are unavailable.')); } }

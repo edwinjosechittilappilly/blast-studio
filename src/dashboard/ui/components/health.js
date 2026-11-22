@@ -24,19 +24,21 @@ export async function runJob(target, op, args = {}, onComplete = () => {}) {
   let job;
   try { job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op, args }) }); }
   catch (error) { target.replaceChildren(notice(error.message)); if (error.command) target.append(el('p', 'This operation requires a terminal.'), command(error.command)); await onComplete({ state: 'failed' }, ''); return; }
-  const status = el('p'), cancel = button('Cancel job', 'secondary'), details = el('details'), summary = el('summary', 'Job log'), log = el('pre');
-  details.append(summary, log); target.replaceChildren(status, cancel, details);
+  const status = el('p'), warning = notice('', 'warning'), cancel = button('Cancel job', 'secondary'), details = el('details'), summary = el('summary', 'Job log'), log = el('pre');
+  warning.hidden = true; details.append(summary, log); target.replaceChildren(status, warning, cancel, details);
   cancel.addEventListener('click', async () => { cancel.disabled = true; try { await api(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST', headers }); } catch (error) { target.append(notice(error.message)); cancel.disabled = false; } });
   async function update() {
     try {
       const [current, output] = await Promise.all([api(`/api/jobs/${encodeURIComponent(job.id)}`), api(`/api/jobs/${encodeURIComponent(job.id)}/log?tail=1000`)]);
       job = current; log.textContent = output.log || 'No output yet.';
-      const findings = op === 'sources check' && job.state === 'failed' && job.exitCode === 2;
-      const counts = [...(output.log || '').matchAll(/^##\s+[^:]+:\s*(changed|new|failed|manual)\b/gmi)].reduce((all, match) => { const key = match[1].toLowerCase(); all[key] = (all[key] || 0) + 1; return all; }, {});
-      status.textContent = findings ? `Completed with findings · ${Object.entries(counts).map(([key, count]) => `${count} ${key}`).join(' · ')}` : `Job ${job.state}${job.cancelRequested && (job.state === 'running' || job.state === 'queued') ? ' · cancellation requested' : ''}`;
+      const findings = job.findings === true && job.state === 'failed';
+      const counts = op === 'sources check' ? [...(output.log || '').matchAll(/^##\s+[^:]+:\s*(changed|new|failed|manual)\b/gmi)].reduce((all, match) => { const key = match[1].toLowerCase(); all[key] = (all[key] || 0) + 1; return all; }, {}) : {};
+      const message = findings ? ['Completed with findings', ...Object.entries(counts).map(([key, count]) => `${count} ${key}`)].join(' · ') : `Job ${job.state}${job.cancelRequested && (job.state === 'running' || job.state === 'queued') ? ' · cancellation requested' : ''}`;
+      status.hidden = findings; warning.hidden = !findings;
+      if (findings) warning.setAttribute('title', message); else status.textContent = message;
       if (job.state === 'running' || job.state === 'queued') { setTimeout(() => { if (target.isConnected) update(); }, 1000); return; }
       cancel.hidden = true; await onComplete(job, output.log || '');
-    } catch (error) { status.textContent = 'Unable to refresh job status.'; target.append(notice(error.message)); cancel.hidden = true; await onComplete({ state: 'failed' }, ''); }
+    } catch (error) { status.hidden = false; warning.hidden = true; status.textContent = 'Unable to refresh job status.'; target.append(notice(error.message)); cancel.hidden = true; await onComplete({ state: 'failed' }, ''); }
   }
   await update();
 }
@@ -44,15 +46,16 @@ export async function runJob(target, op, args = {}, onComplete = () => {}) {
 export function parseDoctor(log) {
   return log.split(/\r?\n/).filter(Boolean).map(line => {
     const match = /^([^:]+):\s*(.*)$/.exec(line);
-    if (!match) return { tool: 'Studio', status: /disabled|missing|error/i.test(line) ? 'Attention' : 'Info', version: '', hint: line };
+    if (!match) return { tool: line.startsWith('omp generate_image is disabled') ? 'omp generate_image.enabled' : 'Studio', status: /disabled|missing|error/i.test(line) ? 'Attention' : 'Info', version: '', hint: line };
     const [, tool, result] = match, parts = result.split(/;\s*/, 2), problem = /^(missing|not set)/i.test(result) || /requires Node/i.test(result) || (tool === 'omp generate_image.enabled' && /^(false|disabled)$/i.test(result));
     return { tool, status: problem ? 'Attention' : 'Available', version: parts[0], hint: parts[1] || '' };
   });
 }
 function fixCell(hint, tool, status) {
   const node = el('div');
-  let fix = hint, copy = /^(?:install|run):\s*(.+)$/.exec(hint)?.[1]?.replace(/ \(.*$/, '').replace(/ or add it to the studio \.env$/, '');
-  if (status === 'Attention' && !copy) {
+  let fix = hint, copy = /^(?:install|run):\s*(.+)$/.exec(hint)?.[1]?.split(';')[0].replace(/ \(.*$/, '').replace(/ or add it to the studio \.env$/, '');
+  if (copy && /^https?:/.test(copy)) copy = undefined;
+  if (status === 'Attention' && !copy && !/^install:\s*https?:/.test(hint)) {
     if (tool === 'Node') { fix = 'Install a supported Node.js version.'; copy = 'brew install node'; }
     else if (tool.startsWith('omp generate_image')) { fix = 'Enable image generation in OMP configuration.'; copy = 'omp config set generate_image.enabled true'; }
     else { fix ||= 'Review the health check output and rerun the check.'; copy = 'bstudio doctor'; }

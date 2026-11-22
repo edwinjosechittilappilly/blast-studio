@@ -10,6 +10,7 @@ import { loadPacks, loadSources } from './packs.ts';
 import { repoRoot } from './updater/check.ts';
 import { loadFeedback } from './feedback.ts';
 import { readPlan } from './plan.ts';
+import { mediaContentHash, reviewHash } from './review-hash.ts';
 import type { AssetMeta, PlatformId, PlatformPack, Review, StudioConfig } from './types.ts';
 
 const dirs = (path: string) => existsSync(path) ? readdirSync(path, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name).sort() : [];
@@ -77,6 +78,16 @@ export function projectReview(config: StudioConfig, slug: string, environment: {
   const mbTarget = expanded ? resolve(typeof projectTarget === 'string' ? root : environment.cwd, expanded) : null;
   const plan = existsSync(join(dir, 'plan.yml')) ? readPlan(dir) : [];
   const packs = cachedPacks ??= loadPacks();
+  const reviews = project.reviews.map(review => {
+    const post = project.posts.find(item => item.platform === review.platform);
+    if (!post) return { ...review, stale: false };
+    let stale = reviewHash({ ...post, media: post.media.map(m => ({ path: m.file, alt: m.alt })) }) !== review.postHash;
+    if (!stale) {
+      try { stale = review.mediaHash !== mediaContentHash(dir, post.media); }
+      catch { stale = true; }
+    }
+    return { ...review, stale };
+  });
   const rubric = Object.fromEntries(project.posts.map(post => { const pack = packs.get(post.platform); return [post.platform, pack?.ai === 'outline' ? pack.outlineRubric ?? [] : pack?.rubric ?? []]; }));
   const platforms = Object.fromEntries(project.posts.flatMap(post => {
     const pack = packs.get(post.platform);
@@ -94,7 +105,7 @@ export function projectReview(config: StudioConfig, slug: string, environment: {
     const caption = (media as typeof media & { captions?: string }).captions;
     if (caption) captions[media.file] = caption;
   }
-  return { ...project, plan, rubric, platforms, captions, mbTarget, threshold: config.review.threshold, feedback: loadFeedback(dir) };
+  return { ...project, reviews, plan, rubric, platforms, captions, mbTarget, threshold: config.review.threshold, feedback: loadFeedback(dir) };
 }
 export function loadLibrary(config: StudioConfig, query = '') {
   const needle = query.toLocaleLowerCase();

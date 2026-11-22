@@ -25,6 +25,7 @@ export function setupShell() {
   jobsButton.append(icon(List20));
   document.querySelector('#new-action').setAttribute('tooltip-text', 'New project');
   jobsButton.setAttribute('tooltip-text', 'Jobs');
+  jobsButton.setAttribute('tooltip-alignment', 'right');
   let refreshing = false;
   const rows = new Map(), list = document.querySelector('#jobs-list');
   function relativeTime(value) {
@@ -60,8 +61,9 @@ export function setupShell() {
         for (const job of jobs) {
           let row = rows.get(job.id);
           if (!row) { row = createRow(job); rows.set(job.id, row); }
-          row.heading.textContent = job.operation; row.tag.textContent = job.state;
-          row.tag.setAttribute('type', job.state === 'succeeded' ? 'green' : job.state === 'failed' ? 'red' : job.state === 'running' ? 'blue' : 'gray');
+          const findings = job.state === 'failed' && job.findings === true;
+          row.heading.textContent = job.operation; row.tag.textContent = findings ? 'Completed with findings' : job.state;
+          row.tag.setAttribute('type', findings ? 'warm-gray' : job.state === 'succeeded' ? 'green' : job.state === 'failed' ? 'red' : job.state === 'running' ? 'blue' : 'gray');
           row.time.dateTime = job.createdAt; row.time.textContent = relativeTime(job.createdAt);
           const href = job.campaign ? `#/p/${job.campaign.split('/').map(encodeURIComponent).join('/')}/overview` : '';
           if (row.campaign.dataset.href !== href) { row.campaign.dataset.href = href; if (href) { const link = el('a', job.campaign); link.href = href; row.campaign.replaceChildren(link); } else row.campaign.textContent = 'Studio'; }

@@ -10,7 +10,7 @@ import { buildOperation, campaignRef } from '../src/jobs/registry.ts';
 import { acquireCampaignLock, campaignDirectory, campaignLockStatus, cancelJob, findJob, finishSpawnedJob, jobLog, jobLogTail, JobConflict, JobNotFound, JobNotRunning, listJobs, processGroupRunning, startCliJob, startJob } from '../src/jobs/runner.ts';
 import { processStarted } from '../src/jobs/process.ts';
 import { saveSecret } from '../src/jobs/secrets.ts';
-import { main, realIO } from '../src/cli.ts';
+import { main, realIO, withCampaignLock } from '../src/cli.ts';
 import { run as jobsCommand } from '../src/commands/jobs.ts';
 import { runBilledAgent } from '../src/agent-env.ts';
 import { loadConfig } from '../src/config.ts';
@@ -264,6 +264,28 @@ test('a finished global job is recovered without trusting a reused PID', () => {
     assert.equal(listJobs(root)[0].state, 'succeeded');
     assert.throws(() => cancelJob(root, id), /not running/);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('global job findings require a normal diagnostic command return', async () => {
+  const root = tempStudio(), dir = join(root, 'logs/jobs');
+  mkdirSync(dir, { recursive: true });
+  const cases = [
+    { operation: 'doctor', code: 1, findings: true },
+    { operation: 'sources check', code: 1, findings: true },
+    { operation: 'sources check', code: 2, findings: true },
+    { operation: 'doctor', code: 0, findings: false },
+    { operation: 'sources check', code: 1, findings: false, throws: true },
+    { operation: 'doctor', code: 1, findings: false, throws: true },
+  ];
+  for (const [index, entry] of cases.entries()) {
+    const id = `a0000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+    writeFileSync(join(dir, `${id}.json`), JSON.stringify({ id, operation: entry.operation, state: 'running', createdAt: '2026-01-01', updatedAt: '2026-01-01', command: `bstudio ${entry.operation}` }));
+    const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_JOB_ID: id } });
+    const run = async () => { if (entry.throws) throw new Error('check failed'); return entry.code; };
+    if (entry.throws) await assert.rejects(withCampaignLock(entry.operation, [], io, run), /check failed/);
+    else assert.equal(await withCampaignLock(entry.operation, [], io, run), entry.code);
+    assert.equal(findJob(root, id).findings, entry.findings, entry.operation);
+  }
 });
 
 test('unverified child identities neither keep jobs running nor receive cancellation signals', { timeout: 10000 }, async () => {

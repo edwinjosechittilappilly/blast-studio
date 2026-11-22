@@ -91,6 +91,47 @@ test('terminal-only campaign actions prepare a copyable command without starting
   assert.equal(submitted, false);
 });
 
+test('accept offers only revised destinations with passing gates', async t => {
+  const { page, url } = await dashboard(t);
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.posts = ['linkedin', 'x', 'threads', 'bluesky'].map(platform => ({ platform }));
+    project.reviews = [
+      { platform: 'linkedin', verdict: 'revise', gates: [{ pass: true }] },
+      { platform: 'x', verdict: 'revise', gates: [{ pass: false }] },
+      { platform: 'threads', verdict: 'pass', gates: [{ pass: true }] },
+      { platform: 'bluesky', verdict: 'revise', gates: [] },
+    ];
+    await route.fulfill({ json: project });
+  });
+  await page.goto(`${url}#/p/acme/launch/actions`);
+  await page.getByRole('button', { name: 'Accept', exact: true }).click();
+  const options = page.locator('cds-modal cds-select-item');
+  assert.deepEqual(await options.allTextContents(), ['linkedin']);
+});
+
+test('campaign lock error clears when the conflicting job finishes', async t => {
+  const { page, url } = await dashboard(t); let running = true;
+  await page.route('**/api/jobs?*', route => route.fulfill({ json: [job(running ? 'running' : 'succeeded')] }));
+  await page.route('**/api/jobs/revision-1/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.route('**/api/jobs', route => route.fulfill({ status: 409, json: { error: 'Campaign is locked' } }));
+  await page.goto(`${url}#/p/acme/launch/actions`);
+  await page.getByRole('button', { name: 'Review', exact: true }).click();
+  await page.locator('cds-modal').getByRole('button', { name: 'Review', exact: true }).click();
+  const conflict = page.locator('cds-inline-notification[title^="Another job"]');
+  await conflict.waitFor();
+  running = false;
+  await conflict.waitFor({ state: 'detached' });
+});
+
+test('pipeline labels describe whether a step has output', async t => {
+  const { page, url } = await dashboard(t);
+  await page.goto(`${url}#/p/acme/launch/actions`);
+  const actions = page.locator('.actions-panel');
+  await actions.getByText('Done', { exact: true }).first().waitFor();
+  await actions.getByText('Not run', { exact: true }).first().waitFor();
+});
+
 test('an older failed search cannot replace newer search results', async t => {
   const { page, url } = await dashboard(t);
   const old = gate();
@@ -209,4 +250,66 @@ test('completion refresh retries after a temporary failure', async t => {
   await page.goto(url); await openLaunch(page);
   await page.getByText('Revision completed. Review the updated campaign.').waitFor({ timeout: 15000 });
   assert.ok(projectCalls >= 3);
+});
+
+test('export readiness identifies stale reviews and formats small exports', async t => {
+  const { page, url } = await dashboard(t);
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.reviews = [{ platform: 'linkedin', verdict: 'pass', stale: true, gates: ['policy', 'disclosure', 'specs', 'accessibility', 'fabricated-metrics', 'rights'].map(id => ({ id, pass: true })) }];
+    await route.fulfill({ response, json: project });
+  });
+  await page.route('**/api/campaigns/acme/launch/exports', route => route.fulfill({ json: [{ name: 'small.zip', kind: 'zip', size: 8, time: '2026-01-01T00:00:00Z' }] }));
+  await page.goto(`${url}#/p/acme/launch/export`);
+  await page.getByText('8 bytes', { exact: true }).waitFor();
+  await page.getByText('pass; stale', { exact: false }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Export locally' }).isDisabled(), true);
+  assert.match(await page.getByText('Export is unavailable for:', { exact: false }).innerText(), /LinkedIn/);
+  await page.getByRole('link', { name: 're-run review' }).click();
+  await page.getByRole('button', { name: 'Review', exact: true }).waitFor();
+});
+
+test('project page has one campaign action and jobs tooltip stays within the viewport', async t => {
+  const { page, url } = await dashboard(t);
+  await page.goto(`${url}#/p/acme`);
+  await page.getByRole('heading', { name: 'Acme' }).waitFor();
+  assert.equal(await page.locator('#project-detail cds-button').filter({ hasText: 'New campaign' }).count(), 1);
+  await page.getByRole('button', { name: /Jobs/ }).click();
+  await page.getByRole('heading', { name: 'Jobs', exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+});
+
+for (const scenario of [
+  { operation: 'doctor', route: 'health', button: 'Run health check', log: 'omp generate_image.enabled: false\nomp generate_image is disabled; enable generate_image.enabled in omp config\n', code: 1 },
+  { operation: 'sources check', route: 'sources', button: 'Check sources', log: '# Platform sources\n\n## example: failed\n', code: 1 },
+  { operation: 'sources check', route: 'sources', button: 'Check sources', log: '# Platform sources\n\n## example: changed\n', code: 2 },
+]) test(`${scenario.operation} exit ${scenario.code} is displayed as findings`, async t => {
+  const { page, url } = await dashboard(t);
+  const record = { id: 'diagnostic-1', operation: scenario.operation, state: 'failed', exitCode: scenario.code, findings: true, createdAt: '2026-01-01T00:00:00Z' };
+  await page.addInitScript(() => { Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (text: string) => { document.documentElement.dataset.copiedText = text; } } }); });
+  await page.route('**/api/jobs', async route => { await route.fulfill({ json: route.request().method() === 'POST' ? record : [record] }); });
+  await page.route('**/api/jobs/diagnostic-1/log?*', async route => { await route.fulfill({ json: { log: scenario.log } }); });
+  await page.route('**/api/jobs/diagnostic-1', async route => { await route.fulfill({ json: record }); });
+  await page.goto(`${url}#/${scenario.route}`);
+  await page.getByRole('button', { name: scenario.button }).click();
+  await page.locator('cds-inline-notification[kind="warning"][title^="Completed with findings"]').waitFor();
+  if (scenario.operation === 'doctor') {
+    await page.getByRole('button', { name: 'Copy fix' }).first().click();
+    await page.waitForFunction(() => document.documentElement.dataset.copiedText === 'omp config set generate_image.enabled true');
+  }
+  await page.locator('#jobs-toggle').click();
+  await page.locator('#jobs-list cds-tag[type="warm-gray"]').getByText('Completed with findings').waitFor();
+});
+
+test('a failed diagnostic job without findings remains a failure', async t => {
+  const { page, url } = await dashboard(t);
+  const record = { id: 'diagnostic-1', operation: 'doctor', state: 'failed', exitCode: 1, findings: false, createdAt: '2026-01-01T00:00:00Z' };
+  await page.route('**/api/jobs', async route => { await route.fulfill({ json: route.request().method() === 'POST' ? record : [record] }); });
+  await page.route('**/api/jobs/diagnostic-1/log?*', async route => { await route.fulfill({ json: { log: 'error: invalid configuration' } }); });
+  await page.route('**/api/jobs/diagnostic-1', async route => { await route.fulfill({ json: record }); });
+  await page.goto(`${url}#/health`);
+  await page.getByRole('button', { name: 'Run health check' }).click();
+  await page.getByText('Job failed', { exact: true }).waitFor();
+  await page.locator('#jobs-toggle').click();
+  await page.locator('#jobs-list cds-tag[type="red"]').getByText('failed', { exact: true }).waitFor();
 });

@@ -13,5 +13,5 @@ export function renderFeedbackHistory(container, { campaign, entries, onRemove }
     const action = el('td'); if (onRemove) { const remove = button('Remove', 'ghost'); remove.addEventListener('click', () => onRemove(entry)); action.append(remove); }
     row.append(status, el('td', target), note, el('td', new Date(entry.at).toLocaleString()), action); body.append(row);
   }
-  table.append(head, body); scroll.append(table); container.append(scroll);
+  table.append(head, body); scroll.append(table); container.append(el('p', 'Scroll horizontally to see all feedback columns.', 'feedback-scroll-cue muted'), scroll);
 }

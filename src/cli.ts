@@ -163,10 +163,10 @@ export async function withCampaignLock(name: string, args: string[], io: IO, run
     const id = io.env.BSTUDIO_JOB_ID, root = loadConfig(io).root;
     const campaign = io.env.BSTUDIO_JOB_CAMPAIGN;
     recordProcesses = pids => updateJobProcesses(root, campaign, id, pids);
-    let done = false, code = 1;
-    const finish = () => { if (!done) { done = true; finishSpawnedJob(root, campaign, id, code, Boolean(interrupted)); } };
+    let done = false, code = 1, returned = false;
+    const finish = () => { if (!done) { done = true; finishSpawnedJob(root, campaign, id, code, Boolean(interrupted), returned); } };
     abortJob = finish;
-    try { code = await run(io); return code; } finally { await stopping; subprocesses.clear(); recordProcesses = undefined; abortJob = undefined; finish(); }
+    try { code = await run(io); returned = true; return code; } finally { await stopping; subprocesses.clear(); recordProcesses = undefined; abortJob = undefined; finish(); }
   }
   const ref = campaignRef(refArg), config = loadConfig(io), root = config.root;
   campaignDir(config, ref);
