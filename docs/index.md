@@ -19,6 +19,10 @@ bstudio init
 
 Requires Node 22.18 or newer. See [getting started](getting-started.md) for setup and provider requirements.
 
+## How it works
+
+![Inputs flow through brief, plan, make, render, review, revise or accept, and export to Market Blaster. Platform packs inform making and review.](assets/pipeline.svg)
+
 <div class="grid cards" markdown>
 
 - **[Getting started](getting-started.md)**

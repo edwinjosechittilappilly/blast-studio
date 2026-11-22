@@ -46,6 +46,10 @@ The agent commands must be installed and configured before planning, making or r
 
 <p align="center"><img src="docs/assets/demo.svg" alt="A Blast Studio terminal session" width="100%"></p>
 
+## How it works
+
+![Inputs flow through brief, plan, make, render, review, revise or accept, and export to Market Blaster. Platform packs inform making and review.](docs/assets/pipeline.svg)
+
 ## What it makes
 
 | Format | Source and output |

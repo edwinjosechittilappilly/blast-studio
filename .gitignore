@@ -12,3 +12,4 @@ site/
 !.env.example
 *.tmp
 out/
+__pycache__/
