@@ -18,6 +18,7 @@ import { setupShell } from './components/shell.js';
 import { renderNewProject, renderNewCampaign } from './components/create.js';
 import { renderActions, renderAssetsTable } from './components/actions.js';
 import { renderExport } from './components/export.js';
+import { renderFeedbackHistory } from './components/feedback.js';
 import { renderSettings, renderSources } from './components/settings.js';
 import { renderHealth } from './components/health.js';
 const $ = s => document.querySelector(s);
@@ -87,8 +88,8 @@ async function library() {
 }
 function feedbackHistory(project, target) {
   const entries = project.feedback.filter(e => target.platform ? e.target.platform === target.platform : target.asset ? e.target.asset === target.asset : true), section = el('section', null, 'feedback-history');
-  if (!entries.length) return section; const details = el('details'); details.append(el('summary', `Feedback history (${entries.length})`));
-  for (const entry of entries) { const row = el('div', null, 'history-entry'), tag = el('cds-tag', entry.status[0].toUpperCase() + entry.status.slice(1)); tag.setAttribute('type', entry.status === 'applied' ? 'green' : entry.status === 'rejected' ? 'red' : 'blue'); const targetName = entry.target.platform ? `${displayName(entry.target.platform)} post` : entry.target.asset ? `Asset: ${entry.target.asset}` : 'Campaign'; row.append(tag, el('strong', ` ${targetName} · ${new Date(entry.at).toLocaleString()}`), el('p', entry.note)); if (entry.rejectedReason) row.append(el('p', `Reason: ${entry.rejectedReason}`, 'form-error')); details.append(row); } section.append(details); return section;
+  if (!entries.length) return section; const details = el('details'), content = el('div'); details.append(el('summary', `Feedback history (${entries.length})`), content);
+  renderFeedbackHistory(content, { campaign: 'Campaign', entries }); section.append(details); return section;
 }
 function feedbackForm(project, target) {
   const section = el('section', null, 'feedback-form'), field = el('cds-textarea'), name = target.platform ? `${displayName(target.platform)} post` : target.asset || 'campaign'; const label = el('span', `Feedback for ${name}`); label.slot = 'label-text'; field.append(label); field.setAttribute('rows', '4'); field.setAttribute('maxlength', '4000'); field.setAttribute('enable-counter', ''); field.setAttribute('max-count', '4000'); field.setAttribute('invalid-text', 'Enter feedback before submitting.');
