@@ -46,6 +46,27 @@ test('mobile campaign cards can be sorted by campaign', async t => {
   assert.deepEqual(await page.locator('.project-card a').allTextContents(), ['acme / other', 'acme / launch']);
 });
 
+test('Carbon navigation opens on mobile and closes after navigation', async t => {
+  const { page, url } = await dashboard(t, { width: 375, height: 812 });
+  await page.goto(url);
+  await page.getByRole('button', { name: 'Open navigation' }).click();
+  await page.getByRole('link', { name: 'Budget & providers' }).click();
+  await page.getByRole('heading', { name: 'Budget & providers' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Open navigation' }).isVisible(), true);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+});
+
+test('sortable Carbon headers expose their direction', async t => {
+  const { page, url } = await dashboard(t);
+  await page.goto(url);
+  await page.getByRole('link', { name: 'launch', exact: true }).waitFor();
+  const header = page.getByRole('columnheader', { name: 'Campaign' });
+  await header.getByRole('button').click();
+  assert.equal(await header.getAttribute('aria-sort'), 'ascending');
+  await header.getByRole('button').click();
+  assert.equal(await header.getAttribute('aria-sort'), 'descending');
+});
+
 test('an older failed search cannot replace newer search results', async t => {
   const { page, url } = await dashboard(t);
   const old = gate();
