@@ -7,11 +7,12 @@ import type { IO } from "../io.ts";
 import type { AssetMeta, StudioConfig } from "../types.ts";
 import { UserError } from "../types.ts";
 import { encodeVideo, extractFrames, probeMedia, runTool } from "./ffmpeg.ts";
+import { packageBin } from "./bins.ts";
 import { renderHtml } from "./stills.ts";
 import type { SafeZone } from "./metrics.ts";
 
 const sizes: Record<string, [number, number]> = { "9:16": [1080, 1920], "1:1": [1080, 1080], "16:9": [1920, 1080] };
-const hyperframes = fileURLToPath(new URL("../../node_modules/.bin/hyperframes", import.meta.url));
+const hyperframes = packageBin("hyperframes", "hyperframes");
 
 type VideoSettings = { kind?: string; aspects?: unknown; captions?: { burn?: boolean } };
 
@@ -108,7 +109,8 @@ export async function renderVideo(assetDir: string, config: StudioConfig, io: IO
   if (!Array.isArray(meta.aspects) || !meta.aspects.length || meta.aspects.some(a => typeof a !== "string" || !(a in sizes)) || new Set(meta.aspects).size !== meta.aspects.length) {
     throw new UserError("Video asset.yml aspects must list distinct values from 9:16, 1:1 and 16:9");
   }
-  if (!existsSync(hyperframes)) throw new UserError("HyperFrames is missing; run bstudio doctor; install: npm install (HyperFrames is an optional dependency)");
+  const hyperframesBin = hyperframes && existsSync(hyperframes) ? hyperframes : null;
+  if (!hyperframesBin) throw new UserError("HyperFrames is missing; run bstudio doctor; install: npm install (HyperFrames is an optional dependency)");
   const useFilter = meta.captions?.burn ? await hasSubtitleFilter(io) : false;
   for (const aspect of meta.aspects as string[]) {
     const original = join(source, aspect), label = aspect.replace(":", "x");
@@ -137,7 +139,7 @@ export async function renderVideo(assetDir: string, config: StudioConfig, io: IO
           metrics.push({ file: `out/${label}.mp4`, ...result.metrics, zoneDescription: safe.description, texts: result.metrics.nodes.map(node => node.text) });
         } finally { rmSync(image, { force: true }); }
       }
-      await runTool(io, "hyperframes", hyperframes, ["render", project, "--output", raw, "--format", "mp4", "--workers", "1", "--refuse-outside-files"], undefined, { config, workspace: assetDir });
+      await runTool(io, "hyperframes", hyperframesBin, ["render", project, "--output", raw, "--format", "mp4", "--workers", "1", "--refuse-outside-files"], undefined, { config, workspace: assetDir });
       await encodeVideo(raw, target, io, { captions: useFilter ? caption : undefined, voiceover: existsSync(voice) ? voice : undefined });
     } finally {
       rmSync(raw, { force: true });

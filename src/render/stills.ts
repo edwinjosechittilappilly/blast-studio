@@ -8,6 +8,7 @@ import { Resvg } from "@resvg/resvg-js";
 import { chromium } from "playwright";
 import type { Browser } from "playwright";
 import { agentEnv, sandboxCommand } from "../agent-env.ts";
+import { packageBin } from "./bins.ts";
 import { configFile, loadConfig } from "../config.ts";
 import type { IO } from "../io.ts";
 import type { StudioConfig } from "../types.ts";
@@ -117,7 +118,8 @@ export async function renderDiagram(sourcePath: string, out: string, config?: St
   };
   try {
     if (ext === '.mmd') {
-      const mmdc = fileURLToPath(new URL('../../node_modules/.bin/mmdc', import.meta.url));
+      const mmdc = packageBin('@mermaid-js/mermaid-cli', 'mmdc');
+      if (!mmdc) throw new Error('Mermaid CLI is not installed');
       const configPath = join(temp, 'puppeteer.json');
       writeFileSync(configPath, JSON.stringify({ executablePath: chromium.executablePath(), pipe: true, args: ['--no-sandbox'] }));
       const mermaidConfig = join(temp, 'mermaid.json');
