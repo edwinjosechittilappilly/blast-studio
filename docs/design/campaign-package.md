@@ -13,7 +13,7 @@ directory) is still accepted by `mblast import <dir>`.
 ├── sources/
 │   ├── sources.json         [{anchor, title, status, url?}]
 │   └── E<n>.md              text of each source, as captured for the brief
-├── posts/<destination>.md   one post per Market Blaster destination (frontmatter: title, evidence, disclosure, media, studio)
+├── posts/<destination>.md   one post per Market Blaster destination (frontmatter: title, tags, evidence, disclosure, media, studio)
 ├── media/<file>             every image, video, PDF and VTT the posts reference
 ├── handoff/
 │   ├── <destination>-thread.md        thread items to post by hand
@@ -59,6 +59,7 @@ directory) is still accepted by `mblast import <dir>`.
 |---|---|
 | `destinations[].mode` | `api` or `handoff`, as decided by the Market Blaster mapping table in [the design](blast-studio.md) |
 | `destinations[].post` | Path inside the zip. `null` for `ai: none` destinations (HN). Market Blaster builds those from the canonical home |
+| `destinations[].tags` | Optional array of post tags, also included in the post frontmatter and v1 manifest |
 | `media[].kind` | `image`, `video`, `gif` or `document`. Optional `cover: true` (DEV), `lang` (BCP-47) and `captions` (path to a VTT file) |
 | `review.reviewHash` | The shared review-hash contract (test vector `5d5491c0…c977`) |
 | `manual` | Platforms outside Market Blaster; the importer copies these folders to `campaigns/<slug>/handoff/` |

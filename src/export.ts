@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
+import { parse } from 'yaml';
+import { readBrief } from './brief.ts';
+import { runGates } from './review/gates.ts';
 import { writeCampaignZip } from './campaign-zip.ts';
 import { loadPacks } from './packs.ts';
 import { loadPosts } from './posts.ts';
 import { mediaContentHash, reviewHash } from './review-hash.ts';
 import { UserError } from './types.ts';
-import type { Post, Review } from './types.ts';
+import type { AssetMeta, Post, Review, StudioConfig } from './types.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const schema = JSON.parse(readFileSync(join(root, 'schemas/manifest.v1.json'), 'utf8')) as object;
@@ -43,8 +46,13 @@ function handoff(project: string, post: Post, name: string, notes: string[], gui
   writeFileSync(join(dir, 'README.md'), [`# ${name} manual handoff`, '', '- [ ] Open the platform publishing interface and select the correct account.', '- [ ] Copy the text from post.md and attach the listed media.', '- [ ] Enter the provided alt text, captions and disclosure where applicable.', '- [ ] Review and publish manually, then record the URL with bstudio mark when supported.', '', '## Media', ...media.map(m => `- ${m.file} (${m.kind}; alt: ${m.alt})${'captions' in m && m.captions ? `; captions: ${m.captions}` : ''}`), '', '## Disclosure', ...(disclosures.length ? disclosures : ['- None specified.']), '', '## Platform notes', ...notes.map(n => `- ${n}`), '', '## Platform checklist', checklist, ''].join('\n'));
 }
 
-export function exportProject(project: string, slug: string, directory = false): string {
-  const posts = loadPosts(project), packs = loadPacks();
+export function exportProject(project: string, slug: string, config: StudioConfig, directory = false): string {
+  const posts = loadPosts(project), packs = loadPacks(), briefSections = readBrief(project);
+  const assetsDir = join(project, 'assets');
+  const assets: AssetMeta[] = existsSync(assetsDir) ? readdirSync(assetsDir).flatMap(id => {
+    const file = join(assetsDir, id, 'asset.yml');
+    return existsSync(file) ? [parse(readFileSync(file, 'utf8')) as AssetMeta] : [];
+  }) : [];
   if (!posts.size) throw new UserError('No posts to export');
   const prepared = [...posts.values()].map(post => {
     let review: Review;
@@ -57,6 +65,7 @@ export function exportProject(project: string, slug: string, directory = false):
     if (review.mediaHash !== mediaContentHash(project, post.media)) throw new UserError(`${post.platform}: review media is stale; re-run review`);
     const pack = packs.get(post.platform);
     if (!pack) throw new UserError(`${post.platform}: pack missing`);
+    if (runGates(post, pack, assets, briefSections, config, project).some(g => !g.pass)) throw new UserError(`${post.platform}: current gates failed; re-run review`);
     for (const m of post.media as ExtraMedia[]) {
       if ((m.cover !== undefined && typeof m.cover !== 'boolean') || (m.lang !== undefined && (typeof m.lang !== 'string' || !/^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$/.test(m.lang))) || (m.captions !== undefined && (m.kind !== 'video' || typeof m.captions !== 'string' || !/\.vtt$/i.test(m.captions)))) throw new UserError(`${post.platform}: invalid media metadata`);
       sourceFile(project, m.file);
@@ -73,7 +82,7 @@ export function exportProject(project: string, slug: string, directory = false):
     if (!pack.marketBlaster) return [];
     const media = (post.media as ExtraMedia[]).map(m => ({ path: copyMedia(project, dir, m.file), alt: m.alt, kind: m.kind,
       ...(m.cover === undefined ? {} : { cover: m.cover }), ...(m.lang === undefined ? {} : { lang: m.lang }), ...(m.captions === undefined ? {} : { captions: copyMedia(project, dir, m.captions) }) }));
-    return [{ platform: post.platform, destination: pack.marketBlaster, ...(post.title === undefined ? {} : { title: post.title }), body: post.body, evidence: post.evidence,
+    return [{ platform: post.platform, destination: pack.marketBlaster, ...(post.title === undefined ? {} : { title: post.title }), ...(post.tags === undefined ? {} : { tags: post.tags }), body: post.body, evidence: post.evidence,
       ...(post.disclosure === undefined ? {} : { disclosure: post.disclosure }), media, ...(post.thread === undefined ? {} : { thread: post.thread }), review: { verdict: review.verdict, total: review.total, reviewHash: hash } }];
   });
   const manifest = { version: 1, slug, generatedAt: new Date().toISOString(), brief: 'brief.md', posts: entries };

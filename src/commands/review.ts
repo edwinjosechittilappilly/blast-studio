@@ -36,8 +36,11 @@ async function calibrate(config: StudioConfig, io: IO): Promise<void> {
 export const run: Command = async (args, io) => {
   const config = loadConfig(io);
   if (args.length === 1 && args[0] === '--calibrate' || args.length === 2 && args[1] === '--calibrate') { await calibrate(config, io); return 0; }
-  if (args.length !== 1) throw new UserError('usage: bstudio review <slug> [--calibrate]');
-  const dir = projectDir(config, args[0]), posts = loadPosts(dir), brief = readBrief(dir), plan = readPlan(dir);
+  const filter = args.find(a => a.startsWith('--platforms='));
+  const positionals = args.filter(a => a !== filter);
+  if (positionals.length !== 1) throw new UserError('usage: bstudio review <slug> [--calibrate]');
+  const selected = filter ? new Set(filter.slice(12).split(',').filter(Boolean)) : undefined;
+  const dir = projectDir(config, positionals[0]), posts = loadPosts(dir), brief = readBrief(dir), plan = readPlan(dir);
   if (!posts.size) throw new UserError('No posts to review');
   const assetsDir = join(dir, 'assets');
   const assets: AssetMeta[] = existsSync(assetsDir) ? readdirSync(assetsDir).flatMap(id => {
@@ -45,23 +48,37 @@ export const run: Command = async (args, io) => {
   }) : [];
   mkdirSync(join(dir, 'reviews'), { recursive: true });
   const summaries: string[] = ['# Editorial review', '', 'Scores are editorial judgments, not reach predictions.', ''];
+  if (selected && existsSync(join(dir, 'review.md'))) {
+    const previous = readFileSync(join(dir, 'review.md'), 'utf8');
+    for (const section of previous.split(/(?=^## )/m).slice(1)) {
+      const platform = section.match(/^## ([^:]+):/)?.[1];
+      if (platform && !selected.has(platform)) summaries.push(section.trimEnd(), '');
+    }
+  }
   for (const post of posts.values()) {
+    if (selected && !selected.has(post.platform)) continue;
     const pack = loadPack(post.platform), entry = plan.find(p => p.platform === post.platform);
     if (!entry) throw new UserError(`No plan for ${post.platform}`);
     const gates = runGates(post, pack, assets, brief, config, dir);
+    const postHash = reviewHash({ ...post, media: post.media.map(m => ({ path: m.file, alt: m.alt })) });
+    let mediaHash: string | undefined;
+    try { mediaHash = mediaContentHash(dir, post.media); }
+    catch (error) {
+      if (!(error instanceof UserError)) throw error;
+      const specs = gates.find(g => g.id === 'specs')!;
+      specs.pass = false; specs.message = `${specs.message === 'Passed' ? '' : `${specs.message}; `}${error.message}`;
+    }
     const rubric = pack.ai === 'outline' ? pack.outlineRubric ?? [] : pack.rubric;
     const visualFiles = post.media.map(m => m.file);
     for (const media of post.media.filter(m => m.kind === 'video')) {
       const frames = join('assets', media.asset, 'out', 'frames'), absolute = join(dir, frames);
       if (existsSync(absolute)) visualFiles.push(...readdirSync(absolute).filter(f => f.endsWith('.png')).map(f => join(frames, f)));
     }
-    const scores: ScoreResult[] & { hookComparisons?: { preferred: string | null; evidence: string }[] } = config.reviewer.command ? await runReviewer({ config, io, post, brief: JSON.stringify(brief), rubric, hooks: entry.hooks, projectDir: dir, visualFiles, evidence: { assets, gates, warnings: gates.warnings, visualFiles } }) : [];
+    const scores: ScoreResult[] & { hookComparisons?: { preferred: string | null; evidence: string }[] } = mediaHash && config.reviewer.command ? await runReviewer({ config, io, post, brief: JSON.stringify(brief), rubric, hooks: entry.hooks, projectDir: dir, visualFiles, evidence: { assets, gates, warnings: gates.warnings, visualFiles } }) : [];
     for (const criterion of rubric) if (criterion.appliesTo && !criterion.appliesTo.includes(entry.type)) {
       const score = scores.find(s => s.criterion === criterion.id); if (score) score.score = null;
     }
     const total = totalScore(scores, rubric, entry.type);
-    const postHash = reviewHash({ ...post, media: post.media.map(m => ({ path: m.file, alt: m.alt })) });
-    const mediaHash = mediaContentHash(dir, post.media);
     const reviewFile = join(dir, 'reviews', `${post.platform}.json`);
     let prior: { postHash?: string; mediaHash?: string; gates?: typeof gates; verdict?: string; acceptedReason?: string } | undefined;
     try { prior = JSON.parse(readFileSync(reviewFile, 'utf8')); } catch { /* no previous review */ }

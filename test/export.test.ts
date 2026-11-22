@@ -14,6 +14,7 @@ function fixture(platform = 'bluesky') {
   for (const dir of ['posts', 'reviews', 'assets/a/out']) mkdirSync(join(project, dir), { recursive: true });
   writeFileSync(join(project, 'brief.md'), '# Brief\n\n## [E1] Example\n\nEvidence.\n');
   writeFileSync(join(project, 'assets/a/out/image.png'), 'image');
+  writeFileSync(join(project, 'assets/a/asset.yml'), 'id: a\nkind: card\nprovider: template\naiGenerated: false\noutputs:\n  - { file: out/image.png, bytes: 5 }\n');
   writeFileSync(join(project, 'posts', `${platform}.md`), `---\nplatform: ${platform}\ntitle: T\nevidence: [E1]\nmedia:\n  - asset: a\n    file: assets/a/out/image.png\n    alt: Alt\n    kind: image\n---\nHello\n`);
   const review = { platform, postHash: reviewHash({ title: 'T', body: 'Hello', media: [{ path: 'image.png', alt: 'Alt' }] }), mediaHash: mediaContentHash(project, [{ asset: 'a', file: 'assets/a/out/image.png', alt: 'Alt', kind: 'image' }]), gates: ['policy', 'disclosure', 'specs', 'accessibility', 'fabricated-metrics', 'rights'].map(id => ({ id, pass: true, message: 'ok' })), verdict: 'pass', total: 90 };
   const save = () => writeFileSync(join(project, 'reviews', `${platform}.json`), JSON.stringify(review)); save();
@@ -84,4 +85,13 @@ test('handoff invokes configured import and check and propagates failure', async
   assert.deepEqual(calls.map(c => c[1]), ['import', 'check']); assert.ok(calls[0].includes('--force'));
   f.io.run = async () => { throw new Error('import failed'); };
   await assert.rejects(exportCommand(['demo', '--mb', f.root], f.io), /import failed/);
+});
+
+test('export enforces current gates and reports Market Blaster check failures', async () => {
+  const f = fixture();
+  writeFileSync(join(f.project, 'assets/a/asset.yml'), 'id: a\nkind: logo\nprovider: template\naiGenerated: false\noutputs:\n  - { file: out/image.png, bytes: 5 }\n');
+  await assert.rejects(exportCommand(['demo'], f.io), /current gates failed/);
+  writeFileSync(join(f.project, 'assets/a/asset.yml'), 'id: a\nkind: card\nprovider: template\naiGenerated: false\noutputs:\n  - { file: out/image.png, bytes: 5 }\n');
+  f.io.run = async (_cmd, args) => { if (args.includes('check')) throw new Error('invalid destination'); return ''; };
+  await assert.rejects(exportCommand(['demo', '--mb', f.root], f.io), { name: 'UserError', message: /Market Blaster check failed: invalid destination/ });
 });

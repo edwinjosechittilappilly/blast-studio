@@ -164,6 +164,7 @@ export interface PostMedia {
 export interface Post {
   platform: PlatformId;
   title?: string;
+  tags?: string[];
   evidence: string[];
   disclosure?: { text?: string; media?: string; voice?: string; sponsorship?: string };
   sponsored?: boolean;

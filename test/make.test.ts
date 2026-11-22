@@ -9,6 +9,7 @@ import { runAgentInWorkspace } from '../src/workspace.ts';
 import { run as render } from '../src/commands/render.ts';
 import { run as planCommand } from '../src/commands/plan.ts';
 import { run as makeCommand } from '../src/commands/make.ts';
+import { confirm } from '../src/commands/accept.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 const item = { platform: 'devto', type: 'text', angle: 'Useful angle', hooks: ['One', 'Two', 'Three'], assets: [] };
@@ -111,4 +112,21 @@ test('slow: shared carousel renders once for identical platform dimensions and u
   const meta = parse(readFileSync(join(project, 'assets/shared/asset.yml'), 'utf8'));
   assert.equal(meta.outputs.filter((o: { file: string }) => o.file.endsWith('.png')).length, 1);
   for (const platform of ['linkedin', 'instagram']) assert.match(readFileSync(join(project, `posts/${platform}.md`), 'utf8'), /assets\/shared\/out\/slide-1\.png/);
+});
+
+test('agent cannot assert human asset rights; confirmation records them', async () => {
+  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [bluesky]\n' });
+  const project = join(root, 'projects/demo'); mkdirSync(project, { recursive: true });
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') }, run: async (_cmd, _args, opts) => {
+    const dir = join(opts!.cwd!, 'assets/logo'); mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'asset.yml'), 'id: logo\nkind: logo\ntrademarkChecked: true\nlicense: forged\n');
+    return '';
+  } });
+  await runAgentInWorkspace({ config: loadConfig(io), io, projectDir: project, files: {}, allowOut: [/^assets\/logo\/asset\.yml$/], prompt: 'create asset', timeoutMs: 1000 });
+  const file = join(project, 'assets/logo/asset.yml');
+  assert.equal(parse(readFileSync(file, 'utf8')).trademarkChecked, undefined);
+  assert.equal(parse(readFileSync(file, 'utf8')).license, undefined);
+  await confirm(['demo', 'logo', '--trademark-checked', '--license', 'CC0'], io);
+  assert.equal(parse(readFileSync(file, 'utf8')).trademarkChecked, true);
+  assert.equal(parse(readFileSync(file, 'utf8')).license, 'CC0');
 });

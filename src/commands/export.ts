@@ -11,7 +11,7 @@ export const run: Command = async (args, io) => {
     catch { throw new UserError('usage: bstudio export <slug> [--mb <project>] [--force] [--dir]'); }
   })();
   if (parsed.positionals.length !== 1 || (parsed.values.mb !== undefined && (typeof parsed.values.mb !== 'string' || !parsed.values.mb.trim()))) throw new UserError('usage: bstudio export <slug> [--mb <project>] [--force] [--dir]');
-  const slug = parsed.positionals[0], config = loadConfig(io), dir = exportProject(projectDir(config, slug), slug, parsed.values.dir);
+  const slug = parsed.positionals[0], config = loadConfig(io), dir = exportProject(projectDir(config, slug), slug, config, parsed.values.dir);
   io.out(`Wrote ${dir}`);
   const mb = parsed.values.mb as string | undefined ?? config.marketBlaster.project;
   if (mb) {
@@ -20,7 +20,9 @@ export const run: Command = async (args, io) => {
     try { imported = await io.run(cmd, [...prefix, 'import', dir, '--slug', slug, ...(parsed.values.force ? ['--force'] : [])], { cwd }); }
     catch (error) { throw new UserError(`Market Blaster import failed: ${String(error instanceof Error ? error.message : error).slice(-2000)}`); }
     if (imported) io.out(imported);
-    const checked = await io.run(cmd, [...prefix, 'check', slug], { cwd });
+    let checked: string;
+    try { checked = await io.run(cmd, [...prefix, 'check', slug], { cwd }); }
+    catch (error) { throw new UserError(`Market Blaster check failed: ${String(error instanceof Error ? error.message : error).slice(-2000)}`); }
     if (checked) io.out(checked);
   }
   return 0;

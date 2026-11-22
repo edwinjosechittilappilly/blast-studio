@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse } from 'yaml';
+import { parse, stringify } from 'yaml';
 import { readBrief } from '../brief.ts';
 import { loadPack } from '../packs.ts';
 import { runGates } from '../review/gates.ts';
@@ -29,4 +29,18 @@ export const run: Command = async (args, io) => {
   if (currentGates.some(g => !g.pass)) throw new UserError('Cannot accept a failed gate; run review again');
   review.verdict = 'accepted'; review.acceptedReason = args[3].trim(); review.at = new Date().toISOString();
   writeFileSync(file, JSON.stringify(review, null, 2) + '\n'); io.out(`${args[1]}: accepted`); return 0;
+};
+
+export const confirm: Command = async (args, io) => {
+  if (args.length < 3 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(args[1])) throw new UserError('usage: bstudio confirm <slug> <asset-id> [--trademark-checked] [--license <license>]');
+  const trademark = args.includes('--trademark-checked'), index = args.indexOf('--license');
+  if ((!trademark && index < 0) || (index >= 0 && (!args[index + 1]?.trim() || args[index + 1].startsWith('--'))) || args.length !== 2 + Number(trademark) + (index >= 0 ? 2 : 0)) throw new UserError('usage: bstudio confirm <slug> <asset-id> [--trademark-checked] [--license <license>]');
+  const file = join(projectDir(loadConfig(io), args[0]), 'assets', args[1], 'asset.yml');
+  if (!existsSync(file)) throw new UserError(`Asset not found: ${args[1]}`);
+  const asset = parse(readFileSync(file, 'utf8')) as AssetMeta;
+  if (!asset || asset.id !== args[1]) throw new UserError(`Invalid asset metadata: ${args[1]}`);
+  if (trademark) asset.trademarkChecked = true;
+  if (index >= 0) asset.license = args[index + 1].trim();
+  writeFileSync(file, stringify(asset));
+  io.out(`${args[1]}: confirmation recorded`); return 0;
 };

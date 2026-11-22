@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createInterface, type Interface } from "node:readline/promises";
-import { run as accept } from "./commands/accept.ts";
+import { run as accept, confirm } from "./commands/accept.ts";
 import { run as auth } from "./commands/auth.ts";
 import { run as brief } from "./commands/brief.ts";
 import { run as budget } from "./commands/budget.ts";
@@ -39,6 +39,7 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
   review: { summary: "gates + platform reviewer scores: review <slug> [--calibrate]", run: review },
   revise: { summary: "apply review findings, re-render, re-review: revise <slug>", run: revise },
   accept: { summary: "human override of scores (never gates): accept <slug> <platform> --reason …", run: accept },
+  confirm: { summary: "record human asset rights checks: confirm <slug> <asset-id> [--trademark-checked] [--license <license>]", run: confirm },
   budget: { summary: "paid generation caps: budget [show | set <usd> | set-project <usd>]", run: budget },
   auth: { summary: "provider keys in the macOS Keychain: auth set <KEY> [--stdin] | auth list", run: auth },
   export: { summary: "hand passed posts to Market Blaster: export <slug> [--mb <project>] [--force]", run: exportProject },
@@ -62,7 +63,7 @@ function runProgram(cmd: string, args: string[], opts: { cwd?: string; env?: Rec
   const child = execFile(cmd, args, { cwd: opts.cwd, env: opts.env, timeout: opts.timeoutMs ?? 0, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
     if (!error) return resolve(stdout);
     const reason = error.killed && opts.timeoutMs ? `timed out after ${opts.timeoutMs / 1000}s` : `exited with ${error.code ?? error.signal}`;
-    const tail = stderr.trim().split("\n").slice(-20).join("\n");
+    const tail = [stdout, stderr].filter(Boolean).join("\n").trim().split("\n").slice(-20).join("\n");
     reject(new Error(`${cmd} ${reason}${tail ? `:\n${tail}` : ""}`));
   });
   // Always close stdin: agent CLIs such as `omp -p` wait for EOF on a piped stdin before starting.

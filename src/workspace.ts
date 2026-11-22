@@ -2,7 +2,7 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readd
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parse } from 'yaml';
+import { parse, stringify } from 'yaml';
 import type { IO } from './io.ts';
 import type { StudioConfig } from './types.ts';
 import { UserError } from './types.ts';
@@ -81,7 +81,14 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
         let parent = projectDir;
         for (const part of rel.split('/').slice(0, -1)) { parent = join(parent, part); if (existsSync(parent) && lstatSync(parent).isSymbolicLink()) throw new UserError(`Unsafe output directory: ${rel}`); }
         if (existsSync(target) && lstatSync(target).isSymbolicLink()) throw new UserError(`Unsafe output: ${rel}`);
-        mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, data); copied.push(rel);
+        let content: Buffer | string = data;
+        if (/^assets\/[^/]+\/asset\.yml$/.test(rel)) {
+          const asset = parse(data.toString('utf8')) as Record<string, unknown>;
+          delete asset.trademarkChecked;
+          delete asset.license;
+          content = stringify(asset);
+        }
+        mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, content); copied.push(rel);
       }
       if (ignored.length) io.err(`Ignored ${ignored.length} agent output(s): ${ignored.slice(0, 10).join(', ')}${ignored.length > 10 ? ', …' : ''}`);
       return { copied, ignored };

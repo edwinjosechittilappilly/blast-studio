@@ -28,6 +28,7 @@ At least one input is required. `--note` and `--url` can be repeated. `--repo` a
 - `bstudio review <slug>` runs deterministic gates and, when configured, the reviewer. `bstudio review --calibrate` or `bstudio review <slug> --calibrate` measures reviewer agreement against the bundled fixtures instead of reviewing the project.
 - `bstudio revise <slug>` applies review findings and repeats rendering and review up to `review.maxRounds`. Blocked rights need human resolution.
 - `bstudio accept <slug> <platform> --reason <reason>` records a human score override. The review must be current and all gates must pass, including a fresh gate evaluation.
+- `bstudio confirm <slug> <asset-id> [--trademark-checked] [--license <license>]` records a human trademark check and/or the asset's license after verifying them.
 - `bstudio render-preview <file.html|.svg|.mmd|.d2> --size WxH --out <path>` renders one source offline. HTML can produce PDF when the output ends in `.pdf`.
 
 ## Handoff and records
