@@ -60,13 +60,15 @@ test("renders a two-second portrait composition and extracts review frames", { t
     const browser = await chromium.launch({ headless: true });
     try {
       const page = await browser.newPage();
-      const frames = [1, 3].map(i => readFileSync(join(dir, `out/frames/9x16-${i}.png`)).toString("base64"));
+      const captionFrame = join(dir, "caption-frame.png");
+      await io.run("ffmpeg", ["-y", "-ss", "0.75", "-i", join(dir, video.file), "-frames:v", "1", "-update", "1", captionFrame]);
+      const frames = [captionFrame, join(dir, "out/frames/9x16-3.png")].map(file => readFileSync(file).toString("base64"));
       const difference = await page.evaluate(async images => {
         const pixels = await Promise.all(images.map(async image => {
           const img = new Image(); img.src = `data:image/png;base64,${image}`; await img.decode();
           const canvas = document.createElement("canvas"); canvas.width = img.width; canvas.height = img.height;
           const ctx = canvas.getContext("2d")!; ctx.drawImage(img, 0, 0);
-          return ctx.getImageData(0, Math.floor(img.height * .6), img.width, Math.floor(img.height * .3)).data;
+          return ctx.getImageData(0, Math.floor(img.height * .6), img.width, Math.ceil(img.height * .4)).data;
         }));
         let changed = 0;
         for (let i = 0; i < pixels[0].length; i += 4) {
@@ -74,7 +76,7 @@ test("renders a two-second portrait composition and extracts review frames", { t
         }
         return changed;
       }, frames);
-      assert.ok(difference > 500, `expected visible captions in first frame; ${difference} pixels changed`);
+      assert.ok(difference > 500, `expected visible captions inside cue; ${difference} pixels changed`);
     } finally { await browser.close(); }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
