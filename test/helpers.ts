@@ -1,11 +1,16 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { IO } from "../src/io.ts";
 import type { Env } from "../src/types.ts";
 
+// Each test file runs in its own process; remove its temp studios when it exits.
+const created: string[] = [];
+process.on("exit", () => { for (const dir of created) rmSync(dir, { recursive: true, force: true }); });
+
 export function tempStudio(files: Record<string, string> = {}): string {
   const dir = mkdtempSync(join(tmpdir(), "bstudio-"));
+  created.push(dir);
   const all = { "studio.yml": "brand:\n  name: Demo\n", ...files };
   for (const [path, content] of Object.entries(all)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
