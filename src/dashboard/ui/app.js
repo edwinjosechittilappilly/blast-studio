@@ -88,6 +88,7 @@ function feedbackForm(project, target) {
     try {
       const entry = await api(campaignPath(project.slug, 'feedback'), { method: 'POST', headers, body: JSON.stringify({ target, note }) });
       project.feedback.push(entry); if (feedbackDrafts.get(key) === draft) { feedbackDrafts.delete(key); field.value = ''; }
+      if (activeProject !== project.slug || $('#project').hidden || !section.isConnected) return;
       const next = feedbackHistory(project, target); history.replaceWith(next); history = next; history.querySelector('details')?.setAttribute('open', '');
       const apply = $('#apply-feedback'); if (apply) { const count = project.feedback.filter(e => e.status === 'pending').length; apply.disabled = false; apply.textContent = `Apply ${count} feedback ${count === 1 ? 'item' : 'items'}`; $('#apply-reason').textContent = ''; }
       toast('Feedback queued. Use Apply feedback when ready.');
@@ -108,7 +109,7 @@ async function jobStatus(project, region, apply) {
     scheduleStatus(project, region, apply);
   } else if (region.dataset.running === 'yes') {
     region.dataset.running = ''; region.dataset.state = ''; announcement.replaceChildren();
-    const updated = await api(`/api/project/${encodeURIComponent(project.slug)}`); project.feedback = updated.feedback;
+    const updated = await api(`/api/project/${encodeURIComponent(project.slug)}`); if (activeProject !== project.slug || $('#project').hidden || !region.isConnected) return; project.feedback = updated.feedback;
     const count = project.feedback.filter(entry => entry.status === 'pending').length, applied = project.feedback.filter(entry => region.pendingIds?.includes(entry.id) && entry.status === 'applied').length;
     apply.disabled = count === 0; apply.textContent = count ? `Apply ${count} feedback ${count === 1 ? 'item' : 'items'}` : 'Apply feedback'; const reason = $('#apply-reason'); if (reason) reason.textContent = count ? '' : 'No pending feedback';
     toast(status.state === 'succeeded' ? 'Revision completed. Review the updated campaign.' : status.state === 'cancelled' ? `Revision cancelled. ${applied} applied before cancellation; ${count} pending.` : 'Revision failed. Review the log and retry.', status.state === 'failed');

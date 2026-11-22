@@ -23,8 +23,8 @@ test('media actions remain visible in both themes and viewer controls work', asy
   const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
   const browser = await chromium.launch({ headless: true }); t.after(() => browser.close());
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-  await page.goto(started.url); await page.getByRole('link', { name: 'acme/launch', exact: true }).click();
-  await page.getByRole('tab', { name: /linkedin/ }).click();
+  await page.goto(started.url); await page.getByRole('link', { name: 'launch', exact: true }).click();
+  await page.getByRole('tab', { name: /LinkedIn/ }).click();
   for (const theme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: theme });
     const icon = page.locator('cds-overflow-menu svg[slot="icon"]').first();
