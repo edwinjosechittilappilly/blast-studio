@@ -20,7 +20,7 @@ function metrics(text: string): { token: string; key: string; metric: boolean }[
 export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], brief: BriefSection[], config: StudioConfig, projectDir?: string): GateResult[] & { warnings: string[] } {
   const failures: Record<GateResult['id'], string[]> = { policy: [], disclosure: [], specs: [], accessibility: [], 'fabricated-metrics': [], rights: [] };
   const warnings: string[] = [...(pack.notes ?? [])];
-  const policySources: { source?: string; lastVerified?: string }[] = [{ source: pack.aiSource, lastVerified: pack.aiLastVerified }, ...Object.values(pack.disclosure).filter((rule): rule is Extract<typeof rule, object> => typeof rule === 'object')];
+  const policySources: { source?: string; lastVerified?: string }[] = [{ source: pack.aiSource, lastVerified: pack.aiLastVerified }, ...Object.values(pack.disclosure).filter((rule): rule is Extract<typeof rule, object> => typeof rule === 'object'), ...(typeof pack.sponsorship === 'object' ? [pack.sponsorship] : [])];
   for (const source of policySources) if (!source.lastVerified || !Number.isFinite(Date.parse(source.lastVerified)) || Date.now() - Date.parse(source.lastVerified) > 90 * 86400000) warnings.push(`Policy verification is missing or stale: ${source.source || pack.sources.join(', ') || pack.id}`);
   const byId = new Map(assets.map(a => [a.id, a]));
   const used = new Set<string>();
@@ -51,7 +51,7 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
   const check = (label: string, value: number | undefined, spec: typeof pack.textLimit, compare: (a: number, b: number) => boolean = (a,b) => a > b) => {
     if (value === undefined || spec === undefined) return;
     if (spec === 'unknown') warnings.push(`${label} unknown; verify ${pack.sources.join(', ') || pack.id}`);
-    else { if (compare(value, spec.value)) add('specs', `${label} exceeds ${spec.value} (${spec.source})`); if (spec.verified && Date.now() - Date.parse(spec.verified) > 90 * 86400000) warnings.push(`${label} verification is stale: ${spec.source}`); }
+    else { if (compare(value, spec.value)) add('specs', `${label} exceeds ${spec.value} (${spec.source})`); if (!spec.lastVerified || !Number.isFinite(Date.parse(spec.lastVerified)) || Date.now() - Date.parse(spec.lastVerified) > 90 * 86400000) warnings.push(`${label} verification is missing or stale: ${spec.source}`); }
   };
   const segmenter = new Intl.Segmenter('en', { granularity: 'grapheme' });
   const length = (text: string) => {
