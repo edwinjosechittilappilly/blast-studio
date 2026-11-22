@@ -10,7 +10,7 @@ The system SHALL derive status and searchable library views by scanning project 
 - **THEN** the query reflects the current files under its project
 
 ### Requirement: Dashboard views
-The dashboard SHALL show project-grouped campaigns, posts, verdicts, scores, media previews, spending versus caps, provider settings and updater status including failed sources and unverified packs. It SHALL expose every CLI command through an appropriate dashboard workflow, including project and campaign creation with all brief inputs, plan, make, render, review, revise with owner notes per post or asset, accept with reason, confirm rights, export to a configured Market Blaster project, mark with URL, budget set/show, sources check/verify, doctor, library search and status. It SHALL support provider key entry via Keychain without ever displaying stored keys.
+The dashboard SHALL show project-grouped campaigns, posts, verdicts, scores, media previews, spending versus caps, provider settings and updater status including failed sources and unverified packs. It SHALL expose CLI workflows except the explicitly CLI-only `install-skills`, `render-preview`, `sources propose`, and `review --calibrate`. Supported workflows include init and doctor, project and campaign creation with all brief inputs and `brief --force`, resumable `new --from`, scoped plan/make/render/review including `render --regen`, revise, accept with reason, rights confirmation, local export or export to an explicit or configured Market Blaster project including `--dir` and confirmed `--force`, mark with URL, budget set/show, sources check/verify, library search, status including `--verbose`, and job and history management. It SHALL show `auth list` key presence and source without values, and support write-only Keychain entry.
 
 #### Scenario: Revision with owner feedback
 - **WHEN** an owner supplies notes on a post or asset and starts revise
@@ -19,6 +19,29 @@ The dashboard SHALL show project-grouped campaigns, posts, verdicts, scores, med
 #### Scenario: Write-only key
 - **WHEN** an owner saves a provider key
 - **THEN** it is stored in Keychain and never returned or displayed by the dashboard
+
+#### Scenario: Outline review
+- **WHEN** a platform is scored with the outline rubric
+- **THEN** the dashboard displays the same outline criteria and scores used by review, not the standard rubric
+
+#### Scenario: Queued campaign-wide feedback
+- **WHEN** an owner adds or removes a pending campaign-wide, post or asset note
+- **THEN** the dashboard updates the feedback queue without invoking the agent and offers “Revise (N pending)” with an agent-spend warning and a save-and-apply action
+
+#### Scenario: Scoped card action
+- **WHEN** an owner selects re-make, re-render or re-review on a card
+- **THEN** the operation targets that card's valid scope and displays any errors
+
+## ADDED Requirements
+
+### Requirement: Dashboard session and routes
+`bstudio dashboard --open` SHALL open the launch URL in the browser and port-in-use errors SHALL suggest an action. Unauthenticated HTML navigation SHALL show a friendly 401 page instructing the user to run `bstudio dashboard` again, without weakening API authentication. Hash routes SHALL support `#/p/<project>/<campaign>/<platform>` and preserve the view through refresh and browser back/forward.
+
+#### Scenario: Expired session
+- **WHEN** a user opens a dashboard page without an authenticated session
+- **THEN** the browser shows the re-authentication instruction instead of raw JSON
+
+## MODIFIED Requirements
 
 ### Requirement: Restricted settings writes
 The dashboard SHALL permit supported operations only through validated allowlisted CLI commands or the narrow feedback store; settings writes SHALL retain YAML comments. It SHALL NOT expose arbitrary content editing or arbitrary command execution.

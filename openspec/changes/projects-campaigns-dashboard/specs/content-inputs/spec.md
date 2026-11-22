@@ -10,8 +10,8 @@ The system SHALL create a campaign brief from shared project evidence and any co
 - **THEN** its brief contains distinct anchored sections for all three with their provenance and statuses preserved
 
 ### Requirement: Resumable creation
-The `new` command SHALL accept a `<project>/<campaign>` address, run brief, plan, make, render and review in sequence and stop at the first failure with a resume command using that address.
+The `new` command SHALL accept a `<project>/<campaign>` address, run brief, plan, make, render and review in sequence and stop at the first failure with a resume command using that address. `new --from <step>` SHALL resume that step and all subsequent steps without recreating the brief, and the dashboard SHALL offer equivalent resumption and `brief --force`.
 
 #### Scenario: Step fails
 - **WHEN** rendering fails during `new`
-- **THEN** later steps do not run and the user receives the campaign-addressed command to resume
+- **THEN** later steps do not run and the user receives a `new --from render` command that resumes rendering and continues through review without recreating the brief
