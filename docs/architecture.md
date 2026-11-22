@@ -24,7 +24,7 @@ The review hash covers title, trimmed body, and media basenames and alt text in 
 
 ## Perceptual goldens
 
-The golden tests render bundled still templates and three HyperFrames video frames, comparing each with FFmpeg SSIM at a threshold of 0.98. Goldens are specific to the operating system and are skipped when that OS has no golden directory. After reviewing an intentional rendering change, install the rendering prerequisites and run `make goldens` on each supported OS, then run `node --test test/goldens.test.ts` and review the changed PNGs before committing them. Linux goldens should be generated in the Linux CI environment.
+The golden tests render bundled still templates and three HyperFrames video frames, comparing each with FFmpeg SSIM at a threshold of 0.98. Goldens are specific to the operating system and are skipped when that OS has no golden directory. After reviewing an intentional rendering change, install the rendering prerequisites and run `make goldens` on each supported OS, then run `node --test test/goldens.test.ts` and review the changed PNGs before committing them. For Linux, run the **goldens** workflow (Actions → goldens → Run workflow): it generates `test/goldens/linux` on `ubuntu-latest`, re-runs the test against them, and opens a PR.
 
 ## Decisions
 
