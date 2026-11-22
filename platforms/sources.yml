@@ -435,7 +435,7 @@
     "url": "https://hashnode.com/terms",
     "scope": "AI policy / community rules",
     "detector": {
-      "kind": "page-hash"
+      "kind": "manual"
     },
     "governs": [
       "ai",
@@ -577,7 +577,7 @@
     "url": "https://www.facebook.com/help/instagram/1038071743007909?locale=en_GB",
     "scope": "specs / Reels size",
     "detector": {
-      "kind": "page-hash"
+      "kind": "manual"
     },
     "governs": [
       "media",
@@ -591,7 +591,7 @@
     "url": "https://www.facebook.com/help/instagram/456185931138729?locale=en_GB",
     "scope": "specs / Reels duration and discovery",
     "detector": {
-      "kind": "page-hash"
+      "kind": "manual"
     },
     "governs": [
       "media",
@@ -605,7 +605,7 @@
     "url": "https://www.facebook.com/help/instagram/1188122969438057",
     "scope": "specs / carousel",
     "detector": {
-      "kind": "page-hash"
+      "kind": "manual"
     },
     "governs": [
       "media",
@@ -632,7 +632,7 @@
     "url": "https://help.instagram.com/2467529163409127",
     "scope": "community rules / branded content",
     "detector": {
-      "kind": "page-hash"
+      "kind": "manual"
     },
     "governs": [
       "disclosure",
@@ -645,7 +645,7 @@
     "url": "https://support.tiktok.com/en/using-tiktok/exploring-videos/how-tiktok-recommends-content",
     "scope": "algorithm / recommendations",
     "detector": {
-      "kind": "page-hash"
+      "kind": "manual"
     },
     "governs": [
       "notes"
@@ -862,7 +862,7 @@
     "url": "https://ai.google.dev/gemini-api/docs/pricing",
     "scope": "Gemini API pricing",
     "detector": {
-      "kind": "page-hash"
+      "kind": "manual"
     },
     "governs": [
       "provider.pricing"

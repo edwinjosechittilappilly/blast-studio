@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../src/config.ts";
-import { monthToDate, projectTotal, recordAgentRun, reserve, settle } from "../src/budget/ledger.ts";
+import { monthToDate, parseAgentOutput, projectTotal, recordAgentRun, reserve, settle } from "../src/budget/ledger.ts";
 import { generateImage } from "../src/providers/images.ts";
 import { generateVoice } from "../src/providers/voice.ts";
 import { run } from "../src/commands/budget.ts";
@@ -93,7 +93,7 @@ test("stale lock is recovered before reserving", async () => {
   assert.equal(monthToDate(config.root), 0.5);
 });
 
-test("failed provider calls release reservations", async () => {
+test("provider failures release only definite rejections", async () => {
   const { config, io, dir } = setup();
   io.fetch = mockFetch(() => [400, {}]).fetch;
   await assert.rejects(generateImage({ config, io, projectSlug: "one", prompt: "test", size: "1024x1024", out: join(dir, "out.png"), regen: false }), /400/);
@@ -101,5 +101,34 @@ test("failed provider calls release reservations", async () => {
   config.voice.provider = "openai";
   io.fetch = mockFetch(() => [200, {}]).fetch;
   await assert.rejects(generateVoice({ config, io, projectSlug: "one", text: "hello", out: join(dir, "voice.wav") }), /invalid WAV/);
-  assert.equal(monthToDate(config.root), 0);
+  assert.ok(monthToDate(config.root) > 0);
+  const before = monthToDate(config.root);
+  io.fetch = mockFetch(() => [503, {}]).fetch;
+  await assert.rejects(generateImage({ config, io, projectSlug: "one", prompt: "test", size: "1024x1024", out: join(dir, "out.png"), regen: false }), /503/);
+  assert.ok(monthToDate(config.root) > before);
+});
+
+test("settlement overage is recorded and blocks later reservations", async () => {
+  const { config } = setup(); config.budget.monthlyUsd = 1;
+  const meta = { projectSlug: "one", provider: "openai", model: "test" };
+  const id = await reserve(config, 0.5, meta);
+  let warning = ""; const previous = console.warn;
+  try { console.warn = message => { warning += message; }; await settle(config.root, id, 1.2); } finally { console.warn = previous; }
+  assert.match(warning, /0\.700000/);
+  assert.equal(monthToDate(config.root), 1.2);
+  await assert.rejects(reserve(config, 0.01, meta), /budget exceeded/);
+});
+
+test("aged recovery and reused PID locks are recovered", async () => {
+  const { config } = setup(), lock = join(config.root, "ledger.lock"), recovery = `${lock}.recovery`;
+  writeFileSync(lock, String(process.pid)); mkdirSync(recovery);
+  const old = new Date(Date.now() - 120000); utimesSync(lock, old, old); utimesSync(recovery, old, old);
+  await reserve(config, 0.1, { projectSlug: "one", provider: "openai", model: "test" });
+  assert.equal(monthToDate(config.root), 0.1);
+});
+
+test("agent wrapper preserves result and billing metadata", () => {
+  const wrapped = JSON.stringify({ result: "```json\n[]\n```", total_cost_usd: 0.2, usage: { tokens: 3 } });
+  assert.deepEqual(parseAgentOutput(wrapped), { text: "```json\n[]\n```", usd: 0.2, usage: { tokens: 3 } });
+  assert.equal(parseAgentOutput('{"scores":[]}').text, '{"scores":[]}');
 });

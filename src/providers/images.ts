@@ -60,8 +60,13 @@ export async function generateImage(opts: { config: StudioConfig; io: IO; projec
         method: "POST", headers: { "content-type": "application/json", ...(gemini ? { "x-goog-api-key": key } : { authorization: `Bearer ${key}` }) },
         body: JSON.stringify(gemini ? { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: aspect } } } : { model, prompt, size: apiSize, quality: "medium", output_format: "png", n: 1 }), signal: AbortSignal.timeout(120000),
       });
-    } catch (error) { await settle(config.root, id, 0); throw error; }
-    if (!response.ok) { await settle(config.root, id, 0); throw new UserError(`${provider} image request failed (${response.status})`); }
+    } catch (error) { io.out(`Warning: image request may have been billed; retaining $${amount} reservation`); await settle(config.root, id, amount); throw error; }
+    if (!response.ok) {
+      const rejected = response.status >= 400 && response.status < 500;
+      if (!rejected) io.out(`Warning: image request may have been billed; retaining $${amount} reservation`);
+      await settle(config.root, id, rejected ? 0 : amount);
+      throw new UserError(`${provider} image request failed (${response.status})`);
+    }
     let usage: unknown;
     try {
     const json: unknown = await response.json();
@@ -80,7 +85,7 @@ export async function generateImage(opts: { config: StudioConfig; io: IO; projec
     // The API does not provide a reliable dollar total; retain the priced upper bound.
     costUsd = amount;
     usage = root.usageMetadata ?? root.usage;
-    } catch (error) { await settle(config.root, id, 0); throw error; }
+    } catch (error) { io.out(`Warning: image response could not be used; retaining $${amount} reservation`); await settle(config.root, id, amount); throw error; }
     await settle(config.root, id, amount, usage);
   }
   if (!bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw new UserError("Provider returned a non-PNG image");

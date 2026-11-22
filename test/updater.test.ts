@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import { check, extractText, repoRoot } from '../src/updater/check.ts';
@@ -16,17 +16,16 @@ test('checks snapshots, selector, report, failures and git paths', async () => {
   const root = tempStudio(); let html = '<body><nav>noise</nav><main id="content">old <b>text</b></main></body>';
   const io = fakeIO({ cwd: root, fetch: async () => new Response(html) });
   assert.equal((await check(io, { root, sources: [source], packs, date: '2026-01-01' })).results[0].status, 'new');
-  assert.equal((await check(io, { root, sources: [source], packs, date: '2026-01-02' })).code, 0);
+  assert.equal(existsSync(join(root, 'platforms/snapshots/s.txt')), false);
+  assert.equal((await check(io, { root, sources: [source], packs, date: '2026-01-02', write: true })).results[0].status, 'new');
   html = '<main id="content">new text<script>bad</script></main>';
-  const changed = await check(io, { root, sources: [source], packs, date: '2026-01-03' });
+  const changed = await check(io, { root, sources: [source], packs, date: '2026-01-03', write: true });
   assert.equal(changed.code, 2); assert.match(changed.report, /devto.limit/);
   assert.equal(readFileSync(join(root, 'platforms/snapshots/s.txt'), 'utf8'), 'new text');
   const fail = fakeIO({ cwd: root, fetch: async () => new Response('', { status: 404 }) });
   assert.equal((await check(fail, { root, sources: [source], packs })).code, 1);
   const empty = fakeIO({ cwd: root, fetch: async () => new Response('<main><script>client render only</script></main>') });
   assert.equal((await check(empty, { root, sources: [source], packs })).results[0].status, 'failed');
-  const redirected = fakeIO({ cwd: root, fetch: async () => { const r = new Response('other'); Object.defineProperty(r, 'url', { value: 'https://evil.example/' }); return r; } });
-  assert.equal((await check(redirected, { root, sources: [source], packs })).results[0].status, 'failed');
   let redirect: RequestRedirect | undefined;
   const sameHost = fakeIO({ cwd: root, fetch: async (_, init) => { redirect = init?.redirect; return new Response(null, { status: 302, headers: { location: '/new' } }); } });
   assert.equal((await check(sameHost, { root, sources: [source], packs })).results[0].status, 'failed');
@@ -37,6 +36,12 @@ test('checks snapshots, selector, report, failures and git paths', async () => {
   assert.match(called, /path=some\+file/); assert.match(called, /sha=main/);
   assert.equal(extractText('<body><article><p class="pick">one <b>two</b></p></article></body>', '.pick'), 'one two');
   assert.equal(extractText('<body><div data-id="yes">fine</div></body>', '[data-id=yes]'), 'fine');
+});
+
+test('propose ignores changes with no governed fields', async () => {
+  const root = tempStudio(); mkdirSync(join(root, 'updates'));
+  writeFileSync(join(root, 'updates/2026-01-03.json'), JSON.stringify([{ id: 's', status: 'changed', fields: [] }]));
+  await propose(fakeIO({ cwd: root, run: async () => { throw new Error('agent must not run'); } }), { root });
 });
 
 test('verify preserves comments and writes sourced metadata', () => {

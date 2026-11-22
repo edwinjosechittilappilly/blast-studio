@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { Ajv } from 'ajv';
 import type { IO } from '../io.ts';
 import { agentEnv, runBilledAgent } from '../agent-env.ts';
+import { parseAgentOutput } from '../budget/ledger.ts';
 import { UserError, type Criterion, type Post, type ScoreResult, type StudioConfig } from '../types.ts';
 import { analyzeSlop } from './slop.ts';
 
@@ -39,8 +40,9 @@ export async function runReviewer(input: { config: StudioConfig; io: IO; post: P
       for (let attempt = 0; attempt < 2; attempt++) {
         const raw = await runBilledAgent(io, config, config.reviewer, input.projectDir ? basename(input.projectDir) : '', command, prompt + (attempt ? '\nYour prior response was invalid; return schema-compliant JSON only.' : ''), dir, temp, env, config.reviewer.timeoutSeconds * 1000);
         try {
-          const fenced = raw.trim().match(/^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/i);
-          const value: unknown = JSON.parse(fenced ? fenced[1] : raw);
+          const text = parseAgentOutput(raw).text;
+          const fenced = text.trim().match(/^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/i);
+          const value: unknown = JSON.parse(fenced ? fenced[1] : text);
           if (validate(value)) {
             const candidate = value as { scores: ScoreResult[]; hookComparison?: { preferred: number | null; evidence: string } };
             const ids = candidate.scores.map(s => s.criterion);

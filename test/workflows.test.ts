@@ -21,7 +21,13 @@ test('weekly platform watch isolates issue, proposal, and restricted PR privileg
   assert.equal(propose.steps.find((s: { uses?: string }) => s.uses?.startsWith('actions/checkout@')).with['persist-credentials'], false);
   assert.match(JSON.stringify(propose.steps), /secrets\.MODEL_API_KEY/);
   assert.doesNotMatch(JSON.stringify(propose), /github\.token|secrets\.(?:GITHUB_TOKEN|GH_TOKEN)|\bGH_TOKEN\b|\bGITHUB_TOKEN\b/i);
-  assert.equal(pr.needs, 'propose');
+  assert.deepEqual(pr.needs, ['check', 'propose']);
+  assert.match(pr.if, /always\(\)/);
+  assert.match(checkScript, /sources check --write/);
+  assert.match(JSON.stringify(propose.steps), /billing: api/);
+  assert.match(JSON.stringify(propose.steps), /maxUsdPerRun/);
+  assert.ok(workflow.concurrency.group);
+  assert.match(check.outputs.date, /steps\.check\.outputs\.date/);
   assert.deepEqual(pr.permissions, { contents: 'write', 'pull-requests': 'write' });
   const script = pr.steps.map((s: { run?: string }) => s.run ?? '').join('\n');
   const adds = script.split('\n').map((line: string) => line.trim()).filter((line: string) => /^git add\b/.test(line));

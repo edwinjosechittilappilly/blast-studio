@@ -6,13 +6,13 @@ import { propose, verify } from '../updater/propose.ts';
 export const run: Command = async (args, io) => {
   const [action, ...rest] = args;
   if (action === 'check') {
-    let only: string[] | undefined;
+    let only: string[] | undefined, write = false;
     for (let i = 0; i < rest.length; i++) {
-      if (rest[i] === '--write') continue;
+      if (rest[i] === '--write') { write = true; continue; }
       if (rest[i] === '--only' && rest[i + 1]) { only = rest[++i].split(',').filter(Boolean); continue; }
       throw new UserError('usage: bstudio sources check [--only id,...] [--write]');
     }
-    return (await check(io, { only })).code;
+    return (await check(io, { only, write, date: io.env.BSTUDIO_SOURCE_DATE })).code;
   }
   if (action === 'propose') {
     if (rest.some(arg => arg !== '--branch') || rest.length > 1) throw new UserError('usage: bstudio sources propose [--branch]');

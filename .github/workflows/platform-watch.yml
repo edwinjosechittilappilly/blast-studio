@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: platform-watch
+  cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -21,6 +25,7 @@ jobs:
     outputs:
       changed: ${{ steps.check.outputs.changed }}
       key_available: ${{ steps.key.outputs.available }}
+      date: ${{ steps.check.outputs.date }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -35,14 +40,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          date=$(date -u +%F)
+          echo "date=$date" >> "$GITHUB_OUTPUT"
+          export BSTUDIO_SOURCE_DATE="$date"
           set +e
-          node bin/bstudio.mjs sources check
+          node bin/bstudio.mjs sources check --write
           status=$?
           set -e
           if [ "$status" -gt 2 ]; then exit "$status"; fi
           echo "changed=$([ "$status" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           if [ "$status" -ne 0 ]; then
-            report="updates/$(date -u +%F).md"
+            report="updates/$date.md"
             [ -f "$report" ] || exit 1
             number=$(gh issue list --state open --search 'in:title "Platform sources changed"' --json number,title --jq '.[] | select(.title == "Platform sources changed") | .number' | head -n 1)
             if [ -n "$number" ]; then gh issue edit "$number" --body-file "$report"; else gh issue create --title 'Platform sources changed' --body-file "$report"; fi
@@ -80,24 +88,26 @@ jobs:
           [[ "$AGENT_KEY_VAR" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || exit 1
           export "$AGENT_KEY_VAR=$MODEL_API_KEY"
           mkdir -p "$RUNNER_TEMP/config/blast-studio"
-          printf 'agent:\n  command: [claude, -p, --permission-mode, acceptEdits, --allowedTools, "Edit,Write", --disallowedTools, Bash]\n  passEnv: [%s]\n' "$AGENT_KEY_VAR" > "$RUNNER_TEMP/config/blast-studio/studio.yml"
+          printf 'budget:\n  monthlyUsd: 5\nagent:\n  billing: api\n  maxUsdPerRun: 5\n  command: [claude, -p, --output-format, json, --permission-mode, acceptEdits, --allowedTools, "Edit,Write", --disallowedTools, Bash]\n  passEnv: [%s]\n' "$AGENT_KEY_VAR" > "$RUNNER_TEMP/config/blast-studio/studio.yml"
           export BSTUDIO_CONFIG="$RUNNER_TEMP/config/blast-studio/studio.yml" BSTUDIO_HOME="$RUNNER_TEMP/studio"
           node bin/bstudio.mjs sources propose
-          manifest="updates/$(date -u +%F)-proposal-files.json"
+          manifest="updates/${{ needs.check.outputs.date }}-proposal-files.json"
+          mkdir -p "$RUNNER_TEMP/proposal"
+          if [ ! -f "$manifest" ]; then : > "$RUNNER_TEMP/proposal/proposal.patch"; echo "No governed pack changes." > "$RUNNER_TEMP/proposal/evidence.md"; exit 0; fi
           node -e 'const fs=require("fs"); const p=JSON.parse(fs.readFileSync(process.argv[1])); if(!p.every(x=>/^platforms\/[^/]+\/pack\.yml$/.test(x))) process.exit(1); fs.writeFileSync(process.argv[2],p.join("\n"))' "$manifest" "$RUNNER_TEMP/validated-files"
           mapfile -t files < "$RUNNER_TEMP/validated-files"
           if [ "${#files[@]}" -gt 0 ]; then git diff --binary -- "${files[@]}" > "$RUNNER_TEMP/proposal.patch"; else : > "$RUNNER_TEMP/proposal.patch"; fi
-          mkdir -p "$RUNNER_TEMP/proposal/platforms/snapshots"
+          mkdir -p "$RUNNER_TEMP/proposal"
           cp "$RUNNER_TEMP/proposal.patch" "$RUNNER_TEMP/proposal/"
-          cp "updates/$(date -u +%F)-proposal.md" "$RUNNER_TEMP/proposal/evidence.md"
-          cp -R platforms/snapshots/. "$RUNNER_TEMP/proposal/platforms/snapshots/"
+          cp "updates/${{ needs.check.outputs.date }}-proposal.md" "$RUNNER_TEMP/proposal/evidence.md"
       - uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
         with:
           name: proposal
           path: ${{ runner.temp }}/proposal/
 
   pr:
-    needs: propose
+    needs: [check, propose]
+    if: always() && needs.check.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -129,6 +139,11 @@ jobs:
       - run: npm ci
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
+          name: source-check
+          path: ${{ runner.temp }}/source-check
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        if: needs.propose.result == 'success'
+        with:
           name: proposal
           path: ${{ runner.temp }}/proposal
       - name: Apply restricted patch and open PR
@@ -137,7 +152,8 @@ jobs:
         run: |
           patch="$RUNNER_TEMP/proposal/proposal.patch"
           if [ -s "$patch" ]; then git apply --check "$patch"; git apply "$patch"; fi
-          cp -R "$RUNNER_TEMP/proposal/platforms/snapshots/." platforms/snapshots/
+          cp -R "$RUNNER_TEMP/source-check/platforms/snapshots/." platforms/snapshots/
+          if [ ! -f "$RUNNER_TEMP/proposal/evidence.md" ]; then mkdir -p "$RUNNER_TEMP/proposal"; cp "$RUNNER_TEMP/source-check/updates/${{ needs.check.outputs.date }}.md" "$RUNNER_TEMP/proposal/evidence.md"; fi
           while IFS= read -r file; do
             [[ "$file" =~ ^platforms/[^/]+/pack\.yml$ || "$file" =~ ^platforms/snapshots/[A-Za-z0-9_-]+\.(txt|sha256)$ ]] || { echo "Forbidden patch path: $file"; exit 1; }
           done < <(git diff --name-only; git ls-files --others --exclude-standard platforms/snapshots)

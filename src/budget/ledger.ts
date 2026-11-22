@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -7,6 +7,17 @@ import { UserError } from "../types.ts";
 
 export interface LedgerMeta { projectSlug: string; provider: string; model: string; [key: string]: unknown }
 export interface LedgerEntry { id: string; type: "reserved" | "settled" | "agent"; at: string; usd: number | null; projectSlug: string; provider: string; model: string; usage?: unknown; ms?: number }
+export function parseAgentOutput(raw: string): { text: string; usd: number | null; usage?: unknown } {
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (value && typeof value === "object" && !Array.isArray(value) && "result" in value && ("total_cost_usd" in value || "usage" in value)) {
+      const wrapper = value as { result: unknown; total_cost_usd?: unknown; usage?: unknown };
+      const usd = typeof wrapper.total_cost_usd === "number" && Number.isFinite(wrapper.total_cost_usd) && wrapper.total_cost_usd >= 0 ? wrapper.total_cost_usd : null;
+      return { text: typeof wrapper.result === "string" ? wrapper.result : JSON.stringify(wrapper.result), usd, usage: wrapper.usage };
+    }
+  } catch { /* Plain agent output is not a wrapper. */ }
+  return { text: raw, usd: null };
+}
 function entries(root: string): LedgerEntry[] {
   const file = join(root, "ledger.jsonl");
   if (!existsSync(file)) return [];
@@ -48,19 +59,22 @@ async function locked<T>(root: string, fn: () => T): Promise<T> {
         mkdirSync(recovery);
         try {
           const pid = Number(readFileSync(path, "utf8"));
+          let dead = false;
           if (pid > 0) {
             try { process.kill(pid, 0); }
-            catch (e) {
-              if ((e as NodeJS.ErrnoException).code === "ESRCH") {
-                const stale = `${path}.stale-${randomUUID()}`;
-                renameSync(path, stale);
-                unlinkSync(stale);
-              }
-            }
+            catch (e) { dead = (e as NodeJS.ErrnoException).code === "ESRCH"; }
+          }
+          if (dead || Date.now() - statSync(path).mtimeMs > 60000) {
+            const stale = `${path}.stale-${randomUUID()}`;
+            renameSync(path, stale);
+            unlinkSync(stale);
           }
         } finally { rmdirSync(recovery); }
       } catch (e) {
-        if (!["ENOENT", "EEXIST"].includes((e as NodeJS.ErrnoException).code ?? "")) throw e;
+        if ((e as NodeJS.ErrnoException).code === "EEXIST") {
+          try { if (Date.now() - statSync(recovery).mtimeMs > 60000) rmdirSync(recovery); }
+          catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+        } else if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e;
       }
       if (Date.now() >= deadline) throw new UserError("Timed out waiting for ledger lock");
       await delay(20);
@@ -86,6 +100,7 @@ export async function settle(root: string, id: string, actualUsd: number | null,
     const all = entries(root), original = all.find(e => e.id === id && e.type === "reserved");
     if (!original || all.some(e => e.id === id && e.type === "settled")) throw new UserError("Unknown or already settled reservation");
     append(root, { ...original, type: "settled", at: new Date().toISOString(), usd: actualUsd, usage });
+    if (actualUsd !== null && original.usd !== null && actualUsd > original.usd) console.warn(`Warning: settlement exceeded reservation by $${(actualUsd - original.usd).toFixed(6)} (reported $${actualUsd}, reserved $${original.usd})`);
   });
 }
 

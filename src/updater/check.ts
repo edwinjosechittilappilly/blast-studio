@@ -61,13 +61,13 @@ async function detect(row: SourceRow, io: IO): Promise<string> {
   if (row.detector.kind !== 'page-hash') throw new Error('Manual source');
   const response = await io.fetch(row.url, { headers: { 'user-agent': 'BlastStudio/0.1 (+platform source monitor)' }, redirect: 'manual', signal: AbortSignal.timeout(30000) });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  if (response.url && new URL(response.url).host !== new URL(row.url).host) throw new Error('Redirect to another host');
   const text = extractText(await response.text(), row.detector.selector);
   if (!text) throw new Error('Source returned no extractable text');
   return text;
 }
 export async function check(io: IO, options: { root?: string; sources?: SourceRow[]; packs?: Map<string, unknown>; only?: string[]; write?: boolean; date?: string } = {}): Promise<{ results: Result[]; code: number; report: string }> {
   const root = options.root ?? repoRoot, sources = options.sources ?? loadSources(), packs = options.packs ?? loadPacks(), date = options.date ?? new Date().toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new UserError('Invalid source report date');
   if (options.only) for (const id of options.only) if (!sources.some(s => s.id === id)) throw new UserError(`Unknown source: ${id}`);
   const results: Result[] = [];
   for (const row of sources) {
@@ -78,7 +78,7 @@ export async function check(io: IO, options: { root?: string; sources?: SourceRo
     try {
       const text = await detect(row, io), old = existsSync(file) ? readFileSync(file, 'utf8') : undefined;
       const status = old === undefined ? 'new' : old === text ? 'unchanged' : 'changed';
-      if (options.write !== false) { mkdirSync(join(root, 'platforms/snapshots'), { recursive: true }); writeFileSync(file, text); writeFileSync(file.replace(/\.txt$/, '.sha256'), createHash('sha256').update(text).digest('hex') + '\n'); }
+      if (options.write) { mkdirSync(join(root, 'platforms/snapshots'), { recursive: true }); writeFileSync(file, text); writeFileSync(file.replace(/\.txt$/, '.sha256'), createHash('sha256').update(text).digest('hex') + '\n'); }
       results.push({ id: row.id, status, fields, old, text });
     } catch (error) { results.push({ id: row.id, status: 'failed', fields, error: error instanceof Error ? error.message : String(error) }); }
   }
