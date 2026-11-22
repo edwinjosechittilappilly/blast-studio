@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { Resvg } from "@resvg/resvg-js";
@@ -20,13 +20,39 @@ export async function closeBrowser(): Promise<void> {
   if (current) await (await current).close();
 }
 
-export async function renderHtml({ html, width, height, out, pdf = false }: { html: string; width: number; height: number; out: string; pdf?: boolean }) {
+export async function renderHtml({ html, width, height, out, pdf = false, assetDir, projectDir }: { html: string; width: number; height: number; out: string; pdf?: boolean; assetDir?: string; projectDir?: string }) {
   if (!Number.isInteger(width) || !Number.isInteger(height) || width <= 0 || height <= 0) throw new Error("Render size must be positive integer pixels");
   const dir = mkdtempSync(join(tmpdir(), "bstudio-render-"));
   const page = await (await getBrowser()).newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
   try {
-    await page.route('**/*', route => /^(file|data|blob):/.test(route.request().url()) ? route.continue() : route.abort());
     const input = join(dir, "input.html"); writeFileSync(input, html);
+    const roots = [assetDir, fileURLToPath(new URL('../../templates/', import.meta.url))].filter((path): path is string => !!path).map(path => realpathSync(path));
+    const assets = projectDir ? join(projectDir, 'assets') : assetDir ? resolve(assetDir, '../..', 'assets') : undefined;
+    const loadedFiles = new Set<string>();
+    await page.routeWebSocket('**/*', socket => socket.close());
+    await page.route('**/*', route => {
+      const url = route.request().url();
+      if (url.startsWith('data:')) return route.continue();
+      if (url.startsWith('file:')) {
+        try {
+          const path = realpathSync(fileURLToPath(url));
+          if (path === realpathSync(input) || roots.some(root => {
+            const rel = relative(root, path);
+            return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+          }) || (assets && (() => {
+            try {
+              const rel = relative(realpathSync(assets), path);
+              const parts = rel.split(sep);
+              return !isAbsolute(rel) && parts[0] !== '..' && parts.length >= 3 && parts[1] === 'out';
+            } catch { return false; }
+          })())) {
+            if (path !== realpathSync(input)) loadedFiles.add(path);
+            return route.continue();
+          }
+        } catch { /* missing, malformed, or inaccessible file */ }
+      }
+      return route.abort();
+    });
     await page.goto(pathToFileURL(input).href, { waitUntil: "load" });
     await page.evaluate(() => document.fonts.ready);
     const metrics = await measureText(page);
@@ -35,7 +61,7 @@ export async function renderHtml({ html, width, height, out, pdf = false }: { ht
       await page.addStyleTag({ content: `@page { size: ${width}px ${height}px; margin: 0 } html, body { margin: 0; padding: 0 } .slide { break-after: page; page-break-after: always } .slide:last-child { break-after: auto; page-break-after: auto }` });
       await page.pdf({ path: out, width: `${width}px`, height: `${height}px`, printBackground: true, preferCSSPageSize: true });
     } else await page.screenshot({ path: out, type: "png", animations: "disabled" });
-    return { file: out, width, height, bytes: statSync(out).size, metrics };
+    return { file: out, width, height, bytes: statSync(out).size, metrics, loadedFiles: [...loadedFiles] };
   } finally { await page.close(); rmSync(dir, { recursive: true, force: true }); }
 }
 

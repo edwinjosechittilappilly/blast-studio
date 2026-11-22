@@ -16,7 +16,7 @@ export const run: Command = async (args, io) => {
     const html = readFileSync(input, 'utf8');
     const base = pathToFileURL(`${dirname(input)}/`).href;
     const withBase = /<head(?:\s[^>]*)?>/i.test(html) ? html.replace(/<head(?:\s[^>]*)?>/i, `$&<base href="${base}">`) : `<base href="${base}">${html}`;
-    try { await renderHtml({ html: withBase, width: +match[1], height: +match[2], out, pdf: extname(out).toLowerCase() === '.pdf' }); }
+    try { await renderHtml({ html: withBase, width: +match[1], height: +match[2], out, pdf: extname(out).toLowerCase() === '.pdf', assetDir: dirname(input) }); }
     finally { await closeBrowser(); }
   } else if (ext === '.svg') {
     renderSvg(input, [{ file: out, size: +match[1] }]);

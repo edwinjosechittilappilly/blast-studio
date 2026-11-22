@@ -6,12 +6,11 @@ import { parse } from 'yaml';
 import type { IO } from './io.ts';
 import type { StudioConfig } from './types.ts';
 import { UserError } from './types.ts';
-import { recordAgentRun } from './budget/ledger.ts';
+import { agentEnv, runBilledAgent } from './agent-env.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 import { parsePost } from './posts.ts';
 function safePath(path: string): boolean { return !!path && !isAbsolute(path) && normalize(path) === path && !path.split(/[\\/]/).some(p => p === '..' || p === '.'); }
-const deniedEnv = ['DEV_API_KEY', 'HASHNODE_TOKEN', 'GITHUB_TOKEN', 'BLUESKY_IDENTIFIER', 'BLUESKY_APP_PASSWORD', 'BLUESKY_HOST', 'MASTODON_TOKEN', 'MASTODON_HOST', 'LINKEDIN_ACCESS_TOKEN', 'LINKEDIN_CLIENT_ID', 'LINKEDIN_CLIENT_SECRET', 'LINKEDIN_TOKEN_ISSUED', 'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET', 'NOSTR_PRIVATE_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY'];
 
 export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs, passEnv = [], validate }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string>; allowOut: RegExp[]; prompt: string; timeoutMs: number; passEnv?: string[]; validate?: (workspace: string) => { path: string; message: string }[] }): Promise<{ copied: string[]; ignored: string[] }> {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-agent-'));
@@ -27,27 +26,9 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
     const shim = join(bin, 'bstudio');
     const cli = fileURLToPath(new URL('../bin/bstudio.mjs', import.meta.url));
     writeFileSync(shim, `#!/bin/sh\nif [ "$1" != render-preview ]; then echo 'Only render-preview is available' >&2; exit 1; fi\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(cli)} "$@"\n`); chmodSync(shim, 0o755);
-    // HOME stays the user's real home so the agent CLI (omp, claude, codex) finds its own login; isolation comes from
-    // the temp working directory and the allowlisted environment, not from hiding HOME.
-    const env: Record<string, string | undefined> = {
-      PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${io.env.PATH ?? '/usr/bin:/bin'}`,
-      HOME: io.env.HOME ?? dir,
-      TMPDIR: temp,
-    };
-    for (const key of ['LANG', 'LC_ALL', 'TERM', 'USER', 'SYSTEMROOT']) if (io.env[key]) env[key] = io.env[key];
-    for (const [key, value] of Object.entries(io.env)) if (key.startsWith('XDG_') && value) env[key] = value;
-    for (const key of passEnv) {
-      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || deniedEnv.includes(key.toUpperCase()) || ['PATH', 'HOME', 'TMPDIR'].includes(key.toUpperCase())) throw new UserError(`Disallowed agent environment variable: ${key}`);
-      if (io.env[key] !== undefined) env[key] = io.env[key];
-    }
+    const env = agentEnv(io, { temp, bin, passEnv: [...(config.agent.passEnv ?? []), ...passEnv] });
     for (let attempt = 0; attempt < 2; attempt++) {
-      const started = Date.now();
-      let report: string;
-      try {
-        report = await io.run(config.agent.command[0], [...config.agent.command.slice(1), prompt], { cwd: dir, env, timeoutMs });
-      } finally {
-        await recordAgentRun(config, { model: config.agent.command.join(' '), ms: Date.now() - started, usd: null, projectSlug: basename(projectDir) });
-      }
+      const report = await runBilledAgent(io, config, config.agent, basename(projectDir), config.agent.command, prompt, dir, temp, env, timeoutMs);
       if (report.trim()) io.out(report.trim());
       const outputs: { rel: string; data: Buffer }[] = [];
       const errors: { path: string; message: string }[] = [];

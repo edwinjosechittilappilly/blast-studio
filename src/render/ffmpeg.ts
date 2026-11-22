@@ -1,4 +1,7 @@
-import { statSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { agentEnv } from "../agent-env.ts";
 import type { IO } from "../io.ts";
 import { UserError } from "../types.ts";
 
@@ -10,10 +13,19 @@ const guidance: Record<string, string> = {
 };
 
 export async function runTool(io: IO, name: keyof typeof guidance, command: string, args: string[], cwd?: string): Promise<string> {
+  if (name === "vhs" && args[0]) {
+    const tape = readFileSync(resolve(cwd ?? io.cwd, args[0]), "utf8");
+    if (/^\s*(?:Type|Env)\b[^\n]*(?:\b(?:env|printenv)\b|\becho\s+\$)/im.test(tape)) throw new UserError("VHS tape cannot print environment variables (env, printenv or echo $)");
+  }
+  const temp = mkdtempSync(join(tmpdir(), "bstudio-tool-"));
   try {
-    return await io.run(command, args, { cwd, env: io.env, timeoutMs: 120_000 });
+    const configured = Number(io.env.BSTUDIO_RENDER_TIMEOUT_MS);
+    const timeoutMs = Number.isFinite(configured) && configured > 0 ? configured : (name === "vhs" || name === "hyperframes" ? 1_800_000 : 120_000);
+    return await io.run(command, args, { cwd, env: agentEnv(io, { temp, home: temp, minimal: true }), timeoutMs });
   } catch (error) {
     throw new UserError(`${name} failed or is unavailable; run bstudio doctor; install: ${guidance[name]}. ${String(error)}`);
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
   }
 }
 

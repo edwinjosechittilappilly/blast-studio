@@ -123,9 +123,9 @@ export interface StudioConfig {
   file: string;
   brand: BrandKit;
   platforms: PlatformId[];
-  agent: { command: string[]; timeoutSeconds: number; passEnv?: string[] };
+  agent: { command: string[]; timeoutSeconds: number; passEnv?: string[]; billing?: 'subscription' | 'api'; maxUsdPerRun?: number; sandbox?: 'auto' | 'off' };
   /** Reviewer agent; null = deterministic gates plus a human checklist only. */
-  reviewer: { command: string[] | null; timeoutSeconds: number };
+  reviewer: { command: string[] | null; timeoutSeconds: number; billing?: 'subscription' | 'api'; maxUsdPerRun?: number };
   review: { threshold: number; maxRounds: number };
   images: { provider: "gemini" | "openai" | "omp" | "none"; model?: string };
   voice: { provider: "openai" | "none"; model?: string; voice?: string };
