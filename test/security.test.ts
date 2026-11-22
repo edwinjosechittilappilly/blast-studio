@@ -96,7 +96,7 @@ test('Linux HyperFrames keeps its private cache visible through bwrap', async t 
         return '';
       } });
     const config = loadConfig(io); config.agent.sandbox = 'on';
-    await runTool(io, 'hyperframes', '/bin/sh', ['-c', 'test "$HOME" = "$1" && test "$HYPERFRAMES_CACHE_DIR" = "$2" && cat "$2/browser" && touch "$2/locks/allowed" && ! touch "$2/forbidden" 2>/dev/null && ! cat "$3" 2>/dev/null', 'sh', home, cache, join(root, '.env')], work, { config, workspace: work });
+    await runTool(io, 'hyperframes', '/bin/sh', ['-c', 'test "$HOME" = "$1" && test "$HYPERFRAMES_CACHE_DIR" = "$2" && for dir in "$HOME" "$(dirname "$HOME")" /; do owner=$(stat -c %u "$dir"); if [ "$owner" != 0 ] && [ "$owner" != "$(id -u)" ]; then echo "untrusted owner $owner at $dir" >&2; exit 1; fi; done && cat "$2/browser" && touch "$2/locks/allowed" && ! touch "$2/forbidden" 2>/dev/null && ! cat "$3" 2>/dev/null', 'sh', home, cache, join(root, '.env')], work, { config, workspace: work });
   } finally { rmSync(fixture, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); rmSync(work, { recursive: true, force: true }); }
 });
 

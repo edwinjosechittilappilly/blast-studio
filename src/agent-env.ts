@@ -68,7 +68,7 @@ export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, 
     if (bwrap && (!bwrapProbe || bwrapProbe.path !== bwrap)) bwrapProbe = { path: bwrap, available: spawnSync(bwrap, ['--ro-bind', '/', '/', '--', '/bin/true'], { stdio: 'ignore' }).status === 0 };
     // Bubblewrap brings up loopback in the isolated network namespace for local renderer servers.
     if (bwrap && bwrapProbe?.available) {
-      const mounts = ['--unshare-pid', '--die-with-parent', ...(options.render ? ['--unshare-net'] : []), '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'];
+      const mounts = ['--unshare-user', '--uid', String(process.getuid?.() ?? 0), '--gid', String(process.getgid?.() ?? 0), '--unshare-pid', '--die-with-parent', ...(options.render ? ['--unshare-net'] : []), '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'];
       if (home && existsSync(home)) mounts.push('--tmpfs', canonical(home));
       const bind = (path: string, write: boolean) => {
         if (!existsSync(path)) return;
