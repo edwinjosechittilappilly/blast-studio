@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
+import { Ajv2020 } from 'ajv/dist/2020.js';
 import { run as exportCommand } from '../src/commands/export.ts';
 import { run as mark } from '../src/commands/mark.ts';
 import { run as accept, confirm } from '../src/commands/accept.ts';
@@ -22,8 +23,16 @@ function fixture(platform = 'bluesky') {
   writeFileSync(join(project, 'posts', `${platform}.md`), `---\nplatform: ${platform}\ntitle: T\nevidence: [E1]\nmedia:\n  - asset: a\n    file: assets/a/out/image.png\n    alt: Alt\n    kind: image\n---\nHello\n`);
   const review = { platform, postHash: reviewHash({ title: 'T', body: 'Hello', media: [{ path: 'image.png', alt: 'Alt' }] }), mediaHash: mediaContentHash(project, [{ asset: 'a', file: 'assets/a/out/image.png', alt: 'Alt', kind: 'image' }]), gates: ['policy', 'disclosure', 'specs', 'accessibility', 'fabricated-metrics', 'rights'].map(id => ({ id, pass: true, message: 'ok' })), verdict: 'pass', total: 90 };
   const save = () => writeFileSync(join(project, 'reviews', `${platform}.json`), JSON.stringify(review)); save();
+  writeFileSync(join(root, 'market-blaster.yml'), 'brand: { name: Demo }\ndestinations: [bluesky]\n');
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') } });
   return { root, project, review, save, io };
+}
+
+function marketBlasterDir(): string {
+  return process.env.MARKET_BLASTER_DIR
+    ? resolve(process.env.MARKET_BLASTER_DIR)
+    : [new URL('../../market-blaster/', import.meta.url), new URL('../../../market-blaster/', import.meta.url)]
+      .map(fileURLToPath).find(path => existsSync(join(path, 'bin/mblast.mjs'))) ?? fileURLToPath(new URL('../../market-blaster/', import.meta.url));
 }
 
 test('shared review hash vector', () => {
@@ -46,31 +55,74 @@ test('refuses missing gates and changed media', async () => {
 });
 
 test('market-blaster imports manifest and media', async t => {
-  const marketBlaster = process.env.MARKET_BLASTER_DIR
-    ? resolve(process.env.MARKET_BLASTER_DIR)
-    : fileURLToPath(new URL('../../market-blaster/', import.meta.url));
+  const marketBlaster = marketBlasterDir();
   if (!existsSync(marketBlaster)) {
     t.skip('set MARKET_BLASTER_DIR to a market-blaster checkout to run the import integration test');
     return;
   }
   const f = fixture(); await exportCommand(['acme/demo', '--dir'], f.io);
+  const manifest = JSON.parse(readFileSync(join(f.project, 'export/manifest.json'), 'utf8'));
+  assert.deepEqual([manifest.project, manifest.campaign, manifest.slug], ['acme', 'demo', 'acme--demo']);
+  const ajv = new Ajv2020({ allErrors: true });
+  ajv.addFormat('date-time', { type: 'string', validate: (s: string) => Number.isFinite(Date.parse(s)) });
+  const validate = ajv.compile(JSON.parse(readFileSync(join(marketBlaster, 'schemas/studio-manifest.v1.json'), 'utf8')));
+  assert.ok(validate(manifest), ajv.errorsText(validate.errors));
   writeFileSync(join(f.root, 'market-blaster.yml'), 'brand: { name: Demo }\ndestinations: [bluesky]\n');
-  const result = spawnSync(process.execPath, [join(marketBlaster, 'bin/mblast.mjs'), 'import', join(f.project, 'export'), '--slug', 'demo'], { cwd: f.root, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [join(marketBlaster, 'bin/mblast.mjs'), 'import', join(f.project, 'export'), '--slug', 'acme--demo'], { cwd: f.root, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  const draft = readFileSync(join(f.root, 'campaigns/demo/drafts/bluesky.md'), 'utf8');
-  assert.match(draft, /reviewHash/); const path = draft.match(/path: (media\/[^\s]+)/)?.[1]; assert.ok(path); assert.ok(existsSync(join(f.root, 'campaigns/demo', path)));
+  const draft = readFileSync(join(f.root, 'campaigns/acme--demo/drafts/bluesky.md'), 'utf8');
+  assert.match(draft, /reviewHash/); const path = draft.match(/path: (media\/[^\s]+)/)?.[1]; assert.ok(path); assert.ok(existsSync(join(f.root, 'campaigns/acme--demo', path)));
 });
 
 test('market-blaster imports the default campaign zip', async t => {
-  const marketBlaster = process.env.MARKET_BLASTER_DIR
-    ? resolve(process.env.MARKET_BLASTER_DIR)
-    : fileURLToPath(new URL('../../market-blaster/', import.meta.url));
+  const marketBlaster = marketBlasterDir();
   if (!existsSync(marketBlaster)) { t.skip('set MARKET_BLASTER_DIR to a market-blaster checkout'); return; }
   const f = fixture(); await exportCommand(['acme/demo'], f.io);
   writeFileSync(join(f.root, 'market-blaster.yml'), 'brand: { name: Demo }\ndestinations: [bluesky]\n');
-  const result = spawnSync(process.execPath, [join(marketBlaster, 'bin/mblast.mjs'), 'import', join(f.project, 'export/demo.campaign.zip'), '--slug', 'demo'], { cwd: f.root, encoding: 'utf8' });
+  const result = spawnSync(process.execPath, [join(marketBlaster, 'bin/mblast.mjs'), 'import', join(f.project, 'export/acme--demo.campaign.zip')], { cwd: f.root, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(readFileSync(join(f.root, 'campaigns/acme--demo/drafts/bluesky.md'), 'utf8'), /reviewHash/);
 });
+
+test('distinct hyphenated campaign addresses produce distinct import identities', async t => {
+  const marketBlaster = marketBlasterDir();
+  if (!existsSync(marketBlaster)) { t.skip('set MARKET_BLASTER_DIR to a market-blaster checkout'); return; }
+  const f = fixture();
+  for (const [address, slug] of [['a-b/c', 'a-b--c'], ['a/b-c', 'a--b-c']]) {
+    const [project, campaign] = address.split('/');
+    const dir = join(f.root, 'projects', project, 'campaigns', campaign);
+    cpSync(f.project, dir, { recursive: true });
+    await exportCommand([address, '--dir'], f.io);
+    const manifest = JSON.parse(readFileSync(join(dir, 'export/manifest.json'), 'utf8'));
+    assert.deepEqual([manifest.project, manifest.campaign, manifest.slug], [project, campaign, slug]);
+    const result = spawnSync(process.execPath, [join(marketBlaster, 'bin/mblast.mjs'), 'import', join(dir, 'export')], { cwd: f.root, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.ok(existsSync(join(f.root, 'campaigns', slug, 'drafts/bluesky.md')));
+  }
+});
+
+test('real Market Blaster warns for unapproved drafts and refuses approved drafts unless forced', async t => {
+  const marketBlaster = marketBlasterDir();
+  if (!existsSync(marketBlaster)) { t.skip('set MARKET_BLASTER_DIR to a market-blaster checkout'); return; }
+  const f = fixture();
+  f.io.run = async (_cmd, args, opts) => {
+    const result = spawnSync(process.execPath, [join(marketBlaster, 'bin/mblast.mjs'), ...args], { cwd: opts?.cwd, encoding: 'utf8' });
+    if (result.status !== 0) throw new Error(result.stdout + result.stderr);
+    if (result.stderr) opts?.onStderr?.(result.stderr);
+    return result.stdout;
+  };
+  await exportCommand(['acme/demo', '--mb', f.root], f.io);
+  const draft = join(f.root, 'campaigns/acme--demo/drafts/bluesky.md');
+  const before = readFileSync(draft, 'utf8');
+  await exportCommand(['acme/demo', '--mb', f.root], f.io);
+  assert.match(f.io.stderr.join('\n'), /import will replace existing files/);
+  writeFileSync(join(f.root, 'campaigns/acme--demo/state.json'), JSON.stringify({ bluesky: { approvedHash: 'approved' } }));
+  await assert.rejects(exportCommand(['acme/demo', '--mb', f.root], f.io), /approved drafts.*--force/s);
+  assert.equal(readFileSync(draft, 'utf8'), before);
+  await exportCommand(['acme/demo', '--mb', f.root, '--force'], f.io);
+  assert.equal(readFileSync(draft, 'utf8'), before);
+});
+
 
 test('manual export and mark host validation', async () => {
   const f = fixture('instagram'); await exportCommand(['acme/demo', '--dir'], f.io);
@@ -87,7 +139,7 @@ test('handoff invokes configured import and check and propagates failure', async
   f.io.run = async (cmd, args, opts) => { calls.push([cmd, ...args]); assert.equal(opts?.cwd, f.root); return 'ok'; };
   await exportCommand(['acme/demo', `--mb=${f.root}`, '--force'], f.io);
   assert.deepEqual(calls.map(c => c[1]), ['import', 'check']); assert.ok(calls[0].includes('--force'));
-  assert.deepEqual(calls[0].slice(-3), ['--slug', 'demo', '--force']); assert.equal(calls[1][2], 'demo');
+  assert.deepEqual(calls[0].slice(-3), ['--slug', 'acme--demo', '--force']); assert.equal(calls[1][2], 'acme--demo');
   f.io.run = async () => { throw new Error('import failed'); };
   await assert.rejects(exportCommand(['acme/demo', '--mb', f.root], f.io), /import failed/);
 });

@@ -49,7 +49,7 @@ test('slow: offline idea becomes a reviewed campaign with a still and manual han
     assert.equal(await accept(['demo/launch', platform, '--reason', 'Reviewed offline'], io), 0);
   }
   assert.equal(await exportCommand(['demo/launch'], io), 0);
-  const entries = unzipSync(readFileSync(join(project, 'export/launch.campaign.zip')));
+  const entries = unzipSync(readFileSync(join(project, 'export/demo--launch.campaign.zip')));
   assert.ok(entries['handoff/instagram/post.md']); assert.ok(entries['handoff/instagram/README.md']);
   const manifest: { manual: { platform: string }[]; destinations: { review: { reviewHash: string } }[] } = JSON.parse(strFromU8(entries['campaign.json']));
   const ajv = new Ajv2020({ allErrors: true });

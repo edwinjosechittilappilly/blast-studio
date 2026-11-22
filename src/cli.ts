@@ -94,7 +94,7 @@ function stopSubprocesses(signal: NodeJS.Signals): Promise<void> {
   }, 50);
   return promise;
 }
-function runProgram(cmd: string, args: string[], opts: { cwd?: string; env?: Record<string, string | undefined>; input?: string; timeoutMs?: number; onOutput?: (line: string) => void } = {}): Promise<string> {
+function runProgram(cmd: string, args: string[], opts: { cwd?: string; env?: Record<string, string | undefined>; input?: string; timeoutMs?: number; onOutput?: (line: string) => void; onStderr?: (text: string) => void } = {}): Promise<string> {
   const { promise, resolve, reject } = Promise.withResolvers<string>();
     const child = spawn(cmd, args, { cwd: opts.cwd, env: opts.env, detached: process.platform !== "win32", stdio: ["pipe", "pipe", "pipe"] });
     if (child.pid) { subprocesses.add(child.pid); recordProcesses?.([...subprocesses]); }
@@ -119,7 +119,7 @@ function runProgram(cmd: string, args: string[], opts: { cwd?: string; env?: Rec
       if (child.pid && !interrupted) { subprocesses.delete(child.pid); recordProcesses?.([...subprocesses]); }
       if (timedOut && child.pid) signalGroup(child.pid, "SIGKILL");
       clearTimeout(timer); clearTimeout(forceTimer);
-      if (code === 0) { resolve(stdout); return; }
+      if (code === 0) { if (stderr) opts.onStderr?.(stderr); resolve(stdout); return; }
       const reason = timedOut ? `timed out after ${opts.timeoutMs! / 1000}s` : `exited with ${code ?? signal}`;
       const tail = [stdout, stderr].filter(Boolean).join("\n").trim().split("\n").slice(-20).join("\n");
       reject(new Error(`${cmd} ${reason}${tail ? `:\n${tail}` : ""}`));

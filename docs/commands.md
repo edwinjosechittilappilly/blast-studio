@@ -1,6 +1,6 @@
 # Command reference
 
-Run `bstudio help`, `bstudio --help`, or `bstudio -h` for the command list. Project slugs contain lowercase letters, numbers, and single hyphens between components.
+Run `bstudio help`, `bstudio --help`, or `bstudio -h` for the command list. Project and campaign slugs contain lowercase letters, numbers, and single hyphens between components. Campaign commands take a full `<project>/<campaign>` address; below, `<address>` means that address.
 
 ## Setup
 
@@ -10,36 +10,43 @@ Run `bstudio help`, `bstudio --help`, or `bstudio -h` for the command list. Proj
 - `bstudio auth set <KEY> [--stdin]` stores `GEMINI_API_KEY` or `OPENAI_API_KEY` in macOS Keychain. Use `--stdin` to read the value from standard input. On other platforms, use the studio root's `.env` instead.
 - `bstudio auth list` shows credential sources without displaying their values.
 
+## Projects
+
+- `bstudio project new <project> [--repo owner/repo] [--url URL]... [--note text]...` creates a project and collects optional shared evidence. URLs and notes can be repeated; an existing project is not overwritten.
+- `bstudio project list` lists projects with their campaign counts and last update times.
+
+Projects contain shared evidence and independent campaigns. Legacy flat projects are migrated automatically on startup; see [workflow](workflow.md) for storage and recovery.
+
 ## Create and review
 
-`bstudio new` runs brief, plan, make, render, and review in order, stopping on an error and printing a resume command. It requires the slug first and accepts the same input options as `brief`:
+`bstudio new` runs brief, plan, make, render, and review in order, stopping on an error and printing a resume command. Create the project first; the campaign address is required and the command accepts the same input options as `brief`:
 
 ```text
-bstudio new <slug> [--idea text] [--note text] [--url url] [--pr number]
+bstudio new <address> [--idea text] [--note text] [--url url] [--pr number]
   [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force]
-bstudio brief <slug> [--idea text] [--note text] [--url url] [--pr number]
+bstudio brief <address> [--idea text] [--note text] [--url url] [--pr number]
   [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force]
 ```
 
 At least one input is required. `--note` and `--url` can be repeated. `--repo` alone collects repository information; PRs require a GitHub repository and commits can use `local`. `--mb-brief` imports evidence sections from a Market Blaster brief. `--force` overwrites an existing brief. Inputs are stored as evidence in `brief.md`.
 
-- `bstudio plan <slug> [--platforms=id,...] [--assets=id,...]` asks the agent for a plan for enabled destinations permitted by their AI policies. Scoped planning retains unselected entries.
-- `bstudio make <slug> [--platforms=id,...] [--assets=id,...]` writes selected posts and asset sources using the agent. Both commands also accept `--platforms id,...` and `--assets id,...`.
-- `bstudio render <slug> [--regen] [--assets=id,...] [--platforms=id,...]` renders planned assets. `--regen` requests regeneration of provider-generated assets rather than using cached outputs. `--assets` selects assets to render; `--platforms` limits which posts are updated with rendered media.
-- `bstudio review [<slug>] [--calibrate] [--platforms=id,...]` runs deterministic gates and, when configured, the reviewer. A slug is required for review; `--platforms` limits the reviewed posts. `--calibrate`, alone or after a slug, measures reviewer agreement against the bundled fixtures instead of reviewing the project.
-- `bstudio revise <slug> [--note <text>] [--asset <id>] [--platform <id>] [--feedback-only]` applies pending owner feedback and review findings. A note can target an asset, a platform's post, or the whole project when neither is specified. Use `--feedback-only` to skip automatic review-finding rounds. Owner feedback rounds do not count against `review.maxRounds`. Stale targets are rejected with a reason; concurrent revision is prevented by a project lock. Blocked rights need human resolution.
-- `bstudio feedback <slug> list|add --note <text> [--asset <id>|--platform <id>]|rm <id>` lists, queues, or removes pending/rejected feedback without applying it. Run `revise` to apply queued feedback.
-- `bstudio history <slug>` lists snapshots; `bstudio restore <slug> <n>` restores one after saving the current state. Up to 20 snapshots are retained in `history/<n>-<step>-<timestamp>/`.
-- `bstudio accept <slug> <platform> --reason <reason>` records a human score override. The review must be current and all gates must pass, including a fresh gate evaluation.
-- `bstudio confirm <slug> <asset-id> [--trademark-checked] [--license <license>]` records a human trademark check and/or the asset's license after verifying them.
+- `bstudio plan <address> [--platforms=id,...] [--assets=id,...]` asks the agent for a plan for enabled destinations permitted by their AI policies. Scoped planning retains unselected entries.
+- `bstudio make <address> [--platforms=id,...] [--assets=id,...]` writes selected posts and asset sources using the agent. Both commands also accept `--platforms id,...` and `--assets id,...`.
+- `bstudio render <address> [--regen] [--assets=id,...] [--platforms=id,...]` renders planned assets. `--regen` requests regeneration of provider-generated assets rather than using cached outputs. `--assets` selects assets to render; `--platforms` limits which posts are updated with rendered media.
+- `bstudio review [<address>] [--calibrate] [--platforms=id,...]` runs deterministic gates and, when configured, the reviewer. An address is required for review; `--platforms` limits the reviewed posts. `--calibrate`, alone or after an address, measures reviewer agreement against the bundled fixtures instead of reviewing the campaign.
+- `bstudio revise <address> [--note <text>] [--asset <id>] [--platform <id>] [--feedback-only]` applies pending owner feedback and review findings. A note can target an asset, a platform's post, or the whole campaign when neither is specified. Use `--feedback-only` to skip automatic review-finding rounds. Owner feedback rounds do not count against `review.maxRounds`. Stale targets are rejected with a reason; concurrent revision is prevented by a campaign lock. Blocked rights need human resolution.
+- `bstudio feedback <address> list|add --note <text> [--asset <id>|--platform <id>]|rm <id>` lists, queues, or removes pending/rejected feedback without applying it. Run `revise` to apply queued feedback.
+- `bstudio history <address>` lists snapshots; `bstudio restore <address> <n>` restores one after saving the current state. Up to 20 snapshots are retained in `history/<n>-<step>-<timestamp>/`.
+- `bstudio accept <address> <platform> --reason <reason>` records a human score override. The review must be current and all gates must pass, including a fresh gate evaluation.
+- `bstudio confirm <address> <asset-id> [--trademark-checked] [--license <license>]` records a human trademark check and/or the asset's license after verifying them.
 - `bstudio render-preview <file.html|.svg|.mmd|.d2> --size WxH --out <path>` renders one source offline. HTML can produce PDF when the output ends in `.pdf`.
 
 ## Handoff and records
 
-- `bstudio export <slug> [--mb <project>] [--force] [--dir]` writes `export/<slug>.campaign.zip` with reviewed content and handoffs, then imports and checks it if `--mb` or `marketBlaster.project` identifies a Market Blaster project. `--dir` writes the legacy v1 directory instead; `--force` is passed to the import.
-- `bstudio mark <slug> <platform> --url <https-url>` records a publication URL for `youtube-shorts`, `instagram`, `tiktok`, or `dailydev`. The URL host must match the destination and the post must exist.
-- `bstudio status [<slug>] [--verbose]` shows project verdicts, monthly spend, and source health. `--verbose` lists unverified pack fields.
-- `bstudio library [search <query>]` lists projects or searches the library.
+- `bstudio export <address> [--mb <project>] [--force] [--dir]` writes `export/<project>--<campaign>.campaign.zip` with reviewed content and handoffs, then imports and checks it under the composite `<project>--<campaign>` slug if `--mb` or `marketBlaster.project` identifies a Market Blaster project. `--dir` writes the legacy v1 directory instead; `--force` is passed to the import. Market Blaster warns before overwriting unapproved drafts; approved drafts require `--force`. See [package identity and collisions](design/campaign-package.md).
+- `bstudio mark <address> <platform> --url <https-url>` records a publication URL for `youtube-shorts`, `instagram`, `tiktok`, or `dailydev`. The URL host must match the destination and the post must exist.
+- `bstudio status [<address>] [--verbose]` shows campaign verdicts, monthly spend, and source health. `--verbose` lists unverified pack fields.
+- `bstudio library [search <query>]` lists campaigns or searches the library.
 - `bstudio dashboard [--port <port>]` starts the [local dashboard](dashboard.md), defaulting to port 4848.
 
 ## Budget and platform sources

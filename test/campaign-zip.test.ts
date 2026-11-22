@@ -30,7 +30,7 @@ function fixture() {
 test('campaign zip contains a validated complete deterministic package', async () => {
   const f = fixture();
   await exportCommand(['acme/demo'], f.io);
-  const path = join(f.project, 'export/demo.campaign.zip'), first = readFileSync(path);
+  const path = join(f.project, 'export/acme--demo.campaign.zip'), first = readFileSync(path);
   await exportCommand(['acme/demo'], f.io);
   assert.deepEqual(readFileSync(path), first);
   const entries = unzipSync(first), names = Object.keys(entries);
@@ -40,11 +40,12 @@ test('campaign zip contains a validated complete deterministic package', async (
   assert.ok(names.some(name => name.startsWith('media/') && name.endsWith('/image.png')));
   assert.ok(!names.some(name => name.startsWith('handoff/instagram/media/')));
   assert.match(strFromU8(entries['handoff/instagram/README.md']), /\.\.\/\.\.\/media\//);
-  const manifest: { canonicalHome: string | null; sources: { url: string | null }[]; manual: { platform: string }[]; destinations: { review: { reviewHash: string } }[] } = JSON.parse(strFromU8(entries['campaign.json']));
+  const manifest: { project: string; campaign: string; slug: string; canonicalHome: string | null; sources: { url: string | null }[]; manual: { platform: string }[]; destinations: { review: { reviewHash: string } }[] } = JSON.parse(strFromU8(entries['campaign.json']));
   const ajv = new Ajv2020({ allErrors: true });
   ajv.addFormat('date-time', { type: 'string', validate: (s: string) => Number.isFinite(Date.parse(s)) });
   const validate = ajv.compile<typeof manifest>(JSON.parse(readFileSync(new URL('../schemas/campaign.v2.json', import.meta.url), 'utf8')));
   assert.ok(validate(manifest), ajv.errorsText(validate.errors));
+  assert.deepEqual([manifest.project, manifest.campaign, manifest.slug], ['acme', 'demo', 'acme--demo']);
   assert.equal(manifest.canonicalHome, null);
   assert.equal(manifest.sources[0].url, 'https://example.com/source');
   assert.equal(manifest.manual[0].platform, 'instagram');
@@ -56,7 +57,7 @@ test('absent source status remains null', async () => {
   const brief = join(f.project, 'brief.md');
   writeFileSync(brief, readFileSync(brief, 'utf8').replace('status: shipped\n\n', ''));
   await exportCommand(['acme/demo'], f.io);
-  const zip = unzipSync(readFileSync(join(f.project, 'export/demo.campaign.zip')));
+  const zip = unzipSync(readFileSync(join(f.project, 'export/acme--demo.campaign.zip')));
   const manifest = JSON.parse(strFromU8(zip['campaign.json'])) as { sources: { status: string | null }[] };
   assert.equal(manifest.sources[0].status, null);
 });
@@ -73,6 +74,6 @@ test('campaign zip rejects an oversized media entry before reading it', () => {
   closeSync(openSync(path, 'w')); truncateSync(path, 500 * 1024 ** 2 + 1);
   const post = loadPosts(f.project).get('bluesky')!;
   const review = JSON.parse(readFileSync(join(f.project, 'reviews/bluesky.json'), 'utf8')) as Review;
-  try { assert.throws(() => writeCampaignZip(f.project, 'demo', [{ post, review, hash: review.postHash, pack: loadPack('bluesky') }], (project, name) => join(project, name)), /500 MiB limit/); }
+  try { assert.throws(() => writeCampaignZip(f.project, { project: 'acme', campaign: 'demo' }, [{ post, review, hash: review.postHash, pack: loadPack('bluesky') }], (project, name) => join(project, name)), /500 MiB limit/); }
   finally { unlinkSync(path); }
 });

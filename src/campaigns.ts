@@ -23,6 +23,10 @@ export function parseCampaignRef(address: string): CampaignRef {
   return { project: validateId(parts[0]), campaign: validateId(parts[1]) };
 }
 
+export function compositeSlug(ref: CampaignRef): string {
+  return `${validateId(ref.project)}--${validateId(ref.campaign)}`;
+}
+
 export function campaignAddressForDir(config: StudioConfig, dir: string): string {
   const parts = relative(resolve(config.root, "projects"), resolve(dir)).split(process.platform === "win32" ? "\\" : "/");
   if (parts.length !== 3 || parts[1] !== "campaigns" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(parts[0]) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(parts[2])) return "";

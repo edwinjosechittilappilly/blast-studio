@@ -1,16 +1,21 @@
 # Workflow
 
-A project lives at `<studio-root>/projects/<slug>/`. The shortcut `bstudio new <slug> <inputs>` runs `brief`, `plan`, `make`, `render`, and `review` in order, stopping at the first error and printing the command to resume. Run the stages separately when you want to inspect or edit the brief or plan before continuing.
+A project lives at `<studio-root>/projects/<project>/`, with `project.yml` metadata, shared `evidence/`, and independent campaigns at `campaigns/<campaign>/`. Create a project with `bstudio project new acme` and list projects with `bstudio project list`. Campaign commands use the full `<project>/<campaign>` address, for example `acme/release-note`. Both components use lowercase letters, numbers, and single hyphens between components.
+
+On startup, a legacy `projects/<slug>/brief.md` project is automatically migrated to `projects/<slug>/campaigns/<slug>/`, including unknown files. Back up the studio before upgrading. Migration records progress in `.bstudio-migration.json` and resumes after interruption. If a destination or metadata conflict is reported, preserve both copies, resolve the indicated paths manually, and retry; do not remove the journal while recovery is pending. Historical ledger entries remain attributed to the migrated `<slug>/<slug>` campaign for spending limits.
+
+The shortcut `bstudio new <project>/<campaign> <inputs>` runs `brief`, `plan`, `make`, `render`, and `review` in order, stopping at the first error and printing the command to resume. Run the stages separately when you want to inspect or edit the brief or plan before continuing.
 
 ## Collect evidence
 
 ```sh
-bstudio brief release-note --idea "Describe the release" \
+bstudio project new acme --repo owner/repo --note "Product context"
+bstudio brief acme/release-note --idea "Describe the release" \
   --note "The migration is optional" --url https://example.com/release-notes
-bstudio plan release-note
-bstudio make release-note
-bstudio render release-note
-bstudio review release-note
+bstudio plan acme/release-note
+bstudio make acme/release-note
+bstudio render acme/release-note
+bstudio review acme/release-note
 ```
 
 `brief` accepts `--idea`, repeatable `--note` and `--url`, `--pr` with `--repo owner/repo`, `--commit` with `--repo owner/repo` or `--repo local`, a standalone `--repo`, and `--mb-brief <path>`. GitHub inputs use `gh`; local commit and repository inputs use git in the current directory. Provide at least one input. Existing briefs are protected unless `--force` is supplied.
@@ -33,25 +38,25 @@ Blockers are arrays of non-empty strings in post frontmatter or asset metadata; 
 
 ## Render, review and revise
 
-`render` creates outputs under each asset's `out/` directory and updates `asset.yml`. Paid image and voice generation uses cached results; use `bstudio render release-note --regen` when a new generation is intended. See [formats](formats.md) for source and tool requirements.
+`render` creates outputs under each asset's `out/` directory and updates `asset.yml`. Paid image and voice generation uses cached results; use `bstudio render acme/release-note --regen` when a new generation is intended. See [formats](formats.md) for source and tool requirements.
 
-`review` writes `reviews/<platform>.json` and `review.md`. Address findings yourself or run `bstudio revise release-note`, which applies pending owner feedback and uses the author agent to address failing reviews, re-render and re-review. Add feedback directly with `bstudio revise release-note --note "Make the headline shorter" --platform bluesky`, or target an asset with `--asset <id>`; omit both targets for the whole project. Dashboard feedback is picked up by plain `revise`; use `--feedback-only` to skip automatic review-finding rounds. Stale feedback targets are rejected with a reason. Owner feedback rounds do not count against `review.maxRounds`, which limits automatic review-finding rounds. A blocked rights finding needs human resolution. See [review](review.md) for gates, scores and acceptance.
+`review` writes `reviews/<platform>.json` and `review.md`. Address findings yourself or run `bstudio revise acme/release-note`, which applies pending owner feedback and uses the author agent to address failing reviews, re-render and re-review. Add feedback directly with `bstudio revise acme/release-note --note "Make the headline shorter" --platform bluesky`, or target an asset with `--asset <id>`; omit both targets for the whole campaign. Dashboard feedback is picked up by plain `revise`; use `--feedback-only` to skip automatic review-finding rounds. Stale feedback targets are rejected with a reason. Owner feedback rounds do not count against `review.maxRounds`, which limits automatic review-finding rounds. A blocked rights finding needs human resolution. See [review](review.md) for gates, scores and acceptance.
 
 Queue a note without applying it with `bstudio feedback release-note add --note "Shorten the headline" --platform bluesky`; use `feedback release-note list` to inspect notes and `feedback release-note rm <id>` to remove pending or rejected notes. Before make, revise and render overwrite artifacts, snapshots preserve posts, asset sources and outputs, and reviews. List them with `bstudio history release-note` and restore with `bstudio restore release-note <n>`; the current state is saved first. The most recent 20 snapshots are retained.
 
 ## Export and publish
 
 ```sh
-bstudio export release-note
-bstudio export release-note --mb /path/to/market-blaster-project
+bstudio export acme/release-note
+bstudio export acme/release-note --mb /path/to/market-blaster-project
 ```
 
-Export requires every post to have a current passing or accepted review with passing gates. It writes `export/<slug>.campaign.zip`, containing the manifest, brief, sources, posts, media, handoffs and reviews. Use `--dir` for the legacy v1 directory export. With `--mb`, or a configured `marketBlaster.project`, it also invokes Market Blaster's `import` and `check`; `--force` is passed to the import. Export does not publish content.
+Export requires every post to have a current passing or accepted review with passing gates. It writes `export/<project>--<campaign>.campaign.zip`, containing the manifest, brief, sources, posts, media, handoffs and reviews. Use `--dir` for the legacy v1 directory export. With `--mb`, or a configured `marketBlaster.project`, it also invokes Market Blaster's `import` with `--slug <project>--<campaign>` and checks that slug; `--force` is passed to the import. Market Blaster can overwrite existing unapproved drafts with a warning; approved drafts require `--force`. The double-hyphen separator makes composite slugs distinct for distinct addresses; see [package identity and collisions](design/campaign-package.md). Export does not publish content.
 
 The archive includes the full brief and extracted evidence, not just publication-ready text. Inspect it before sharing. It is limited to 2,000 entries, 500 MiB per entry and 1 GiB total uncompressed content.
 
 The archive is deterministic for unchanged inputs. Its manifest timestamp uses the latest valid review timestamp (or the ZIP epoch for older reviews without one), so re-exporting does not change the package solely because the clock advanced.
 
-Manual destinations and threads are included under `handoff/` in the archive. Follow the platform checklist, publish through the destination, and use `bstudio mark <slug> <platform> --url <https-url>` to record a publication for supported manual destinations: YouTube Shorts, Instagram, TikTok and daily.dev. The URL must belong to the destination's accepted host.
+Manual destinations and threads are included under `handoff/` in the archive. Follow the platform checklist, publish through the destination, and use `bstudio mark <project>/<campaign> <platform> --url <https-url>` to record a publication for supported manual destinations: YouTube Shorts, Instagram, TikTok and daily.dev. The URL must belong to the destination's accepted host.
 
-Use `bstudio status [<slug>]` and `bstudio library [search <query>]` to find work, or `bstudio dashboard` for the local interface.
+Use `bstudio status [<project>/<campaign>]` and `bstudio library [search <query>]` to find work, `bstudio project list` to list projects, or `bstudio dashboard` for the local interface.
