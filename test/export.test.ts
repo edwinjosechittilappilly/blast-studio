@@ -9,6 +9,7 @@ import { run as exportCommand } from '../src/commands/export.ts';
 import { run as mark } from '../src/commands/mark.ts';
 import { run as accept, confirm } from '../src/commands/accept.ts';
 import { run as library } from '../src/commands/library.ts';
+import { run as status } from '../src/commands/status.ts';
 import { listExports, loadLibrary, projectDetails } from '../src/library.ts';
 import { loadConfig } from '../src/config.ts';
 import { mediaContentHash, reviewHash } from '../src/review-hash.ts';
@@ -247,4 +248,20 @@ test('library summarizes recent top-level changes, pending feedback and marked p
   assert.equal(entry.updatedAt, latest.toISOString());
   assert.equal(entry.pendingFeedback, 1);
   assert.deepEqual(Object.keys(entry.published), ['instagram']);
+});
+
+test('status reports export time, publication marks and the next export action', async () => {
+  const f = fixture();
+  writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.text(), /exported: not exported/);
+  assert.match(f.io.text(), /published: none/);
+  assert.match(f.io.text(), /next: export: bstudio export acme\/demo/);
+  await exportCommand(['acme/demo'], f.io);
+  const time = new Date('2026-06-01T12:00:00.000Z');
+  utimesSync(join(f.project, 'export/acme--demo.campaign.zip'), time, time);
+  writeFileSync(join(f.project, 'published.json'), JSON.stringify({ instagram: { url: 'https://instagram.com/p/1' } }));
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.text(), /exported: 2026-06-01T12:00:00.000Z/);
+  assert.match(f.io.text(), /published: instagram/);
 });

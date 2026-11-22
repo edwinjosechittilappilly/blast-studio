@@ -1,7 +1,8 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadConfig, campaignDir } from '../config.ts';
+import { compositeSlug, parseCampaignRef } from '../campaigns.ts';
 import { loadLibrary, latestSources } from '../library.ts';
 import { monthToDate } from '../budget/ledger.ts';
 import type { Command } from '../io.ts';
@@ -24,6 +25,12 @@ export const run: Command = async (args, io) => {
     const [name, campaign] = project.slug.split('/');
     if (name !== heading) { heading = name; io.out(`Project: ${name}`); }
     io.out(`  ${campaign}`);
+    const exportDir = join(campaignDir(config, project.slug), 'export');
+    const exportFiles = [join(exportDir, 'manifest.json'), join(exportDir, `${compositeSlug(parseCampaignRef(project.slug))}.campaign.zip`)].filter(existsSync);
+    const exportedAt = exportFiles.length ? new Date(Math.max(...exportFiles.map(file => statSync(file).mtimeMs))).toISOString() : null;
+    const published = Object.keys(project.published);
+    io.out(`  exported: ${exportedAt ?? 'not exported'}`);
+    io.out(`  published: ${published.length ? published.join(', ') : 'none'}`);
     for (const platform of new Set([...project.posts.map(p => p.platform), ...project.reviews.map(r => r.platform)])) {
       const review = project.reviews.find(r => r.platform === platform);
       io.out(`  ${platform}: ${review?.verdict ?? 'unreviewed'}${review?.total == null ? '' : ` (${review.total}/100)`}`);
@@ -38,7 +45,7 @@ export const run: Command = async (args, io) => {
     });
     const unreviewed = project.posts.some(post => !project.reviews.some(review => review.platform === post.platform));
     const needsRevision = project.reviews.some(review => review.verdict !== 'pass' && review.verdict !== 'accepted');
-    const next = blocker ? 'resolve blockers: edit the brief or artifact metadata, then remove resolved blockers' : unresolved ? `confirm rights: ${unresolved[0]}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(campaignDir(config, project.slug), 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : `export: bstudio export ${project.slug}`;
+    const next = blocker ? 'resolve blockers: edit the brief or artifact metadata, then remove resolved blockers' : unresolved ? `confirm rights: ${unresolved[0]}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(campaignDir(config, project.slug), 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : !project.exported ? `export: bstudio export ${project.slug}` : 'review exports and publication status';
     io.out(`  next: ${next}`);
   }
   io.out(`Month to date: $${monthToDate(config.root).toFixed(2)} / $${config.budget.monthlyUsd.toFixed(2)}`);
