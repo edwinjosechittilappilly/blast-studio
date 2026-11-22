@@ -72,6 +72,20 @@ test('specs validate evidence, media outputs and each thread item', () => {
   assert.equal(gate('specs', { ...post, media: [{ asset: 'a', file: 'source.html', alt: 'Alt', kind: 'image' }] }, { ...pack, media: [{ kind: 'image' }] }, [image]).pass, false);
   assert.equal(gate('specs', { ...post, thread: ['too long'] }, { ...pack, textLimit: { value: 5, source: 's' } }).pass, false);
 });
+test('media allowed by pack formats but without a limits entry warns instead of failing', () => {
+  const card: AssetMeta = { id: 'c', kind: 'card', provider: 'template', outputs: [{ file: 'out/image.png', width: 1600, bytes: 4 }], license: null, aiGenerated: false };
+  const withImage: Post = { ...post, media: [{ asset: 'c', file: 'assets/c/out/image.png', alt: 'Card', kind: 'image' }] };
+  const result = runGates(withImage, { ...pack, formats: ['text', 'image'] }, [card], brief, config);
+  assert.equal(result.find(g => g.id === 'specs')!.pass, true);
+  assert.ok(result.warnings.some(w => w.startsWith('image limits unknown')));
+  assert.equal(gate('specs', withImage, pack, [card]).pass, false);
+});
+test("a video's measured length grounds a duration claim", () => {
+  const video: AssetMeta = { id: 'v', kind: 'terminal-demo', provider: 'vhs', outputs: [{ file: 'out/demo.mp4', bytes: 4, seconds: 36.48 }, { file: 'out/captions.vtt', bytes: 4 }], license: null, aiGenerated: false };
+  const claim: Post = { ...post, body: 'A 37 seconds demo.', media: [{ asset: 'v', file: 'assets/v/out/demo.mp4', alt: 'Demo', kind: 'video' }] };
+  assert.equal(gate('fabricated-metrics', claim, pack, [video]).pass, true);
+  assert.equal(gate('fabricated-metrics', { ...claim, body: 'A 90 seconds demo.' }, pack, [video]).pass, false);
+});
 test('reviewer accepts fenced JSON and retries independently for hook order', async () => {
   let calls = 0;
   const runner = fakeIO({ cwd: io.cwd, run: async () => {

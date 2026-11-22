@@ -1,7 +1,8 @@
 import type { Page } from "playwright";
 
-export interface TextMetric { text: string; fontPx: number; bold: boolean; contrast: number | null; overflow: boolean }
-export interface RenderMetrics { minFontPx: number | null; minContrast: number | null; overflow: boolean; nodes: TextMetric[] }
+/** `overflow`: text is cut off (outside the canvas or slide, or clipped by an ancestor). `edge`: text sits inside the safe margin. */
+export interface TextMetric { text: string; fontPx: number; bold: boolean; contrast: number | null; overflow: boolean; edge: boolean }
+export interface RenderMetrics { minFontPx: number | null; minContrast: number | null; overflow: boolean; edge: boolean; nodes: TextMetric[] }
 
 /** Measure actual rendered text, not bounding boxes of its containers. */
 export async function measureText(page: Page, inset = 0.05): Promise<RenderMetrics> {
@@ -39,9 +40,16 @@ export async function measureText(page: Page, inset = 0.05): Promise<RenderMetri
       const fg = parse(style.color); let contrast: number | null = null;
       if (!unknown && fg) { const a = luminance(over(fg, bg)); const b = luminance(bg); contrast = (Math.max(a, b) + .05) / (Math.min(a, b) + .05); }
       const slide = el.closest('.slide'); const bounds = slide?.getBoundingClientRect() ?? { left: 0, top: 0, width: innerWidth, height: innerHeight };
-      const overflow = rects.some(r => r.left < bounds.left + bounds.width * safeInset - .01 || r.right > bounds.left + bounds.width * (1 - safeInset) + .01 || r.top < bounds.top + bounds.height * safeInset - .01 || r.bottom > bounds.top + bounds.height * (1 - safeInset) + .01);
-      nodes.push({ text, fontPx: parseFloat(style.fontSize), bold: Number(style.fontWeight) >= 700 || style.fontWeight === 'bold', contrast, overflow });
+      const outside = (r: DOMRect, box: { left: number; top: number; width: number; height: number }, inset: number) => r.left < box.left + box.width * inset - .5 || r.right > box.left + box.width * (1 - inset) + .5 || r.top < box.top + box.height * inset - .5 || r.bottom > box.top + box.height * (1 - inset) + .5;
+      let clipped = false;
+      for (let p: HTMLElement | null = el; p && p !== document.body && !clipped; p = p.parentElement) {
+        const s = getComputedStyle(p);
+        if (s.overflowX !== 'visible' || s.overflowY !== 'visible') clipped = rects.some(r => outside(r, p!.getBoundingClientRect(), 0));
+      }
+      const overflow = clipped || rects.some(r => outside(r, bounds, 0));
+      const edge = !overflow && rects.some(r => outside(r, bounds, safeInset));
+      nodes.push({ text, fontPx: parseFloat(style.fontSize), bold: Number(style.fontWeight) >= 700 || style.fontWeight === 'bold', contrast, overflow, edge });
     }
-    return { minFontPx: nodes.length ? Math.min(...nodes.map(n => n.fontPx)) : null, minContrast: nodes.some(n => n.contrast === null) ? null : nodes.length ? Math.min(...nodes.map(n => n.contrast!)) : null, overflow: nodes.some(n => n.overflow), nodes };
+    return { minFontPx: nodes.length ? Math.min(...nodes.map(n => n.fontPx)) : null, minContrast: nodes.some(n => n.contrast === null) ? null : nodes.length ? Math.min(...nodes.map(n => n.contrast!)) : null, overflow: nodes.some(n => n.overflow), edge: nodes.some(n => n.edge), nodes };
   }, inset);
 }

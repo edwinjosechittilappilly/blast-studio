@@ -29,12 +29,16 @@ test('carousel PDF has one page per slide', { timeout: 20000 }, async () => {
   assert.equal((pdf.match(/\/Type\s*\/Page\b/g) ?? []).length, 3);
 });
 
-test('metrics report low contrast, overflow and unknown image backgrounds', { timeout: 20000 }, async () => {
-  const html = '<style>body{margin:0;background:#fff;color:#ccc;font:20px sans-serif}.edge{position:absolute;top:0;left:0}.image{margin:100px;background-image:linear-gradient(red,blue)}</style><div class="edge">low contrast</div><div class="image">unknown</div>';
+test('metrics separate cut-off text from text near the edge, and report contrast', { timeout: 20000 }, async () => {
+  const html = '<style>body{margin:0;background:#fff;color:#ccc;font:20px sans-serif}.edge{position:absolute;top:0;left:0}.image{margin:100px;background-image:linear-gradient(red,blue)}.clip{position:absolute;top:200px;left:100px;width:60px;overflow:hidden;white-space:nowrap}.off{position:absolute;top:300px;left:380px;white-space:nowrap}</style><div class="edge">low contrast</div><div class="image">unknown</div><div class="clip">clipped by its box</div><div class="off">off canvas</div>';
   const result = await renderHtml({ html, width: 400, height: 400, out: join(dir, 'low.png') });
-  assert.equal(result.metrics.overflow, true);
-  assert.ok(result.metrics.nodes.find(n => n.text === 'low contrast')!.contrast! < 4.5);
-  assert.equal(result.metrics.nodes.find(n => n.text === 'unknown')!.contrast, null);
+  const node = (text: string) => result.metrics.nodes.find(n => n.text === text)!;
+  assert.deepEqual([node('low contrast').edge, node('low contrast').overflow], [true, false]);
+  assert.equal(node('clipped by its box').overflow, true);
+  assert.equal(node('off canvas').overflow, true);
+  assert.equal(node('unknown').overflow, false);
+  assert.ok(node('low contrast').contrast! < 4.5);
+  assert.equal(node('unknown').contrast, null);
   assert.equal(result.metrics.minContrast, null);
 });
 

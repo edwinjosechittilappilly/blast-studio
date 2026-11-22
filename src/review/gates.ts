@@ -73,11 +73,16 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
   if (!post.evidence.length || post.evidence.some(anchor => !anchors.has(anchor))) add('specs', 'Missing or unknown evidence anchor');
   for (const media of post.media) {
     const spec = pack.media.find(s => s.kind === media.kind);
-    if (!spec) { add('specs', `Unsupported ${media.kind} media`); }
+    const output = byId.get(media.asset)?.outputs.find(o => media.file === `assets/${media.asset}/${o.file}`);
+    if (!output) add('specs', `Media is not a declared output of ${media.asset}: ${media.file}`);
+    // A pack format without a media limits entry means the limits are unverified, not that the media is unsupported.
+    const formatFor: Record<string, string[]> = { image: ['image', 'carousel'], gif: ['image'], video: ['video'], document: ['carousel', 'article'] };
+    if (!spec) {
+      if (formatFor[media.kind]?.some(format => pack.formats.includes(format as never))) warnings.push(`${media.kind} limits unknown; verify ${pack.sources.join(', ') || pack.id}`);
+      else add('specs', `Unsupported ${media.kind} media`);
+    }
     else {
       check(`${media.kind} count`, post.media.filter(m => m.kind === media.kind).length, spec.maxCount);
-      const output = byId.get(media.asset)?.outputs.find(o => media.file === `assets/${media.asset}/${o.file}`);
-      if (!output) add('specs', `Media is not a declared output of ${media.asset}: ${media.file}`);
       check(`${media.kind} bytes`, output?.bytes, spec.maxBytes); check(`${media.kind} duration`, output?.seconds, spec.maxSeconds); check(`${media.kind} minimum duration`, output?.seconds, spec.minSeconds, (a,b) => a < b);
       check(`${media.kind} width`, output?.width, spec.width); check(`${media.kind} height`, output?.height, spec.height);
       if (spec.aspectRatios === 'unknown') warnings.push(`aspect ratios unknown; verify ${pack.sources.join(', ') || pack.id}`);
@@ -103,10 +108,13 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
         if (metric.minContrast === null) warnings.push(`Contrast cannot be measured in ${metric.file}`);
         else if (metric.minContrast < (metric.minFontPx >= (pack.accessibility?.largeTextPx ?? 24) ? pack.accessibility?.minContrastLarge ?? 3 : pack.accessibility?.minContrast ?? 4.5)) add('accessibility', `Insufficient contrast in ${metric.file}`);
       }
-      if (metric.overflow) add('accessibility', `Text overflows in ${metric.file}`);
+      if (metric.overflow) add('accessibility', `Text is cut off in ${metric.file}`);
+      if (metric.edge) warnings.push(`Text sits within 5% of the edge in ${metric.file}; feeds may crop it`);
     }
   }
-  const evidence = new Set(metrics(brief.map(s => `${s.title}\n${s.body}`).join('\n')).map(m => m.key));
+  // Measured facts about the attached media (a video's own length, either whole second around it) are evidence too.
+  const measured = selected.flatMap(a => a.outputs.flatMap(o => o.seconds ? [Math.floor(o.seconds), Math.ceil(o.seconds)].map(s => `${s} seconds`).concat(`${o.seconds.toFixed(1)} seconds`) : []));
+  const evidence = new Set(metrics([...brief.map(s => `${s.title}\n${s.body}`), ...measured].join('\n')).map(m => m.key));
   const waived = new Set(config.grounding.waive.flatMap(w => metrics(w).map(m => m.key)));
   const captions = projectDir ? selected.flatMap(asset => asset.outputs.filter(o => /\.vtt$/i.test(o.file)).flatMap(o => {
     const path = join(projectDir, 'assets', asset.id, o.file);
