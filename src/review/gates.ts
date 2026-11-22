@@ -30,10 +30,13 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
   post.media.forEach(m => visit(m.asset));
   const selected = assets.filter(a => used.has(a.id));
   const add = (id: GateResult['id'], message: string) => failures[id].push(message);
-  // Code is exempt: snippets legitimately contain `${{ secrets.X }}`, TODO comments or `xxx` sample values.
-  const checkPlaceholder = (field: string, text: string) => {
+  // Post prose gets every marker, with Markdown code exempt (snippets legitimately hold `${{ secrets.X }}`, TODO
+  // comments or `xxx` values). Rendered text and captions carry no backticks to mark code, so they only get the
+  // markers no real snippet contains.
+  const checkPlaceholder = (field: string, text: string, strict = true) => {
     const prose = text.replace(/```[\s\S]*?```/g, '').replace(/`[^`\n]*`/g, '');
-    const match = prose.match(/\b(?:TODO|TBD)\b/) ?? prose.match(/\[PLACEHOLDER|PLACEHOLDER\]|\blorem\s+ipsum\b|\{\{|\}\}|<your-|\bREPLACE_ME\b|\bxxx\b/i);
+    const unambiguous = /\[PLACEHOLDER|PLACEHOLDER\]|\blorem\s+ipsum\b|<your-|\bREPLACE_ME\b/i;
+    const match = strict ? prose.match(/\b(?:TODO|TBD)\b/) ?? prose.match(/\{\{|\}\}|\bxxx\b/i) ?? prose.match(unambiguous) : text.match(unambiguous);
     if (match) add('specs', `Placeholder in ${field}: ${match[0]}`);
   };
   if (post.title) checkPlaceholder(`${post.path} title`, post.title);
@@ -115,7 +118,7 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
     if (['gemini', 'openai', 'omp'].includes(asset.provider) && !asset.license?.trim()) add('rights', `Missing license for ${asset.id}`);
     if (asset.kind === 'logo' && !asset.trademarkChecked) add('rights', `Trademark search not checked for ${asset.id}`);
     for (const metric of asset.metrics ?? []) {
-      for (const text of metric.texts ?? []) checkPlaceholder(`assets/${asset.id}/${metric.file} rendered text`, text);
+      for (const text of metric.texts ?? []) checkPlaceholder(`assets/${asset.id}/${metric.file} rendered text`, text, false);
       for (const kind of metric.unmeasurable ?? []) warnings.push(`Text cannot be checked in ${kind} in ${metric.file}`);
       const width = asset.outputs.find(o => o.file === metric.file)?.width ?? 1080;
       const minimum = (pack.accessibility?.minFontPx ?? 24) * width / 1080;
@@ -141,7 +144,7 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
     const path = join(projectDir, 'assets', asset.id, o.file);
     if (!existsSync(path)) return [];
     const text = readFileSync(path, 'utf8').replace(/^WEBVTT[^\n]*\n?/i, '').replace(/^(?:[^\n]*\n)?[^\n]*-->[^\n]*$/gm, '');
-    checkPlaceholder(`assets/${asset.id}/${o.file} captions`, text);
+    checkPlaceholder(`assets/${asset.id}/${o.file} captions`, text, false);
     return [text];
   })) : [];
   const text = [post.title ?? '', post.body, ...(post.thread ?? []), ...post.media.map(m => m.alt), ...selected.flatMap(a => (a.metrics ?? []).flatMap(m => m.texts ?? [])), ...captions].join('\n').replace(/https?:\/\/\S+/g, '').replace(/\b[a-z][\w]*-\d[\w.-]*/gi, '').replace(/^\s*\d+[.)]\s+/gm, '');

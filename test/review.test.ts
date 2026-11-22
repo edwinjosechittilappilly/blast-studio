@@ -197,3 +197,14 @@ test('specs reject placeholders in post fields, captions and rendered text', () 
     assert.match(result.message, /captions\.vtt captions.*\[PLACEHOLDER/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('rendered code and captions with snippet syntax are not placeholders', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bstudio-codecard-'));
+  try {
+    mkdirSync(join(dir, 'assets', 'c'), { recursive: true });
+    writeFileSync(join(dir, 'assets', 'c', 'captions.vtt'), 'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nSet TOKEN: ${{ secrets.X }} # TODO rotate\n');
+    const card: AssetMeta = { id: 'c', kind: 'card', provider: 'template', outputs: [{ file: 'image.png', width: 1080, bytes: 4 }, { file: 'captions.vtt', bytes: 4 }], license: null, aiGenerated: false, metrics: [{ file: 'image.png', minFontPx: 30, minContrast: 5, overflow: false, texts: ['TOKEN: ${{ secrets.X }}', '# TODO rotate the key', 'id: xxx'] }] };
+    const withCard: Post = { ...post, media: [{ asset: 'c', file: 'assets/c/image.png', alt: 'Workflow snippet', kind: 'image' }] };
+    assert.equal(runGates(withCard, pack, [card], brief, config, dir).find(g => g.id === 'specs')!.message.includes('Placeholder'), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

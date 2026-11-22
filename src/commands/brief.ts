@@ -90,11 +90,12 @@ export const run: Command = async (args, io) => {
       try {
         readme = await io.run("gh", ["api", `repos/${values.repo}/readme`, "-H", "Accept: application/vnd.github.raw"], { cwd: io.cwd });
       } catch (error) {
-        if (!(error instanceof Error) || !/\b404\b/.test(error.message)) throw error;
+        if (!(error instanceof Error) || !/HTTP 404\b/.test(error.message)) throw error;
       }
       if (readme !== undefined) {
         const limit = 40_000;
-        add("Repository README", undefined, readme.length > limit ? `${readme.slice(0, limit)}\n\n[README truncated at ${limit} characters]` : readme, `https://github.com/${values.repo}#readme`);
+        const chars = Array.from(readme);
+        add("Repository README", undefined, chars.length > limit ? `${chars.slice(0, limit).join("")}\n\n[README truncated at ${limit} characters]` : readme, `https://github.com/${values.repo}#readme`);
       }
     }
   }
