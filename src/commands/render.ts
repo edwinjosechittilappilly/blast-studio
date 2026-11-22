@@ -23,6 +23,7 @@ export const run: Command = async (args, io) => {
   const rendered = new Set<string>();
   try {
     const assets = plan.flatMap(entry => entry.assets).sort((a, b) => Number(b.kind === 'voiceover') - Number(a.kind === 'voiceover'));
+    const skipped: string[] = [];
     for (const asset of assets) {
       if (rendered.has(asset.id)) continue;
       rendered.add(asset.id);
@@ -52,14 +53,23 @@ export const run: Command = async (args, io) => {
         if (voiceId) {
           const embedded = metadata.get(voiceId);
           if (!embedded || embedded.meta.kind !== 'voiceover') throw new UserError(`Unknown voiceover asset: ${voiceId}`);
-          voice = join(embedded.dir, 'out', 'voiceover.wav');
-          raw.embeds = [...new Set([...(raw.embeds ?? []), voiceId])];
+          const wav = join(embedded.dir, 'out', 'voiceover.wav');
+          // A skipped voiceover (voice.provider none) leaves the video silent rather than failing the render.
+          if (existsSync(wav)) { voice = wav; raw.embeds = [...new Set([...(raw.embeds ?? []), voiceId])]; }
         } else if (config.voice.provider !== 'none' && [join(dir, 'script.txt'), join(dir, 'source', 'script.txt')].some(existsSync)) {
           const script = [join(dir, 'script.txt'), join(dir, 'source', 'script.txt')].find(existsSync)!;
           const generated = await generateVoice({ config, io, projectSlug: pos[0], text: readFileSync(script, 'utf8'), out: join(out, 'voiceover.wav'), regen });
           voice = generated.file; raw.aiGenerated = true;
         }
         outputs.push(...await renderVideo(dir, config, io, voice));
+      }
+      else if (asset.kind === 'illustration' && config.images.provider === 'none') {
+        skipped.push(`${asset.id}: illustration needs images.provider (now none); set one and a budget, or replace it with a template card`);
+        raw.skipped = 'images.provider is none';
+      }
+      else if (asset.kind === 'voiceover' && config.voice.provider === 'none') {
+        skipped.push(`${asset.id}: voiceover needs voice.provider (now none); the video renders silent with captions`);
+        raw.skipped = 'voice.provider is none';
       }
       else if (asset.kind === 'illustration') {
         const promptFile = join(dir, 'source.json'); const data = parse(readFileSync(promptFile, 'utf8')) as { prompt: string; size?: string };
@@ -129,6 +139,7 @@ export const run: Command = async (args, io) => {
       }
       if (changed) writeFileSync(post.path, serializePost(post));
     }
-    io.out(`Rendered ${metadata.size} assets`); return 0;
+    for (const line of skipped) io.out(`skipped ${line}`);
+    io.out(`Rendered ${metadata.size - skipped.length} assets${skipped.length ? `, skipped ${skipped.length}` : ''}`); return 0;
   } finally { await closeBrowser(); }
 };

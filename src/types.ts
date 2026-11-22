@@ -185,6 +185,8 @@ export interface AssetMeta {
   embeds?: string[];
   /** Logos only: a human ran a trademark search. */
   trademarkChecked?: boolean;
+  /** Set when render skipped the asset because its provider is off (e.g. "voice.provider is none"). */
+  skipped?: string;
   /** Render metrics per output (stills): smallest text, worst contrast (null when text sits on an image), overflow. */
   metrics?: { file: string; minFontPx: number | null; minContrast: number | null; overflow: boolean; texts?: string[]; nodes?: { text: string; fontPx: number; bold?: boolean; contrast: number | null; overflow: boolean }[] }[];
 }
