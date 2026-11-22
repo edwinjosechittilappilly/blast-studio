@@ -18,7 +18,7 @@ bstudio render acme/release-note
 bstudio review acme/release-note
 ```
 
-`brief` accepts `--idea`, repeatable `--note` and `--url`, `--pr` with `--repo owner/repo`, `--commit` with `--repo owner/repo` or `--repo local`, a standalone `--repo`, and `--mb-brief <path>`. GitHub inputs use `gh`; local commit and repository inputs use git in the current directory. Provide at least one input. Existing briefs are protected unless `--force` is supplied.
+`brief` accepts `--idea`, repeatable `--note` and `--url`, `--pr` with `--repo owner/repo`, `--commit` with `--repo owner/repo` or `--repo local`, a standalone `--repo`, and `--mb-brief <path>`. GitHub inputs use `gh`; local commit and repository inputs use git in the current directory. Provide at least one campaign input or shared project evidence. Existing briefs are protected unless `--force` is supplied.
 
 A standalone GitHub `--repo owner/repo` also collects the default-branch README as a separate untrusted evidence section, limited to 40,000 characters with a truncation notice. A missing README is allowed; other fetch failures are reported. PR and commit inputs remain focused on the specified change and do not fetch the README.
 

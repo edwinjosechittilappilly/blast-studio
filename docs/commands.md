@@ -28,6 +28,8 @@ bstudio new <project>/<campaign> [--idea text] [--note text] [--url URL] [--pr n
 bstudio brief <project>/<campaign> [--idea text] [--note text] [--url URL] [--pr number] [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force] [-h|--help]
 ```
 
+Resume a failed pipeline with `bstudio new <address> --from <step>`, for example `bstudio new acme/launch --from render`. It resumes that step and subsequent steps without recreating the brief. Run a command with `--help` for its options and examples; valued options accept both `--option=value` and `--option value`.
+
 At least one input or shared project evidence is required. `--note` and `--url` can be repeated. `--repo` alone collects repository information; PRs require a GitHub repository and commits can use `local`. `--mb-brief` imports evidence sections from a Market Blaster brief. `--force` overwrites an existing brief. Shared and campaign inputs are stored as evidence in `brief.md`.
 
 Examples (either command accepts these inputs):
@@ -56,7 +58,8 @@ bstudio brief acme/launch --commit abcd1234 --repo local --mb-brief brief.md
 - `bstudio mark <address> <platform> --url <https-url>` records a publication URL for `youtube-shorts`, `instagram`, `tiktok`, or `dailydev`. The URL host must match the destination and the post must exist.
 - `bstudio status [<address>] [--verbose]` shows campaign verdicts, monthly spend, and source health. `--verbose` lists unverified pack fields.
 - `bstudio library [search <query>]` lists campaigns or searches the library.
-- `bstudio dashboard [--port <port>]` starts the [local dashboard](dashboard.md), defaulting to port 4848.
+- `bstudio jobs list`, `bstudio jobs log <id>`, and `bstudio jobs cancel <id>` inspect, read the persisted output of, or cancel a durable job. Campaign jobs share a lock across CLI and dashboard processes.
+- `bstudio dashboard [--port <port>] [--open]` starts the [local dashboard](dashboard.md), defaulting to port 4848; `--open` opens its launch URL.
 
 ## Budget and platform sources
 

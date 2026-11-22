@@ -1,8 +1,10 @@
 # Dashboard
 
-Run `bstudio dashboard` and open the printed URL. In a source checkout, run `npm install` and `npm run build:ui` first. The default port is 4848; use `bstudio dashboard --port 5000` to choose another. The server binds to `127.0.0.1` only. Stop the process to close it.
+Run `bstudio dashboard` and open the printed URL, or use `bstudio dashboard --open` to open it automatically. In a source checkout, run `npm install` and `npm run build:ui` first. The default port is 4848; use `bstudio dashboard --port 5000` to choose another if it is occupied. The server binds to `127.0.0.1` only. Stop the process to close it.
 
 The printed URL contains a one-use token. Opening it exchanges the token for an HttpOnly, SameSite=Strict session cookie and redirects to the dashboard. Keep the URL private. Sessions last 12 hours with activity extending the expiry and survive server restarts. The signing key is stored in `<studio root>/.dashboard-key` with owner-only permissions. To invalidate existing sessions, stop all dashboard instances, delete the key, and restart the dashboard.
+
+An expired or unauthenticated browser session needs a fresh launch URL: run `bstudio dashboard` again. Campaign routes use `#/p/<project>/<campaign>/<platform>` and support refresh and browser navigation.
 
 Use **New** in the header to create a project with shared evidence. Select a project in the library and choose **New campaign** to create its brief or run the full pipeline. The library supports search and sorting. Campaign tabs show the overview, destination posts and reviews, assets, actions, and export. Asset blockers appear on the overview and Assets tab. Use View for media previews and copy controls for post text, hooks, alt text and commands.
 
@@ -12,9 +14,17 @@ Campaign details compare the independent review, weighted rubric, gates and hook
 
 **Budget & providers** displays spend and manages caps, providers, upload consent and write-only provider keys in macOS Keychain. **Source updates** checks and verifies guidance; **Health check** runs the local doctor. Configuration settings are saved to `studio.yml`.
 
+Keychain is shared with other processes running as your macOS user; a key saved here is not isolated from them. See [agent isolation](configuration.md#agent-isolation) for Keychain access and approval guidance.
+
+The CLI-only operations are `install-skills`, `render-preview`, `sources propose`, and `review --calibrate`. P1 and P2 UX audit items are deferred to beads rather than included in this dashboard slice.
+
+## Offline components
+
+Carbon web components and styles are bundled locally, with no runtime CDN dependency. The reusable dashboard layer provides score meters and threshold labels, verdict tags, gate lists, rubric tables with evidence and fixes, hook comparisons, self-review panels, media viewers with captions when available, job logs, and command forms. These are used in campaign review, media, actions, and job views; review status has text as well as color. The interface supports keyboard navigation, visible focus, labelled controls and announced job updates at narrow viewport widths.
+
 ## Dashboard API
 
-Requests require the dashboard session cookie. Writes also require an `Origin` matching the dashboard's exact host and port and `X-Requested-With: bstudio`.
+Requests require the dashboard session cookie and a valid local `Host`. Writes also require an `Origin` matching the dashboard's exact host and port and `X-Requested-With: bstudio`. The server launches only allowlisted operations with validated arguments, not arbitrary shell commands; content writes are limited to CLI workflows and the feedback store.
 
 - `GET /api/operations?campaign=project%2Fcampaign` returns an object keyed by operation name. Each entry has `fields` (argument schemas with `kind`, `required`, `positional`, `flag`, and `multiple` where applicable), `campaign`, `paid`, `step`, and `requiresTTY`. Supply a campaign to include its illustration assets in the terminal policy; without one, campaign-specific requirements are not reported. With the omp image provider, `make`, `render`, and `revise` require a terminal when the campaign plan contains an illustration; a missing plan has no existing illustration assets. `new` always requires a terminal with omp because it creates its plan during the job.
 - `POST /api/jobs` accepts `{ "op": "revise", "campaign": "project/campaign", "args": { "feedbackOnly": true } }`; omit `campaign` for global operations. It returns the job record with status 202. Operations requiring a terminal return 422 with a `command` instead.
