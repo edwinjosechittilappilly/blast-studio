@@ -65,20 +65,20 @@ function dashboardHarness() {
   const source = readFileSync('src/dashboard/ui/app.js', 'utf8');
   const forms = source.slice(source.indexOf('function feedbackHistory'), source.indexOf('function platformPanel'));
   class Node {
-    constructor(tag) { this.tag = tag; this.children = []; this.listeners = {}; this.dataset = {}; this.isConnected = true; this.value = ''; this.textContent = ''; }
+    constructor(tag) { this.tag = tag; this.children = []; this.listeners = {}; this.dataset = {}; this.attributes = {}; this.isConnected = true; this.value = ''; this.textContent = ''; }
     append(...nodes) { for (const node of nodes) { node.parentElement = this; this.children.push(node); } }
     replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
     replaceWith(node) { const index = this.parentElement.children.indexOf(this); this.parentElement.children[index] = node; node.parentElement = this.parentElement; this.isConnected = false; }
-    setAttribute() {}
+    setAttribute(name, value) { this.attributes[name] = value; }
     removeAttribute() {}
     focus() { this.focused = true; }
     addEventListener(type, callback) { this.listeners[type] = callback; }
     querySelector(selector) { return this.nodes?.[selector] ?? this.children.find(node => node.tag === selector) ?? null; }
   }
-  const nodes = { '#project': { hidden: false }, '#message': new Node('message') };
-  const calls = [], timers = [], toasts = [];
+  const nodes = { '#project': { hidden: false, contains: () => false }, '#message': new Node('message') };
+  const calls = [], timers = [], toasts = [], focused = new Node('button');
   const context = {
-    Map, JSON, encodeURIComponent, Date, Error, campaignPath, timer: undefined,
+    Map, Set, JSON, encodeURIComponent, Date, Error, campaignPath, timer: undefined, dismissedJobFailures: new Set(), document: { activeElement: focused }, window: { scrollY: 42, scrollTo() {} },
     displayName: name => ({ linkedin: 'LinkedIn' }[name] || name),
     el: (tag, text) => Object.assign(new Node(tag), { textContent: text || '' }),
     button: text => Object.assign(new Node('button'), { textContent: text }),
@@ -162,4 +162,29 @@ test('a completed job refresh does not update a departed project view', async ()
   assert.equal(reason.textContent, 'Other reason');
   assert.deepEqual(toasts, []);
   assert.equal(project.feedback[0], pending);
+});
+
+test('failed revision remains visible with log, retry and dismiss actions', async () => {
+  const { context, Node } = dashboardHarness(), project = { slug: 'a', feedback: [{ status: 'pending' }] };
+  const announcement = new Node('announcement'), log = new Node('log'); log.parentElement = { scrollIntoView() {} };
+  const region = new Node('region'); region.nodes = { '.job-announcement': announcement, '.job-log': log, '.cancel-job': new Node('button') };
+  const apply = new Node('button'); let retried = false; apply.click = () => { retried = true; };
+  context.statusRequest = async () => ({ id: 'failed-1', state: 'failed', running: false, exitCode: 1, lines: ['failed'] });
+  await context.jobStatus(project, region, apply);
+  assert.equal(announcement.children[0].attributes.kind, 'error');
+  assert.equal(announcement.children[1].textContent, 'View log');
+  announcement.children[2].listeners.click(); assert.equal(retried, true);
+  announcement.children[0].listeners['cds-notification-closed']();
+  await context.jobStatus(project, region, apply); assert.equal(announcement.children.length, 0);
+});
+
+test('completed revision refreshes current tab and announces cancellation counts', async () => {
+  const { context, calls, toasts, Node } = dashboardHarness(), project = { slug: 'a', feedback: [{ id: '1', status: 'pending' }] };
+  const announcement = new Node('announcement'), log = new Node('log'); log.parentElement = {};
+  const region = new Node('region'); region.dataset.running = 'yes'; region.pendingIds = ['1'];
+  region.nodes = { '.job-announcement': announcement, '.job-log': log, '.cancel-job': new Node('button') };
+  context.activeTab = 'linkedin'; context.statusRequest = async () => ({ state: 'cancelled', running: false, lines: [] });
+  context.request = async () => ({ feedback: [{ id: '1', status: 'applied' }, { id: '2', status: 'pending' }] });
+  await context.jobStatus(project, region, new Node('button'));
+  assert.deepEqual(calls, [['a', 'linkedin']]); assert.match(toasts[0][0], /1 applied before cancellation; 1 pending/); assert.equal(toasts[0][1], 'info');
 });
