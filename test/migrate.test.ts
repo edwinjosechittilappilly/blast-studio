@@ -37,6 +37,18 @@ test("migration resumes after an interruption even after brief moved", () => {
   assert.equal(readFileSync(join(destination, "brief.md"), "utf8"), "brief");
 });
 
+test("migration recovers an interrupted metadata write", () => {
+  const { root, run } = setup({ "projects/demo/brief.md": "brief" });
+  const project = join(root, "projects/demo"), destination = join(project, "campaigns/demo");
+  mkdirSync(destination, { recursive: true });
+  writeFileSync(join(project, ".bstudio-migration.json"), JSON.stringify({ entries: ["brief.md"], createdAt: "2026-01-01T00:00:00.000Z" }));
+  renameSync(join(project, "brief.md"), join(destination, "brief.md"));
+  writeFileSync(join(project, ".bstudio-project.yml.migration"), "partially written");
+  run();
+  assert.match(readFileSync(join(project, "project.yml"), "utf8"), /name: demo/);
+  assert.equal(existsSync(join(project, ".bstudio-project.yml.migration")), false);
+});
+
 test("migration refuses conflicts without overwriting either version", () => {
   const { root, run } = setup({ "projects/demo/brief.md": "source", "projects/demo/campaigns/demo/brief.md": "destination" });
   assert.throws(run, /Migration conflict/);

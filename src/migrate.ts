@@ -1,11 +1,13 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { existsSync, linkSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { parse } from "yaml";
-import { containedPath, validateId, writeProject } from "./campaigns.ts";
+import { parse, stringify } from "yaml";
+import { containedPath, validateId } from "./campaigns.ts";
 import { campaignDir, projectRoot } from "./config.ts";
 import { UserError, type StudioConfig } from "./types.ts";
 
 const JOURNAL = ".bstudio-migration.json";
+const METADATA_STAGE = ".bstudio-project.yml.migration";
 interface Journal { entries: string[]; createdAt: string }
 function present(path: string): boolean {
   try { lstatSync(path); return true; } catch (err) { if ((err as NodeJS.ErrnoException).code === "ENOENT") return false; throw err; }
@@ -25,14 +27,17 @@ export function migrateProjects(config: StudioConfig, notice: (message: string) 
     if (present(journalPath)) {
       try { journal = JSON.parse(readFileSync(journalPath, "utf8")) as Journal; }
       catch { throw new UserError(`Invalid migration journal ${journalPath}; restore it from backup before retrying`); }
-      if (!journal || !Array.isArray(journal.entries) || typeof journal.createdAt !== "string" || journal.entries.some(name => typeof name !== "string" || !name || name === "." || name === ".." || name.includes("/") || name === JOURNAL || name === "campaigns" || name === "project.yml")) throw new UserError(`Invalid migration journal ${journalPath}`);
+      if (!journal || !Array.isArray(journal.entries) || typeof journal.createdAt !== "string" || journal.entries.some(name => typeof name !== "string" || !name || name === "." || name === ".." || name.includes("/") || name === JOURNAL || name === METADATA_STAGE || name === "campaigns" || name === "project.yml")) throw new UserError(`Invalid migration journal ${journalPath}`);
     } else {
       if (present(join(root, "project.yml"))) throw new UserError(`Migration conflict: ${join(root, "project.yml")} already exists; resolve it before retrying`);
+      if (present(join(root, METADATA_STAGE))) throw new UserError(`Migration conflict: ${join(root, METADATA_STAGE)} already exists; resolve it before retrying`);
       journal = { entries: readdirSync(root).filter(name => name !== "campaigns"), createdAt: new Date().toISOString() };
       for (const name of journal.entries) {
         if (present(join(destination, name))) throw new UserError(`Migration conflict: ${join(root, name)} and ${join(destination, name)} both exist; resolve it before retrying`);
       }
-      writeFileSync(journalPath, JSON.stringify(journal), { flag: "wx" });
+      const stage = join(root, `.bstudio-journal-${randomUUID()}.tmp`);
+      writeFileSync(stage, JSON.stringify(journal), { flag: "wx" });
+      try { linkSync(stage, journalPath); } finally { unlinkSync(stage); }
     }
     for (const name of journal.entries) {
       const from = join(root, name), to = join(destination, name);
@@ -53,8 +58,12 @@ export function migrateProjects(config: StudioConfig, notice: (message: string) 
       const metadata = parse(readFileSync(metadataPath, "utf8")) as { name?: unknown; createdAt?: unknown } | null;
       if (metadata?.name !== entry.name || metadata?.createdAt !== journal.createdAt) throw new UserError(`Migration conflict: ${metadataPath} already exists; resolve it before retrying`);
     } else {
-      writeProject(config, entry.name, { name: entry.name, createdAt: journal.createdAt, migratedFrom: entry.name }, "wx");
+      const stage = join(root, METADATA_STAGE);
+      if (present(stage) && !lstatSync(stage).isFile()) throw new UserError(`Migration conflict: unsafe staging file ${stage}`);
+      writeFileSync(stage, stringify({ name: entry.name, createdAt: journal.createdAt, migratedFrom: entry.name }));
+      linkSync(stage, metadataPath);
     }
+    if (present(join(root, METADATA_STAGE))) unlinkSync(join(root, METADATA_STAGE));
     unlinkSync(journalPath);
     notice(`Migrated ${entry.name} to ${entry.name}/${entry.name}`);
   }
