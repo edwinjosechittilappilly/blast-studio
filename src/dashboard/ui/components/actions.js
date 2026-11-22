@@ -10,6 +10,16 @@ import { el, button, copyButton } from './review.js';
 const field = (label, tag = 'cds-text-input') => { const input = el(tag); input.setAttribute('label', label); if (tag === 'cds-textarea') { const span = el('span', label); span.slot = 'label-text'; input.append(span); } return input; };
 const notice = (text, kind = 'error') => { const n = el('cds-inline-notification'); n.setAttribute('kind', kind); n.setAttribute('hide-close-button', ''); n.setAttribute('title', text); return n; };
 const slugOf = ctx => ctx.project.slug;
+const quote = value => /^[a-zA-Z0-9_./:=,-]+$/.test(String(value)) ? String(value) : `'${String(value).replaceAll("'", "'\\''")}'`;
+function terminalCommand(op, schema, campaign, args) {
+  const positional = [], flags = [];
+  for (const [key, spec] of Object.entries(schema.fields)) {
+    const value = key === 'campaign' ? campaign : args[key]; if (value == null || value === '' || value === false) continue;
+    for (const item of Array.isArray(value) ? value : [value]) { if (spec.positional) positional.push(item); else if (spec.flag) flags.push(item === true ? spec.flag : `${spec.flag}=${item}`); }
+  }
+  const [name, ...sub] = op.split(' '), words = name === 'feedback' ? [name, ...positional.slice(0, 1), ...sub, ...positional.slice(1), ...flags] : [name, ...sub, ...positional, ...flags];
+  return ['bstudio', ...words].map(quote).join(' ');
+}
 
 export function jobRegion(container, ctx) {
   const region = el('section', null, 'surface job-status'), status = el('div'), details = el('details'), log = el('pre', null, 'job-log'), cancel = button('Cancel job', 'secondary');
@@ -62,7 +72,8 @@ export function renderActions(container, ctx) {
     if (op === 'restore') fields.push(input('version', 'Version number', true));
     if (op === 'feedback add') fields.push(input('note', 'Feedback', true, 'cds-textarea'), input('platform', 'Platform'), input('asset', 'Asset'));
     if (op === 'feedback rm') fields.push(input('id', 'Feedback ID', true));
-    const description = schema.paid ? `This step can incur provider charges and counts toward your configured budget.${budget ? ` Monthly spend: $${Number(budget.mtd).toFixed(2)} of $${Number(budget.cap).toFixed(2)}; campaign spend: $${Number(budget.projects?.[slugOf(ctx)] || 0).toFixed(2)}${budget.perProject ? ` of $${Number(budget.perProject).toFixed(2)}` : ''}.` : ' Budget details are unavailable; check Settings before continuing.'} Confirm before continuing.` : op === 'restore' ? 'Restoring replaces the current campaign version. Continue?' : '';
+    const description = schema.requiresTTY ? 'This operation requires an interactive terminal. Enter the options to prepare a command.' : schema.paid ? `This step can incur provider charges and counts toward your configured budget.${budget ? ` Monthly spend: $${Number(budget.mtd).toFixed(2)} of $${Number(budget.cap).toFixed(2)}; campaign spend: $${Number(budget.projects?.[slugOf(ctx)] || 0).toFixed(2)}${budget.perProject ? ` of $${Number(budget.perProject).toFixed(2)}` : ''}.` : ' Budget details are unavailable; check Settings before continuing.'} Confirm before continuing.` : op === 'restore' ? 'Restoring replaces the current campaign version. Continue?' : '';
+    if (schema.requiresTTY) { openForm(label, description, fields, 'Prepare command', args => { const command = terminalCommand(op, schema, slugOf(ctx), args), output = el('div', null, 'command-snippet'); output.append(el('code', command), copyButton('Copy command', command)); section.append(notice('Run this operation in a terminal', 'info'), output); }); return; }
     if (!fields.length && !description) { run(op); return; }
     openForm(label, description, fields, label, args => run(op, args));
   }); }

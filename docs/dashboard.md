@@ -4,9 +4,13 @@ Run `bstudio dashboard` and open the printed URL. In a source checkout, run `npm
 
 The printed URL contains a one-use token. Opening it exchanges the token for an HttpOnly, SameSite=Strict session cookie and redirects to the dashboard. Keep the URL private. Sessions last 12 hours with activity extending the expiry and survive server restarts. The signing key is stored in `<studio root>/.dashboard-key` with owner-only permissions. To invalidate existing sessions, stop all dashboard instances, delete the key, and restart the dashboard.
 
-The projects view searches the library and opens tabbed project details. The Overview summarizes review and publishing status; destination tabs show posts, media and review comparisons; Assets collects the project's files. Use View for full-size image or video previews, or open a PDF in a new tab; all media can be downloaded. Copy post text, individual thread posts, titles, hooks and alt text for manual posting. The settings view shows month-to-date and provider spend and lets you change budget caps and image and voice provider selections. The sources view shows the latest reported changes, failures, and unverified sources. These settings are saved to `studio.yml`; other configuration remains a file edit.
+Use **New** in the header to create a project with shared evidence. Select a project in the library and choose **New campaign** to create its brief or run the full pipeline. The library supports search and sorting. Campaign tabs show the overview, destination posts and reviews, assets, actions, and export. Asset blockers appear on the overview and Assets tab. Use View for media previews and copy controls for post text, hooks, alt text and commands.
+
+The Actions tab starts campaign steps, review decisions, feedback operations and history or restore jobs. Paid steps request confirmation with the available budget information. The Export tab supports local export, a Market Blaster path, confirmed force re-import, and export history downloads. Long-running jobs show status and logs; running jobs can be cancelled. The header jobs panel lists jobs across campaigns. Operations requiring an interactive terminal offer a copyable command instead of starting a dashboard job.
 
 Campaign details compare the independent review, weighted rubric, gates and hook checks with the maker's self-review. Add feedback to a post or asset with **Your feedback**; its pending, applied and rejected history stays in the campaign's `feedback.yml`. **Apply feedback** starts a registered `bstudio revise <project>/<campaign> --feedback-only` job. Jobs for the same campaign share a lock with CLI operations. The CLI and dashboard automatically recover job locks whose owners have stopped; active jobs continue to hold their locks.
+
+**Budget & providers** displays spend and manages caps, providers, upload consent and write-only provider keys in macOS Keychain. **Source updates** checks and verifies guidance; **Health check** runs the local doctor. Configuration settings are saved to `studio.yml`.
 
 ## Dashboard API
 
@@ -24,4 +28,4 @@ Job records include `id`, `operation`, optional `campaign`, `state`, timestamps,
  
 For dashboard development, run `npm run build:ui` to build the local Carbon assets, or run `npm run dev:ui` alongside the dashboard to rebuild them on changes.
 
-The dashboard serves project media from the studio root and checks resolved paths to prevent traversal outside the project. Video supports byte ranges. It is a local interface, not a publishing service. Use the [CLI](commands.md) for generation, review, export, and source checks.
+The dashboard serves project media from the studio root and checks resolved paths to prevent traversal outside the project. Video supports byte ranges. It is a local interface, not a publishing service; see the [CLI reference](commands.md) for command details.

@@ -41,9 +41,9 @@ test('mobile campaign cards can be sorted by campaign', async t => {
   await page.getByRole('link', { name: 'acme / launch' }).waitFor();
   // The control must be usable at the mobile breakpoint, not just present in the hidden table.
   await page.getByLabel('Sort campaigns by').selectOption({ label: 'Campaign' });
-  assert.deepEqual(await page.locator('.project-card a').allTextContents(), ['acme / launch', 'acme / other']);
+  assert.deepEqual(await page.locator('.project-card > a:first-child').allTextContents(), ['acme / launch', 'acme / other']);
   await page.getByRole('button', { name: /Sort order:/ }).click();
-  assert.deepEqual(await page.locator('.project-card a').allTextContents(), ['acme / other', 'acme / launch']);
+  assert.deepEqual(await page.locator('.project-card > a:first-child').allTextContents(), ['acme / other', 'acme / launch']);
 });
 
 test('Carbon navigation opens on mobile and closes after navigation', async t => {
@@ -65,6 +65,18 @@ test('sortable Carbon headers expose their direction', async t => {
   assert.equal(await header.getAttribute('aria-sort'), 'ascending');
   await header.getByRole('button').click();
   assert.equal(await header.getAttribute('aria-sort'), 'descending');
+});
+
+test('terminal-only campaign actions prepare a copyable command without starting a job', async t => {
+  const { page, url } = await dashboard(t); let submitted = false;
+  await page.route('**/api/operations?*', async route => { const response = await route.fetch(); const operations = await response.json(); operations.make.requiresTTY = true; await route.fulfill({ json: operations }); });
+  await page.route('**/api/jobs', async route => { if (route.request().method() === 'POST') submitted = true; await route.continue(); });
+  await page.goto(`${url}#/p/acme/launch/actions`);
+  await page.getByRole('button', { name: 'Make', exact: true }).click();
+  await page.getByRole('button', { name: 'Prepare command' }).click();
+  await page.getByText('Run this operation in a terminal').waitFor();
+  assert.match(await page.locator('#project .command-snippet code').textContent() ?? '', /bstudio make acme\/launch/);
+  assert.equal(submitted, false);
 });
 
 test('an older failed search cannot replace newer search results', async t => {
