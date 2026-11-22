@@ -64,5 +64,5 @@
 
 ## 12. M3 — Documentation and offline proof
 
-- [ ] 12.1 Complete end-to-end user and operator documentation, including dependencies, policy limits, manual handoffs, privacy and costs; verify documented commands against the implemented CLI.
+- [x] 12.1 Complete end-to-end user and operator documentation, including dependencies, policy limits, manual handoffs, privacy and costs; verify documented commands against the implemented CLI.
 - [x] 12.2 Exercise an offline idea-to-brief-to-plan-to-stills-to-review-to-export proof with deterministic local fixtures and no paid calls; verify artifacts, gates and handoff contract in an end-to-end test.
