@@ -36,6 +36,6 @@ A human can override a score after inspecting the content:
 bstudio accept release-note linkedin --reason "Reviewed the draft and accepted the editorial tradeoff"
 ```
 
-Acceptance requires a current review and passing gates. The command recalculates gates and refuses to override a failure. It records the reason in the review JSON. Changes to the title, body, media filenames or alt text make the review stale; run review again before acceptance or export.
+Acceptance requires a current review and passing gates. The command recalculates gates and refuses to override a failure. It records the reason in the review JSON. Changes to the title, body, media filenames, alt text or media file contents make the review stale; run review again before acceptance or export.
 
 `bstudio review --calibrate` runs the reviewer against the bundled labeled fixtures and reports exact agreement per criterion. Calibration requires a configured reviewer.

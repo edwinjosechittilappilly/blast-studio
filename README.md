@@ -79,7 +79,7 @@ Scores are editorial judgments, not predictions of reach. See [review](docs/revi
 |---|---|
 | DEV, Hashnode, LinkedIn, X, Bluesky, Mastodon, Threads | Corresponding destination; media support and handoffs vary. |
 | GitHub Discussion, Gist | Corresponding destination. |
-| Hacker News | Original title and URL only; no generated post text. |
+| Hacker News | Excluded from generated plans; a human-authored candidate is required. |
 | Reddit, Product Hunt, Lemmy, newsletter | Corresponding destination; outline or manual workflow. |
 | Medium, Substack | Corresponding manual handoff. |
 | YouTube Shorts, Instagram, TikTok, daily.dev | Manual export; record the published URL with `bstudio mark`. |
@@ -105,6 +105,7 @@ The [research survey](docs/research/existing-skills.md) describes different tool
 - Blast Studio does not automate websites or publish posts. Market Blaster handles its own API and manual handoffs.
 - The agent runs as your user. Its workspace and filtered environment are not an operating-system security sandbox.
 - Paid generation defaults to a zero cap; external reference uploads require explicit consent.
+- Local storage does not make model calls private: configured agents may send brief and project content to their model providers. Export archives include the full brief and evidence; inspect them before sharing.
 
 ## Documentation
 

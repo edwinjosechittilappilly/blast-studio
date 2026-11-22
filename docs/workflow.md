@@ -17,6 +17,8 @@ bstudio review release-note
 
 The command writes evidence sections such as `## [E1] Idea` to `brief.md`. Ideas, notes and URLs are claims; commits are marked shipped, and PRs are marked shipped if merged and planned otherwise. Imported Market Blaster evidence retains its status. Source text is fenced as untrusted. Add context and corrections to the brief, and check that planned work is described as planned.
 
+Projects are stored in the studio root and copied into temporary agent workspaces as needed, but configured agents may send their contents to external model providers. Avoid including secrets or material you cannot share with those providers.
+
 ## Plan and make
 
 `plan` asks the configured author agent to write `plan.yml` with a post type, angle, three hook options and asset list for each allowed platform. It validates the plan against platform policies and formats. Platforms with `ai: none` are excluded; `ai: outline` platforms get text-only plans for human-authored talking points.
@@ -37,6 +39,8 @@ bstudio export release-note --mb /path/to/market-blaster-project
 ```
 
 Export requires every post to have a current passing or accepted review with passing gates. It writes `export/<slug>.campaign.zip`, containing the manifest, brief, sources, posts, media, handoffs and reviews. Use `--dir` for the legacy v1 directory export. With `--mb`, or a configured `marketBlaster.project`, it also invokes Market Blaster's `import` and `check`; `--force` is passed to the import. Export does not publish content.
+
+The archive includes the full brief and extracted evidence, not just publication-ready text. Inspect it before sharing. It is limited to 2,000 entries, 500 MiB per entry and 1 GiB total uncompressed content.
 
 The archive is deterministic for unchanged inputs. Its manifest timestamp uses the latest valid review timestamp (or the ZIP epoch for older reviews without one), so re-exporting does not change the package solely because the clock advanced.
 

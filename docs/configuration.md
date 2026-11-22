@@ -1,42 +1,42 @@
 # Configuration
 
-`bstudio init` creates `~/.config/blast-studio/studio.yml` without overwriting an existing file. `BSTUDIO_CONFIG` overrides that path. `studio.root` defaults to `~/BlastStudio`; `BSTUDIO_HOME` overrides it. Relative paths resolve against the current working directory. The root contains projects, the spend ledger, and an optional `.env` file. Keep unpublished work and credentials private.
+`bstudio init` creates `~/.config/blast-studio/studio.yml` without overwriting an existing file. `BSTUDIO_CONFIG` overrides that path. `studio.root` defaults to `~/BlastStudio`; `BSTUDIO_HOME` overrides it. Relative paths resolve against the current working directory; `~` expansion applies to the studio root, not `BSTUDIO_CONFIG`. The root contains projects, provider caches, the spend ledger, and an optional `.env` file. Keep unpublished work and credentials private.
 
 | Key | Default | Purpose |
 | --- | --- | --- |
 | `studio.root` | `~/BlastStudio` | Private studio directory. |
 | `brand.name` | `My brand` | Brand name passed to the authoring agent. |
-| `brand.pitch`, `brand.audience` | empty strings in initial config | Brand context. |
-| `brand.voice` | `[]` | Voice guidance. |
-| `brand.colors` | ink `#1a1a1a`, paper `#ffffff`, accent `#315efb`, accent2 `#ed7458` | Brand colors. |
-| `brand.fonts` | display and text `sans-serif`, mono `monospace` | Brand fonts. |
-| `brand.links` | `{}` | Brand links. |
+| `brand.pitch`, `brand.audience` | empty strings in generated config | Brand context; omitted if absent from the file. |
+| `brand.voice` | `[]` in generated config | Voice guidance. |
+| `brand.colors` | ink `#1a1a1a`, paper `#ffffff`, accent `#315efb`, accent2 `#ed7458` in generated config | Brand colors. |
+| `brand.fonts` | display and text `sans-serif`, mono `monospace` in generated config | Brand fonts. |
+| `brand.links` | `{}` in generated config | Brand links. |
 | `platforms` | `devto`, `linkedin`, `x`, `bluesky`, `mastodon`, `hn`, `reddit`, `github-discussion` | Enabled platform IDs; see [packs](platforms.md). |
 | `agent.command` | `[omp, -p]` | Authoring command and arguments. |
 | `agent.timeoutSeconds` | `900` | Authoring timeout. |
-| `agent.passEnv` | `[]` | Extra environment variable names passed to the agent (a warning is printed). `OPENAI_API_KEY` and `GEMINI_API_KEY` are allowed only for a role with `billing: api`; publishing keys, `GITHUB_TOKEN` and `GH_TOKEN` are always refused. |
-| `agent.sandbox` | `off` | Set to `on` to isolate agents and render tools with the OS sandbox (`sandbox-exec` on macOS, `bwrap` on Linux when usable); `off` runs them locally as your user. |
-| `agent.billing` | `subscription` | `subscription` (the CLI's own login; runs are logged at $0) or `api` (each run reserves `maxUsdPerRun` from the budget and settles reported usage). |
-| `agent.maxUsdPerRun` | unset | Required when `billing: api`; the per-run reservation. |
+| `agent.passEnv` | `[]` | Extra shell environment variable names passed to the maker and reviewer (a warning is printed for values passed). `OPENAI_API_KEY` and `GEMINI_API_KEY` are allowed only for a role with `billing: api`; publishing keys, `GITHUB_TOKEN`, `GH_TOKEN`, `PATH`, `HOME` and `TMPDIR` are refused. |
+| `agent.sandbox` | `off` | `on` or `off`. `on` uses the OS sandbox (`sandbox-exec` on macOS, `bwrap` on Linux when usable); `off` runs agents and render tools locally as your user. |
+| `agent.billing` | `subscription` | `subscription` records agent runs with unknown cost; `api` reserves `maxUsdPerRun` and settles reported usage, retaining the reservation amount when no cost is reported. |
+| `agent.maxUsdPerRun` | unset | A finite positive USD amount, required when `billing: api`; the per-run reservation. |
 | `reviewer.command` | `[omp, -p, --model, '@review']` | Reviewer command and arguments; `null` disables the agent reviewer. Use a different model than the maker ([review](review.md)). |
 | `reviewer.timeoutSeconds` | `900` | Reviewer timeout. |
 | `reviewer.billing`, `reviewer.maxUsdPerRun` | `subscription`, unset | Same as the agent settings. |
 | `review.threshold` | `75` | Editorial passing score from 0 to 100. |
 | `review.maxRounds` | `2` | Maximum revision rounds. |
 | `images.provider` | `none` | `none`, `gemini`, `openai`, or `omp`. |
-| `images.model` | provider default | Optional image model. |
+| `images.model` | `gemini-nano-banana-2.1` for Gemini, `gpt-image-2` for OpenAI, `omp` for OMP | Optional model; API models need a matching image price in `providers/prices.yml`. |
 | `voice.provider` | `none` | `none` or `openai`. |
-| `voice.model`, `voice.voice` | provider defaults | Optional speech model and voice. |
-| `budget.monthlyUsd` | `0` | Monthly cap; zero disables paid calls. |
-| `budget.perProjectUsd` | `0` | Per-project cap; zero means no additional project limit. |
-| `providers.allowUpload` | `false` | Consent to uploads to external providers. |
-| `grounding.waive` | `[]` | Evidence grounding waivers as strings. |
+| `voice.model`, `voice.voice` | `tts-1`, `alloy` | Optional speech model and voice; the model needs a matching voice price in `providers/prices.yml`. |
+| `budget.monthlyUsd` | `0` | Monthly cap for reserved API calls; zero disables them, not separately billed subscription or OMP usage. |
+| `budget.perProjectUsd` | `0` | Lifetime per-project cap; zero means no additional project limit. |
+| `providers.allowUpload` | `false` | Reference-image upload consent flag. Reference-image uploads are not supported by the current adapter even when enabled; this flag does not prevent text prompts being sent to selected providers. |
+| `grounding.waive` | `[]` | Strings whose numeric metrics are waived from the fabricated-metrics grounding check. |
 | `marketBlaster.command` | `[mblast]` | Market Blaster executable and arguments. |
 | `marketBlaster.project` | unset | Default Market Blaster project directory for import. |
 
-Commands must be nonempty arrays of strings. Numeric settings must be finite and non-negative; the review threshold cannot exceed 100. `agent.passEnv` entries must be valid environment variable names.
+Commands must be nonempty arrays of nonempty strings, except that `reviewer.command` also accepts `null`. Numeric settings must be finite and non-negative, except `maxUsdPerRun`, which must be positive when specified; the review threshold cannot exceed 100. `agent.passEnv` entries must be valid environment variable names. Brand fields other than `name` are populated by the generated configuration, not supplied as load-time defaults if removed.
 
-Provider credentials can be set in the shell or `<studio.root>/.env`; a nonempty shell value takes precedence. On macOS, the keychain is also consulted for `GEMINI_API_KEY` and `OPENAI_API_KEY` if neither is set. Provider selection, consent, and a positive monthly budget are separate settings. See [budget](budget.md).
+Provider credentials can be set in the shell or `<studio.root>/.env`; a nonempty shell value takes precedence. On macOS, the keychain is also consulted for `GEMINI_API_KEY` and `OPENAI_API_KEY` if neither is set. API image and voice generation sends prompts or text to the selected provider and requires a positive monthly budget and a priced model. OMP image generation requires an interactive terminal outside CI and asks for the path to an image generated separately; it is not constrained by the API budget. See [budget](budget.md).
 
 ## Agent isolation
 

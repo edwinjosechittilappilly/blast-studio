@@ -35,4 +35,4 @@ Pack fields worth knowing:
 | [X](platforms/x/guide.md) | draft | text, thread, image, video | x |
 | [YouTube Shorts](platforms/youtube-shorts/guide.md) | draft | video | manual |
 
-Select IDs in [`studio.yml`](configuration.md). After manually publishing on a manual destination, use `bstudio mark <slug> <platform> --url <https-url>` to record the link. See [source updates](updater.md) for maintaining packs.
+Select IDs in [`studio.yml`](configuration.md). After manually publishing on YouTube Shorts, Instagram, TikTok or daily.dev, use `bstudio mark <slug> <platform> --url <https-url>` to record the link; other handoff destinations do not support `mark`. See [source updates](updater.md) for maintaining packs.

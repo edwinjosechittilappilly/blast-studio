@@ -20,7 +20,7 @@ Projects are directories under the configured Studio root. They contain `brief.m
 
 Paid provider calls use the budget ledger for reservations and settlement; agent runs are recorded separately. The dashboard is a local Node HTTP server for viewing project and operational data and editing supported settings. It is not a publishing service.
 
-The review hash covers title, trimmed body, and media basenames and alt text in order. It does not hash media file contents (Market Blaster's own approval hash does). Review checks and export behavior are implemented in [`src/commands/review.ts`](https://github.com/edwinjosechittilappilly/blast-studio/blob/main/src/commands/review.ts), [`src/review/gates.ts`](https://github.com/edwinjosechittilappilly/blast-studio/blob/main/src/review/gates.ts) and [`src/export.ts`](https://github.com/edwinjosechittilappilly/blast-studio/blob/main/src/export.ts).
+The post review hash covers title, trimmed body, and media basenames and alt text in order. A separate media hash covers the contents of the post's media files; acceptance and export require both hashes to match the current post and media. Review checks and export behavior are implemented in [`src/commands/review.ts`](https://github.com/edwinjosechittilappilly/blast-studio/blob/main/src/commands/review.ts), [`src/review/gates.ts`](https://github.com/edwinjosechittilappilly/blast-studio/blob/main/src/review/gates.ts) and [`src/export.ts`](https://github.com/edwinjosechittilappilly/blast-studio/blob/main/src/export.ts).
 
 ## Perceptual goldens
 
