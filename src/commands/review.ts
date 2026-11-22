@@ -60,7 +60,7 @@ export const run: Command = async (args, io) => {
     if (selected && !selected.has(post.platform)) continue;
     const pack = loadPack(post.platform), entry = plan.find(p => p.platform === post.platform);
     if (!entry) throw new UserError(`No plan for ${post.platform}`);
-    const gates = runGates(post, pack, assets, brief, config, dir);
+    const gates = runGates(post, pack, assets, brief, config, dir, positionals[0]);
     const postHash = reviewHash({ ...post, media: post.media.map(m => ({ path: m.file, alt: m.alt })) });
     let mediaHash: string | undefined;
     try { mediaHash = mediaContentHash(dir, post.media); }

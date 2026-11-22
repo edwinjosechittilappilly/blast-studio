@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { loadConfig, projectDir } from '../config.ts';
 import { loadLibrary, latestSources } from '../library.ts';
 import { monthToDate } from '../budget/ledger.ts';
@@ -18,10 +20,17 @@ export const run: Command = async (args, io) => {
       const review = project.reviews.find(r => r.platform === platform);
       io.out(`  ${platform}: ${review?.verdict ?? 'unreviewed'}${review?.total == null ? '' : ` (${review.total}/100)`}`);
     }
-    const rights = project.reviews.flatMap(review => (review.gates ?? []).filter(gate => gate.id === 'rights' && !gate.pass)).map(gate => gate.message.match(/bstudio confirm [^;]+/)?.[0]).find(Boolean);
+    const gates = project.reviews.flatMap(review => (review.gates ?? []).filter(gate => !gate.pass));
+    const blocker = gates.find(gate => gate.id === 'specs' && gate.message.includes('Blocker in '));
+    const rights = gates.filter(gate => gate.id === 'rights');
+    const commands = rights.flatMap(gate => [...gate.message.matchAll(/bstudio confirm \S+ (\S+) (--trademark-checked|--license <license>)/g)]);
+    const unresolved = commands.find(match => {
+      const asset = project.assets.find(item => item.id === match[1]);
+      return !asset || (match[2] === '--trademark-checked' ? !asset.trademarkChecked : !asset.license?.trim());
+    });
     const unreviewed = project.posts.some(post => !project.reviews.some(review => review.platform === post.platform));
     const needsRevision = project.reviews.some(review => review.verdict !== 'pass' && review.verdict !== 'accepted');
-    const next = rights ? `confirm rights: ${rights}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : `export: bstudio export ${project.slug}`;
+    const next = blocker ? 'resolve blockers: edit the brief or artifact metadata, then remove resolved blockers' : unresolved ? `confirm rights: ${unresolved[0]}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(projectDir(config, project.slug), 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : `export: bstudio export ${project.slug}`;
     io.out(`  next: ${next}`);
   }
   io.out(`Month to date: $${monthToDate(config.root).toFixed(2)} / $${config.budget.monthlyUsd.toFixed(2)}`);

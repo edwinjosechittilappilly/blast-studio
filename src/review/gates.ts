@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import { readPlan } from '../plan.ts';
+import { blockerTexts } from '../blockers.ts';
 
 import type { AssetMeta, BriefSection, GateResult, PlatformPack, Post, StudioConfig } from '../types.ts';
 
@@ -20,7 +21,7 @@ function metrics(text: string): { token: string; key: string; metric: boolean }[
 }
 
 
-export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], brief: BriefSection[], config: StudioConfig, projectDir?: string): GateResult[] & { warnings: string[] } {
+export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], brief: BriefSection[], config: StudioConfig, projectDir?: string, address = '<slug>'): GateResult[] & { warnings: string[] } {
   const failures: Record<GateResult['id'], string[]> = { policy: [], disclosure: [], specs: [], accessibility: [], 'fabricated-metrics': [], rights: [] };
   const warnings: string[] = [...(pack.notes ?? [])];
   const policySources: { source?: string; lastVerified?: string }[] = [{ source: pack.aiSource, lastVerified: pack.aiLastVerified }, ...Object.values(pack.disclosure).filter((rule): rule is Extract<typeof rule, object> => typeof rule === 'object'), ...(typeof pack.sponsorship === 'object' ? [pack.sponsorship] : [])];
@@ -32,9 +33,7 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
   const selected = assets.filter(a => used.has(a.id));
   const add = (id: GateResult['id'], message: string) => failures[id].push(message);
   const blockers = (value: unknown, label: string) => {
-    if (Array.isArray(value)) {
-      for (const text of value) if (typeof text === 'string' && text.trim()) add('specs', `Blocker in ${label}: ${text}`);
-    } else if (typeof value === 'string' && value.trim()) add('specs', `Blocker in ${label}: ${value}`);
+    for (const text of blockerTexts(value)) add('specs', `Blocker in ${label}: ${text}`);
   };
   blockers((post as Post & { blockers?: unknown }).blockers, post.path);
   const planned = projectDir && existsSync(join(projectDir, 'plan.yml')) ? readPlan(projectDir).find(entry => entry.platform === post.platform)?.assets.map(asset => asset.id) ?? [] : [];
@@ -124,8 +123,8 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
     if (media.kind === 'video' && !byId.get(media.asset)?.outputs.some(o => /\.vtt$/i.test(o.file))) add('accessibility', `Missing captions for ${media.asset}`);
   }
   for (const asset of selected) {
-    if (['gemini', 'openai', 'omp'].includes(asset.provider) && !asset.license?.trim()) add('rights', `Missing license for ${asset.id}; confirm rights: bstudio confirm ${projectDir ? basename(projectDir) : '<slug>'} ${asset.id} --license <license>`);
-    if (asset.kind === 'logo' && !asset.trademarkChecked) add('rights', `Trademark search not checked for ${asset.id}; confirm rights: bstudio confirm ${projectDir ? basename(projectDir) : '<slug>'} ${asset.id} --trademark-checked`);
+    if (['gemini', 'openai', 'omp'].includes(asset.provider) && !asset.license?.trim()) add('rights', `Missing license for ${asset.id}; confirm rights: bstudio confirm ${address} ${asset.id} --license <license>`);
+    if (asset.kind === 'logo' && !asset.trademarkChecked) add('rights', `Trademark search not checked for ${asset.id}; confirm rights: bstudio confirm ${address} ${asset.id} --trademark-checked`);
     for (const metric of asset.metrics ?? []) {
       for (const text of metric.texts ?? []) checkPlaceholder(`assets/${asset.id}/${metric.file} rendered text`, text, false);
       for (const kind of metric.unmeasurable ?? []) warnings.push(`Text cannot be checked in ${kind} in ${metric.file}`);
