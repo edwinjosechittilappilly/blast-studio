@@ -14,13 +14,15 @@ import { renderMarkdown } from '../static/markdown.js';
 import { el, button, verdictTag as baseVerdictTag, copyButton, scoreMeter, selfReview, rubricTable, gateList, hookComparison } from './components/review.js';
 import { mediaGallery } from './components/media.js';
 import { api, headers, campaignPath, startFeedbackJob, cancelFeedbackJob, feedbackJobStatus } from './components/api.js';
+import { setupShell } from './components/shell.js';
 const $ = s => document.querySelector(s);
 let timer, searchTimer, activeProject = null, activeTab = 'overview', navigation = 0, projectLoad = 0, libraryLoad = 0;
-const feedbackDrafts = new Map(), dismissedJobFailures = new Set();
+const feedbackDrafts = new Map(), dismissedJobFailures = new Set(JSON.parse(sessionStorage.getItem('dismissedJobFailures') || '[]'));
+const shell = setupShell();
 window.addEventListener('session-expired', () => { clearTimeout(timer); navigation++; projectLoad++; libraryLoad++; activeProject = null; show('expired'); document.title = 'Session expired – Blast Studio'; });
 function message(text) { $('#message').textContent = text; }
 function toast(text, kind = 'success') { if (kind === true) kind = 'error'; if (kind === false) kind = 'success'; const notice = el('cds-toast-notification', null, 'job-toast'); notice.setAttribute('kind', kind); if (kind !== 'error') notice.setAttribute('timeout', '5000'); const title = el('span', text); title.slot = 'title'; notice.append(title); notice.addEventListener('cds-notification-closed', () => notice.remove()); document.body.append(notice); if (kind !== 'error') setTimeout(() => notice.remove(), 5000); }
-function show(view) { document.querySelectorAll('.view').forEach(n => { n.hidden = n.id !== view; }); document.querySelectorAll('.shell-nav a').forEach(n => n.classList.toggle('active', n.dataset.view === (['project', 'not-found'].includes(view) ? 'projects' : view))); }
+function show(view) { document.querySelectorAll('.view').forEach(n => { n.hidden = n.id !== view; }); shell.setActive(['project', 'not-found'].includes(view) ? 'projects' : view); }
 const displayName = name => ({ linkedin: 'LinkedIn', devto: 'DEV', x: 'X', hashnode: 'Hashnode', 'github-discussion': 'GitHub Discussions' }[name] || name);
 function verdictTag(review) { const tag = baseVerdictTag(review); if (review?.verdict === 'revise') tag.setAttribute('type', 'magenta'); return tag; }
 const campaignRoute = slug => `#/p/${slug.split('/').map(encodeURIComponent).join('/')}`;
@@ -35,13 +37,13 @@ function formatMoney(value) { return `$${Number(value).toFixed(2)}`; }
 const dark = matchMedia('(prefers-color-scheme: dark)'); function theme() { document.body.classList.toggle('cds--g100', dark.matches); document.body.classList.toggle('cds--g10', !dark.matches); } dark.addEventListener('change', theme); theme();
 async function library() {
   const target = $('#project-list'), query = $('#search').value, load = ++libraryLoad;
-  target.replaceChildren(el('p', 'Loading projects…', 'empty'));
+  const skeleton = el('cds-table-skeleton'); skeleton.setAttribute('aria-label', 'Loading projects'); target.replaceChildren(skeleton);
   let projects;
   try { projects = await api(`/api/library?q=${encodeURIComponent(query)}`); }
   catch (error) {
     if (error.message === 'Session expired' || load !== libraryLoad || query !== $('#search').value) return;
-    const box = el('div', null, 'surface'); box.append(el('h2', 'Unable to load projects'), el('p', 'Check that your studio is available and try again.'));
-    const details = el('details'); details.append(el('summary', 'Error details'), el('p', error.message)); const retry = button('Try again', 'secondary'); retry.addEventListener('click', library); box.append(details, retry); target.replaceChildren(box); return;
+    const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'error'); notice.setAttribute('title', 'Unable to load projects'); notice.setAttribute('subtitle', 'Check that your studio is available and try again.'); notice.setAttribute('hide-close-button', '');
+    const details = el('details'); details.append(el('summary', 'Error details'), el('p', error.message)); const retry = button('Try again', 'secondary'); retry.addEventListener('click', library); notice.append(details, retry); target.replaceChildren(notice); return;
   }
   if (load !== libraryLoad || query !== $('#search').value) return;
   target.replaceChildren(); $('#project-count').textContent = `${projects.length} campaigns`;
@@ -54,7 +56,7 @@ async function library() {
   const table = el('cds-table'), head = el('cds-table-head'), hr = el('cds-table-header-row'), body = el('cds-table-body'), cards = el('div', null, 'project-cards'), mobileSort = el('div', null, 'project-sort'), label = el('label', 'Sort campaigns by '), select = el('select'), order = el('button'); let direction = -1, current = 'Updated';
   const value = (p, key) => key === 'Project' ? p.slug.split('/')[0] : key === 'Campaign' ? p.slug.split('/')[1] : key === 'Updated' ? p.updatedAt || '' : key === 'Review status' ? p.reviews.map(r => r.verdict).join(', ') : `${p.exported ? 'Exported' : 'Not exported'} · ${Object.keys(p.published || {}).length} published`;
   function render() {
-    for (const cell of hr.children) { cell.removeAttribute('aria-sort'); if (cell.dataset.sort === current) cell.setAttribute('aria-sort', direction === 1 ? 'ascending' : 'descending'); }
+    for (const cell of hr.children) { const active = cell.dataset.sort === current; cell.sortActive = active; cell.sortDirection = active ? (direction === 1 ? 'ascending' : 'descending') : 'none'; cell.setAttribute('aria-sort', active ? cell.sortDirection : 'none'); }
     select.value = current; order.textContent = direction === 1 ? 'Ascending' : 'Descending'; order.setAttribute('aria-label', `Sort order: ${order.textContent}`);
     body.replaceChildren(); cards.replaceChildren(); projects.sort((a, b) => direction * String(value(a, current)).localeCompare(String(value(b, current))));
     for (const project of projects) {
@@ -68,7 +70,7 @@ async function library() {
       row.classList.add('clickable-row'); row.addEventListener('click', event => { if (!event.target.closest('a')) location.hash = link.hash; }); body.append(row);
     }
   }
-  for (const text of ['Project', 'Campaign', 'Review status', 'Updated', 'Export / published']) { const cell = el('cds-table-header-cell'), control = el('button', text, 'sort-button'), option = el('option', text); option.value = text; select.append(option); cell.dataset.sort = text; control.setAttribute('aria-label', `Sort by ${text}`); control.addEventListener('click', () => { direction = current === text ? -direction : 1; current = text; render(); }); cell.append(control); hr.append(cell); }
+  for (const text of ['Project', 'Campaign', 'Review status', 'Updated', 'Export / published']) { const cell = el('cds-table-header-cell', text), option = el('option', text); option.value = text; select.append(option); cell.dataset.sort = text; cell.isSortable = true; cell.sortCycle = 'bi-states-from-ascending'; cell.addEventListener('cds-table-header-cell-sort', event => { event.preventDefault(); direction = current === text ? -direction : 1; current = text; render(); }); hr.append(cell); }
   select.addEventListener('change', () => { current = select.value; direction = 1; render(); }); order.type = 'button'; order.addEventListener('click', () => { direction = -direction; render(); }); label.append(select); mobileSort.append(label, order);
   head.append(hr); table.append(head, body); render(); target.append(table, mobileSort, cards);
 }
@@ -117,11 +119,11 @@ async function jobStatus(project, region, apply) {
     const focus = document.activeElement, inProject = $('#project').contains(focus), selector = inProject && focus.id ? `#${CSS.escape(focus.id)}` : null, tag = inProject && !selector ? focus.tagName : null, index = tag ? [...$('#project').querySelectorAll(tag)].indexOf(focus) : -1, y = window.scrollY, tab = activeTab;
     await openProject(project.slug, tab); if (activeProject !== project.slug || $('#project').hidden) return;
     window.scrollTo(0, y); const restored = selector ? document.querySelector(selector) : tag ? $('#project').querySelectorAll(tag)[index] : focus; restored?.focus?.({ preventScroll: true });
-    toast(status.state === 'succeeded' ? 'Revision completed. Review the updated campaign.' : status.state === 'cancelled' ? `Revision cancelled. ${applied} applied before cancellation; ${count} pending.` : 'Revision failed. Review the log and retry.', status.state === 'failed' ? 'error' : status.state === 'cancelled' ? 'info' : 'success');
+    if (status.state !== 'failed') toast(status.state === 'succeeded' ? 'Revision completed. Review the updated campaign.' : `Revision cancelled. ${applied} applied before cancellation; ${count} pending.`, status.state === 'cancelled' ? 'info' : 'success');
   } else if (status.state === 'failed' && !dismissedJobFailures.has(status.id)) {
-    const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'error'); notice.setAttribute('title', `Revision failed (${status.exitCode}). Review the log and retry.`); notice.addEventListener('cds-notification-closed', () => { dismissedJobFailures.add(status.id); announcement.replaceChildren(); });
+    const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'error'); notice.setAttribute('title', `Revision failed (${status.exitCode}). Review the log and retry.`); notice.addEventListener('cds-notification-closed', () => { dismissedJobFailures.add(status.id); sessionStorage.setItem('dismissedJobFailures', JSON.stringify([...dismissedJobFailures])); announcement.replaceChildren(); });
     const view = button('View log', 'ghost'); view.addEventListener('click', () => { log.parentElement.hidden = false; log.parentElement.open = true; log.parentElement.scrollIntoView({ block: 'nearest' }); });
-    const retry = button('Retry', 'secondary'); retry.disabled = apply.disabled; retry.addEventListener('click', () => apply.click()); announcement.replaceChildren(notice, view, retry);
+    const retry = button('Retry', 'secondary'); retry.disabled = apply.disabled; retry.addEventListener('click', () => apply.click()); notice.append(view, retry); announcement.replaceChildren(notice);
   }
 }
 function scheduleStatus(project, region, apply) {
@@ -153,9 +155,9 @@ function assetsPanel(project) {
   const section = el('section', null, 'surface');
   if (!project.assets.length) { section.append(el('h2', 'No assets yet'), el('p', 'Generate assets for this campaign from the command line.'), commandSnippet(`bstudio make ${project.slug}`)); return section; }
   for (const asset of project.assets) {
-    const outputCount = (asset.outputs || []).length, blockerCount = (asset.blockers || []).length, details = el('details', null, 'asset-row'), summary = el('summary', `${asset.id} · ${asset.kind} · ${outputCount} ${outputCount === 1 ? 'output' : 'outputs'}${blockerCount ? ` · ${blockerCount} ${blockerCount === 1 ? 'blocker' : 'blockers'}` : ''}`); details.append(summary);
+    const outputCount = (asset.outputs || []).length, blockerCount = (asset.blockers || []).length, details = el('details', null, 'asset-row'), summary = el('summary', `${asset.id} · ${asset.kind} · ${outputCount} ${outputCount === 1 ? 'output' : 'outputs'}${blockerCount ? ` · ${blockerCount} ${blockerCount === 1 ? 'blocker' : 'blockers'}` : ''}`); details.open = blockerCount > 0; details.append(summary);
     const metadata = el('dl', null, 'asset-metadata'); for (const [key, value] of [['AI generated', asset.aiGenerated ? 'Yes' : 'No'], ['Cost', asset.costUsd == null ? '—' : formatMoney(asset.costUsd)]]) metadata.append(el('dt', key), el('dd', value)); details.append(metadata);
-    if (asset.blockers?.length) { const warning = el('div', null, 'form-error'); warning.append(el('strong', 'Blockers'), ...asset.blockers.map(blocker => el('p', typeof blocker === 'string' ? blocker : JSON.stringify(blocker)))); details.append(warning); }
+    if (asset.blockers?.length) { const warning = el('cds-inline-notification'); warning.setAttribute('kind', 'error'); warning.setAttribute('title', `${asset.blockers.length} ${asset.blockers.length === 1 ? 'blocker' : 'blockers'}`); warning.setAttribute('hide-close-button', ''); const list = el('ul'); for (const blocker of asset.blockers) list.append(el('li', typeof blocker === 'string' ? blocker : JSON.stringify(blocker))); warning.append(list); details.append(warning); }
     const items = (asset.outputs || []).map(output => ({ ...output, file: `assets/${asset.id}/${output.file}`, alt: '' }));
     details.append(mediaGallery(project.slug, items, project.captions), selfReview(asset.selfReview), feedbackForm(project, { asset: asset.id })); section.append(details);
   }
@@ -165,6 +167,7 @@ function orderedPosts(project) { const byId = new Map(project.posts.map(post => 
 function overviewPanel(project) {
   const section = el('section', null, 'surface'), tiles = el('div', null, 'summary-tiles'); section.append(el('h2', 'Campaign summary'));
   for (const [label, value] of [['Pending feedback', project.feedback.filter(e => e.status === 'pending').length], ['Ready', project.reviews.filter(r => r.verdict === 'pass').length], ['Published', Object.keys(project.published || {}).length], ['Export', project.exported ? 'Available' : 'Not exported']]) { const tile = el('div'); tile.append(el('strong', String(value)), el('span', label)); tiles.append(tile); } section.append(tiles);
+  const blockedAssets = project.assets.filter(asset => asset.blockers?.length); if (blockedAssets.length) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'error'); notice.setAttribute('title', `${blockedAssets.length} ${blockedAssets.length === 1 ? 'asset has' : 'assets have'} blockers`); notice.setAttribute('hide-close-button', ''); const list = el('ul'); for (const asset of blockedAssets) for (const blocker of asset.blockers) list.append(el('li', `${asset.id}: ${typeof blocker === 'string' ? blocker : JSON.stringify(blocker)}`)); notice.append(list); section.append(notice); }
   const table = el('table', null, 'overview-table'), head = el('thead'), header = el('tr'); for (const name of ['Destination', 'Status', 'Score', 'Failed gates', 'Pending feedback', 'Last reviewed']) header.append(el('th', name)); head.append(header); const body = el('tbody');
   for (const post of orderedPosts(project)) { const review = project.reviews.find(r => r.platform === post.platform), row = el('tr'), cell = el('td'), link = el('a', displayName(post.platform)); link.href = `${campaignRoute(project.slug)}/${encodeURIComponent(post.platform)}`; cell.append(link); const status = el('td'); status.append(verdictTag(review)); row.append(cell, status, el('td', review?.total == null ? '—' : Number(review.total).toFixed(1)), el('td', String((review?.gates || []).filter(g => !g.pass).length)), el('td', String(project.feedback.filter(e => e.status === 'pending' && e.target.platform === post.platform).length)), el('td', review?.at ? new Date(review.at).toLocaleDateString() : '—')); body.append(row); }
   table.append(head, body); const scroll = el('div', null, 'table-scroll'); scroll.append(table); section.append(scroll, feedbackHistory(project, {})); return section;
@@ -178,13 +181,13 @@ async function openProject(slug, requested = 'overview') {
   panel.setAttribute('role', 'tabpanel');
   function select(name) { activeTab = name; panel.setAttribute('aria-labelledby', `tab-${name}`); panel.replaceChildren(name === 'overview' ? overviewPanel(project) : name === 'assets' ? assetsPanel(project) : platformPanel(project, project.posts.find(p => p.platform === name))); }
   for (const name of options) { const review = project.reviews.find(r => r.platform === name), tab = el('cds-tab', name === 'overview' ? 'Overview' : name === 'assets' ? 'Assets' : `${project.platforms?.[name]?.name || displayName(name)} · ${review?.verdict || 'unreviewed'}`); const icon = tabStatusIcon(review?.verdict); if (icon) tab.prepend(icon); tab.id = `tab-${name}`; tab.value = name; if (name === activeTab) tab.setAttribute('selected', ''); tabs.append(tab); }
-  job.project = project; tabs.addEventListener('cds-tabs-selected', event => { const name = event.detail.item.value; select(name); event.detail.item.scrollIntoView({ block: 'nearest', inline: 'nearest' }); history.replaceState(null, '', `${campaignRoute(slug)}/${encodeURIComponent(name)}`); }); select(activeTab); container.append(job, tabs, panel); show('project'); requestAnimationFrame(() => tabs.querySelector(`[value="${CSS.escape(activeTab)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' })); try { await jobStatus(project, job, apply); } catch (error) { if (activeProject === slug && !$('#project').hidden && job.isConnected) { message(error.message); scheduleStatus(project, job, apply); } }
+  job.project = project; tabs.addEventListener('cds-tabs-selected', event => { const name = event.detail.item.value; select(name); event.detail.item.scrollIntoView({ block: 'nearest', inline: 'nearest' }); history.replaceState(null, '', `${campaignRoute(slug)}/${encodeURIComponent(name)}`); }); select(activeTab); container.append(job, tabs, panel); show('project'); await tabs.updateComplete; const selectedTab = tabs.querySelector(`[value="${CSS.escape(activeTab)}"]`); if (selectedTab) { selectedTab.selected = true; await selectedTab.updateComplete; selectedTab.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } try { await jobStatus(project, job, apply); } catch (error) { if (activeProject === slug && !$('#project').hidden && job.isConnected) { message(error.message); scheduleStatus(project, job, apply); } }
 }
 async function settings() {
   const data = await api('/api/budget'), form = $('#settings-form'), spend = $('#spend'); spend.replaceChildren(); spend.className = 'summary-tiles';
   for (const [label, value] of [['Spent this month', formatMoney(data.mtd)], ['Monthly cap', formatMoney(data.cap)], ['Agent spend', formatMoney(data.providerTotals?.agent ?? 0)], ...Object.entries(data.projects || {}).map(([name, value]) => [`${name} spend`, formatMoney(value)])]) { const tile = el('div'); tile.append(el('strong', value), el('span', label)); spend.append(tile); }
   form.elements.monthlyUsd.value = data.cap; form.elements.perProjectUsd.value = data.perProject; form.elements.images.value = data.providers.images; form.elements.voice.value = data.providers.voice;
-  const totals = $('#provider-totals'); totals.replaceChildren(el('h3', 'Spend by provider')); for (const [name, value] of Object.entries(data.providerTotals)) if (name !== 'agent') totals.append(el('p', `${name}: ${formatMoney(value)}`));
+  const totals = $('#provider-totals'); totals.replaceChildren(); const providerTotals = Object.entries(data.providerTotals).filter(([name]) => name !== 'agent'); if (providerTotals.length) { totals.append(el('h3', 'Spend by provider')); for (const [name, value] of providerTotals) totals.append(el('p', `${name}: ${formatMoney(value)}`)); }
 }
 async function sources() {
   const data = await api('/api/sources'), target = $('#source-detail'); target.replaceChildren(el('h2', `Last checked: ${data.lastCheck || 'Never'}`), el('p', 'Unverified sources need a manual review before relying on their guidance.'), el('p', 'Check sources again:'), commandSnippet('bstudio sources check --write'));
@@ -192,7 +195,7 @@ async function sources() {
 }
 async function route(focus = true) {
   const routeId = ++navigation; projectLoad++; libraryLoad++; clearTimeout(timer); message(''); const [path, search = ''] = location.hash.slice(1).split('?'), parts = path.split('/').filter(Boolean).map(decodeURIComponent);
-  closeNav();
+  shell.closeNav();
   try {
     if (parts[0] === 'p' && parts[1] && parts[2]) { await openProject(`${parts[1]}/${parts[2]}`, parts[3]); }
     else { activeProject = null; const view = ['settings', 'sources', 'doctor'].includes(parts[0]) ? parts[0] : 'projects'; show(view); if (view === 'projects') { $('#search').value = parts[0] === 'p' ? parts[1] : new URLSearchParams(search).get('q') || ''; await library(); } else if (view === 'settings') await settings(); else if (view === 'sources') await sources(); }
@@ -200,10 +203,6 @@ async function route(focus = true) {
   if (routeId !== navigation) return; const heading = document.querySelector('.view:not([hidden]) h1'); if (heading) { document.title = `${heading.textContent} – Blast Studio`; if (focus) { heading.setAttribute('tabindex', '-1'); heading.focus({ preventScroll: true }); } }
 }
 window.addEventListener('hashchange', route); $('#search').addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { const query = $('#search').value; history.replaceState(null, '', `#/projects${query ? '?q=' + encodeURIComponent(query) : ''}`); library(); }, 250); });
-const backdrop = el('button', null, 'nav-backdrop'); backdrop.type = 'button'; backdrop.hidden = true; backdrop.setAttribute('aria-label', 'Close navigation'); document.body.append(backdrop);
-function closeNav(restoreFocus = false) { const wasOpen = $('#workspace-nav').classList.contains('open'); $('#workspace-nav').classList.remove('open'); $('#nav-toggle').setAttribute('aria-expanded', 'false'); $('#nav-toggle').setAttribute('aria-label', 'Open navigation'); backdrop.hidden = true; if (restoreFocus && wasOpen) $('#nav-toggle').focus(); }
-$('#nav-toggle').addEventListener('click', () => { const open = !$('#workspace-nav').classList.contains('open'); if (!open) { closeNav(); return; } $('#workspace-nav').classList.add('open'); $('#nav-toggle').setAttribute('aria-expanded', 'true'); $('#nav-toggle').setAttribute('aria-label', 'Close navigation'); backdrop.hidden = false; });
-backdrop.addEventListener('click', () => closeNav(true)); document.addEventListener('keydown', event => { if (event.key === 'Escape') closeNav(true); });
 $('.skip-link').addEventListener('click', event => { event.preventDefault(); $('#main').focus(); });
 $('#expired code').replaceWith(commandSnippet('bstudio dashboard'));
 $('#settings-form').addEventListener('input', () => { $('#settings-result').textContent = ''; });

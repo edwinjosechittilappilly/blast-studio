@@ -78,7 +78,7 @@ function dashboardHarness() {
   const nodes = { '#project': { hidden: false, contains: () => false }, '#message': new Node('message') };
   const calls = [], timers = [], toasts = [], focused = new Node('button');
   const context = {
-    Map, Set, JSON, encodeURIComponent, Date, Error, campaignPath, timer: undefined, dismissedJobFailures: new Set(), document: { activeElement: focused }, window: { scrollY: 42, scrollTo() {} },
+    Map, Set, JSON, encodeURIComponent, Date, Error, campaignPath, timer: undefined, dismissedJobFailures: new Set(), sessionStorage: { setItem() {} }, document: { activeElement: focused }, window: { scrollY: 42, scrollTo() {} },
     displayName: name => ({ linkedin: 'LinkedIn' }[name] || name),
     el: (tag, text) => Object.assign(new Node(tag), { textContent: text || '' }),
     button: text => Object.assign(new Node('button'), { textContent: text }),
@@ -172,8 +172,8 @@ test('failed revision remains visible with log, retry and dismiss actions', asyn
   context.statusRequest = async () => ({ id: 'failed-1', state: 'failed', running: false, exitCode: 1, lines: ['failed'] });
   await context.jobStatus(project, region, apply);
   assert.equal(announcement.children[0].attributes.kind, 'error');
-  assert.equal(announcement.children[1].textContent, 'View log');
-  announcement.children[2].listeners.click(); assert.equal(retried, true);
+  assert.equal(announcement.children[0].children[0].textContent, 'View log');
+  announcement.children[0].children[1].listeners.click(); assert.equal(retried, true);
   announcement.children[0].listeners['cds-notification-closed']();
   await context.jobStatus(project, region, apply); assert.equal(announcement.children.length, 0);
 });

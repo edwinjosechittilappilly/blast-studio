@@ -90,6 +90,6 @@ export function hookComparison(hooks, comparisons) {
     li.append(content, copyButton(`Copy hook ${String.fromCharCode(65 + index)}`, hook)); list.append(li);
   });
   section.append(list);
-  for (const item of comparisons || []) if (!hooks.includes(item.preferred) && item.evidence) section.append(el('p', item.evidence));
+  for (const item of comparisons || []) if (!hooks.includes(item.preferred) && item.evidence) section.append(el('p', `${item.preferred ? `Preferred: ${item.preferred}` : 'No preferred hook'} — ${item.evidence}`));
   return section;
 }
