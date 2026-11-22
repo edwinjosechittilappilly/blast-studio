@@ -19,8 +19,9 @@ test('plan validates three hooks and safe unique asset ids', () => {
   assert.throws(() => readPlan(dir), /Invalid asset/);
 });
 test('agent receives no credentials and only allowed files copy back', async () => {
-  const dir = tempStudio(), io = fakeIO({ cwd: dir, env: { BSTUDIO_CONFIG: join(dir, 'studio.yml'), BSTUDIO_HOME: dir, PATH: '/bin', OPENAI_API_KEY: 'secret', HOME: '/private' }, run: async (_cmd, _args, opts) => {
-    assert.equal(opts?.env?.OPENAI_API_KEY, undefined); assert.notEqual(opts?.env?.HOME, '/private');
+  const dir = tempStudio(), io = fakeIO({ cwd: dir, env: { BSTUDIO_CONFIG: join(dir, 'studio.yml'), BSTUDIO_HOME: dir, PATH: '/bin', OPENAI_API_KEY: 'secret', HOME: '/Users/me' }, run: async (_cmd, _args, opts) => {
+    // No credentials reach the agent, but HOME does, so the agent CLI can use its own login; cwd is a temp workspace.
+    assert.equal(opts?.env?.OPENAI_API_KEY, undefined); assert.equal(opts?.env?.HOME, '/Users/me'); assert.notEqual(opts?.cwd, dir);
     const cwd = opts!.cwd!; mkdirSync(join(cwd, 'posts'), { recursive: true }); mkdirSync(join(cwd, 'assets/a/out'), { recursive: true });
     writeFileSync(join(cwd, 'posts/devto.md'), '---\nplatform: devto\nevidence: [E1]\nmedia: []\n---\nHello\n');
     writeFileSync(join(cwd, 'assets/a/out/leak.txt'), 'no'); writeFileSync(join(cwd, 'secret.txt'), 'no'); return '';

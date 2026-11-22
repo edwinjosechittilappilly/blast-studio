@@ -40,7 +40,7 @@ test('market-blaster imports manifest and media', async t => {
     t.skip('set MARKET_BLASTER_DIR to a market-blaster checkout to run the import integration test');
     return;
   }
-  const f = fixture(); await exportCommand(['demo'], f.io);
+  const f = fixture(); await exportCommand(['demo', '--dir'], f.io);
   writeFileSync(join(f.root, 'market-blaster.yml'), 'brand: { name: Demo }\ndestinations: [bluesky]\n');
   const result = spawnSync(process.execPath, [join(marketBlaster, 'bin/mblast.mjs'), 'import', join(f.project, 'export'), '--slug', 'demo'], { cwd: f.root, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stdout + result.stderr);
@@ -49,7 +49,7 @@ test('market-blaster imports manifest and media', async t => {
 });
 
 test('manual export and mark host validation', async () => {
-  const f = fixture('instagram'); await exportCommand(['demo'], f.io);
+  const f = fixture('instagram'); await exportCommand(['demo', '--dir'], f.io);
   assert.match(readFileSync(join(f.project, 'exports/instagram/README.md'), 'utf8'), /alt: Alt/);
   assert.ok(existsSync(join(f.project, 'exports/instagram/post.md')));
   await assert.rejects(mark(['demo', 'instagram', '--url', 'https://instagram.com.evil.test/p/1'], f.io), /host/);

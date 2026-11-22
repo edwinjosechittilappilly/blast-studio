@@ -26,8 +26,15 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
     const shim = join(bin, 'bstudio');
     const cli = fileURLToPath(new URL('../bin/bstudio.mjs', import.meta.url));
     writeFileSync(shim, `#!/bin/sh\nif [ "$1" != render-preview ]; then echo 'Only render-preview is available' >&2; exit 1; fi\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(cli)} "$@"\n`); chmodSync(shim, 0o755);
-    const env: Record<string, string | undefined> = { PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${io.env.PATH ?? '/usr/bin:/bin'}`, HOME: dir, TMPDIR: dir };
+    // HOME stays the user's real home so the agent CLI (omp, claude, codex) finds its own login; isolation comes from
+    // the temp working directory and the allowlisted environment, not from hiding HOME.
+    const env: Record<string, string | undefined> = {
+      PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${io.env.PATH ?? '/usr/bin:/bin'}`,
+      HOME: io.env.HOME ?? dir,
+      TMPDIR: dir,
+    };
     for (const key of ['LANG', 'LC_ALL', 'TERM', 'USER', 'SYSTEMROOT']) if (io.env[key]) env[key] = io.env[key];
+    for (const [key, value] of Object.entries(io.env)) if (key.startsWith('XDG_') && value) env[key] = value;
     for (const key of passEnv) {
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || deniedEnv.includes(key.toUpperCase()) || ['PATH', 'HOME', 'TMPDIR'].includes(key.toUpperCase())) throw new UserError(`Disallowed agent environment variable: ${key}`);
       if (io.env[key] !== undefined) env[key] = io.env[key];
