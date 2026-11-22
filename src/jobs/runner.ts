@@ -1,13 +1,13 @@
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, closeSync, existsSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseCampaignRef } from '../campaigns.ts';
 import { withStudioLock } from '../migrate.ts';
 import { UserError } from '../types.ts';
 import { buildOperation } from './registry.ts';
-import { linuxStat, processAlive, processStarted, sameProcess } from './process.ts';
+import { exactProcess, linuxStat, processAlive, processStarted, sameProcess } from './process.ts';
 
 export type JobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export interface Job { id: string; operation: string; campaign?: string; state: JobState; createdAt: string; updatedAt: string; pid?: number; processStarted?: string; childStarted?: Record<string, string>; exitCode?: number | null; completed?: boolean; command: string; cancelRequested?: boolean; processGroup?: boolean; childPids?: number[] }
@@ -31,6 +31,9 @@ export function processGroupRunning(pid: number): boolean {
   catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM'; }
 }
 function sameGroup(pid: number, started?: string): boolean {
+  return exactProcess(pid, started) && processGroupRunning(pid);
+}
+function lockGroupAlive(pid: number, started?: string): boolean {
   const current = started ? processStarted(pid) : undefined;
   if (started && current && current !== started && !(current.startsWith('linux:') && /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s/.test(started))) return false;
   return processGroupRunning(pid);
@@ -89,7 +92,10 @@ function writeLock(path: string, lock: Lock): void {
   finally { rmSync(temp, { force: true }); }
 }
 function lockAlive(lock: Lock): boolean {
-  return (lock.processStarted ? sameProcess(lock.pid, lock.processStarted) : processAlive(lock.pid)) || (lock.childPids ?? []).some(pid => sameGroup(pid, lock.childStarted?.[pid]));
+  return (lock.processStarted ? sameProcess(lock.pid, lock.processStarted) : processAlive(lock.pid)) || (lock.childPids ?? []).some(pid => lockGroupAlive(pid, lock.childStarted?.[pid]));
+}
+function releaseCampaignLock(root: string, path: string, id: string): void {
+  withStudioLock(root, () => { if (readLock(path)?.id === id) rmSync(path, { force: true }); });
 }
 /** Inspect the campaign lock without recovering or changing it. */
 export function campaignLockStatus(root: string, ref: string): 'absent' | 'running' | 'stale' {
@@ -115,12 +121,12 @@ export function acquireCampaignLock(root: string, ref: string, id: string = rand
           }
         }
         finally { rmSync(temp, { force: true }); }
-        return () => { if (readLock(path)?.id === id) rmSync(path, { force: true }); };
+        return () => releaseCampaignLock(root, path, id);
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
         const lock = readLock(path);
         if (!lock && !existsSync(path)) continue;
-        if (lock && lock.id === id && process.env.BSTUDIO_JOB_ID === id) return () => {};
+        if (lock && lock.id === id && process.env.BSTUDIO_JOB_ID === id) return () => releaseCampaignLock(root, path, id);
         if ((!lock && Date.now() - statSync(path).mtimeMs < 30000) || (lock && (!Number.isInteger(lock.pid) || lockAlive(lock)))) throw new JobConflict(lock?.id ?? 'another process');
         const guard = `${path}.recovery`;
         try { mkdirSync(guard); } catch (e) { if ((e as NodeJS.ErrnoException).code === 'EEXIST') throw new JobConflict('lock recovery'); throw e; }
@@ -153,6 +159,7 @@ export function finishSpawnedJob(root: string, ref: string | undefined, id: stri
     if (job.campaign !== ref) throw new UserError('Invalid job record');
     job.exitCode = code; job.completed = true; job.cancelRequested ||= cancelled; job.updatedAt = new Date().toISOString();
   });
+  if (ref) releaseCampaignLock(root, lockPath(root, ref), id);
 }
 export function updateJobProcesses(root: string, ref: string | undefined, id: string, pids: number[]): void {
   const dir = logDir(root, ref);
@@ -228,9 +235,9 @@ function locatedJobs(root: string): LocatedJob[] {
       try {
         const job = JSON.parse(readFileSync(join(dir, name), 'utf8')) as Job;
         if (job.id !== name.slice(0, -5)) continue;
-        if ((job.state === 'running' || job.state === 'queued') && job.pid && !sameProcess(job.pid, job.processStarted) && !(job.childPids ?? []).some(pid => sameGroup(pid, job.childStarted?.[pid]))) {
+        if ((job.state === 'running' || job.state === 'queued') && job.pid && !exactProcess(job.pid, job.processStarted) && !(job.childPids ?? []).some(pid => sameGroup(pid, job.childStarted?.[pid]))) {
           const current = updateJob(root, dir, job.id, current => {
-            if ((current.state === 'running' || current.state === 'queued') && current.pid && !sameProcess(current.pid, current.processStarted) && !(current.childPids ?? []).some(pid => sameGroup(pid, current.childStarted?.[pid]))) {
+            if ((current.state === 'running' || current.state === 'queued') && current.pid && !exactProcess(current.pid, current.processStarted) && !(current.childPids ?? []).some(pid => sameGroup(pid, current.childStarted?.[pid]))) {
               current.state = current.cancelRequested ? 'cancelled' : current.completed && current.exitCode === 0 ? 'succeeded' : 'failed'; current.updatedAt = new Date().toISOString();
             }
           });
@@ -250,6 +257,33 @@ export function jobLog(root: string, id: string): string {
   try { if (lstatSync(path).isSymbolicLink()) throw new UserError('Unsafe job log'); return readFileSync(path, 'utf8'); }
   catch (e) { if ((e as NodeJS.ErrnoException).code === 'ENOENT') return ''; throw e; }
 }
+/** Return complete log lines from at most the final 64 KiB. */
+export function jobLogTail(root: string, id: string): string[] {
+  const { dir } = findLocatedJob(root, id), path = join(dir, `${id}.log`);
+  let fd: number;
+  try {
+    if (lstatSync(path).isSymbolicLink()) throw new UserError('Unsafe job log');
+    fd = openSync(path, 'r');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    throw error;
+  }
+  try {
+    const size = fstatSync(fd).size, start = Math.max(0, size - 65536);
+    const buffer = Buffer.alloc(size - start);
+    const length = readSync(fd, buffer, 0, buffer.length, start);
+    let text = buffer.toString('utf8', start > 0 ? 1 : 0, length);
+    if (start > 0 && buffer[0] !== 10) {
+      const newline = text.indexOf('\n');
+      if (newline < 0) return [];
+      text = text.slice(newline + 1);
+    }
+    if (!text) return [];
+    const lines = text.split('\n');
+    if (lines.at(-1) === '') lines.pop();
+    return lines;
+  } finally { closeSync(fd); }
+}
 export function cancelJob(root: string, id: string): Job {
   const { dir } = findLocatedJob(root, id);
   const current = updateJob(root, dir, id, current => {
@@ -257,7 +291,7 @@ export function cancelJob(root: string, id: string): Job {
     current.cancelRequested = true; current.updatedAt = new Date().toISOString();
   });
   const signal = (pid: number, group: boolean, started?: string) => {
-    if (!(group ? sameGroup(pid, started) : sameProcess(pid, started))) return;
+    if (!(group ? sameGroup(pid, started) : exactProcess(pid, started))) return;
     try { process.kill(group ? -pid : pid, 'SIGTERM'); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e; }
   };
   signal(current.pid!, Boolean(current.processGroup), current.processStarted);

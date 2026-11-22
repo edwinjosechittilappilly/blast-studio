@@ -30,8 +30,17 @@ export function listExports(config: StudioConfig, ref: CampaignRef | string): { 
   }).sort((a, b) => b.time.localeCompare(a.time) || b.collision - a.collision).map(({ collision: _collision, ...entry }) => entry);
 }
 function lastUpdated(path: string): number {
-  const stat = lstatSync(path);
-  return stat.isDirectory() ? readdirSync(path).reduce((latest, name) => Math.max(latest, lastUpdated(join(path, name))), stat.mtimeMs) : stat.mtimeMs;
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isDirectory()) return stat.mtimeMs;
+    return readdirSync(path, { withFileTypes: true }).reduce((latest, entry) => {
+      if ((entry.name === 'logs' && entry.isDirectory()) || entry.name.endsWith('.lock') || entry.name.endsWith('.tmp')) return latest;
+      return Math.max(latest, lastUpdated(join(path, entry.name)));
+    }, stat.birthtimeMs);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    throw error;
+  }
 }
 export function projectDetails(config: StudioConfig, slug: string) {
   const dir = campaignDir(config, slug);

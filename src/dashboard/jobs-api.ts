@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { StudioConfig } from '../types.ts';
 import { UserError } from '../types.ts';
-import { buildOperation, operations } from '../jobs/registry.ts';
+import { buildOperation, operationRequiresTTY, operations } from '../jobs/registry.ts';
 import { cancelJob, findJob, JobConflict, JobNotFound, JobNotRunning, jobLog, listJobs, startJob } from '../jobs/runner.ts';
 import { saveSecret } from '../jobs/secrets.ts';
 
@@ -27,7 +27,9 @@ export async function handleJobsApi(req: IncomingMessage, res: ServerResponse, o
   if (req.method !== 'GET' && (req.headers.origin !== `http://${host}` || req.headers['x-requested-with'] !== 'bstudio')) { send(res, 403, { error: 'Invalid origin or request header' }); return true; }
   try {
     const url = new URL(req.url ?? '/', `http://${host}`);
-    if (raw === '/api/operations' && req.method === 'GET') { send(res, 200, operations); return true; }
+    if (raw === '/api/operations' && req.method === 'GET') {
+      send(res, 200, Object.fromEntries(Object.entries(operations).map(([name, operation]) => [name, { ...operation, requiresTTY: operationRequiresTTY(name, operation, options.config.images.provider) }]))); return true;
+    }
     if (raw === '/api/jobs' && req.method === 'GET') {
       const campaign = url.searchParams.get('campaign');
       send(res, 200, listJobs(options.config.root).filter(job => !campaign || job.campaign === campaign)); return true;
@@ -52,7 +54,7 @@ export async function handleJobsApi(req: IncomingMessage, res: ServerResponse, o
       const tail = url.searchParams.get('tail');
       if (tail !== null && (!/^\d+$/.test(tail) || Number(tail) > 10000)) throw new UserError('Invalid tail');
       const log = jobLog(options.config.root, match[1]);
-      send(res, 200, { log: tail === null ? log : Number(tail) === 0 ? '' : log.split('\n').slice(-Number(tail)).join('\n') }); return true;
+      send(res, 200, { log: tail === null ? log : Number(tail) === 0 ? '' : log.replace(/\n$/, '').split('\n').slice(-Number(tail)).join('\n') }); return true;
     }
     if (match && req.method === 'POST' && match[2] === 'cancel') { send(res, 200, cancelJob(options.config.root, match[1])); return true; }
     send(res, 404, { error: 'Not found' }); return true;

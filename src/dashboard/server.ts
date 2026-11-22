@@ -11,7 +11,7 @@ import { monthToDate, projectTotal, providerTotals } from '../budget/ledger.ts';
 import type { IO } from '../io.ts';
 import { handleJobsApi } from './jobs-api.ts';
 import { buildOperation } from '../jobs/registry.ts';
-import { campaignLockStatus, JobConflict, jobLog, listJobs, startJob } from '../jobs/runner.ts';
+import { campaignLockStatus, JobConflict, jobLogTail, listJobs, startJob } from '../jobs/runner.ts';
 
 const staticDir = join(dirname(fileURLToPath(import.meta.url)), 'static');
 const buildDir = join(dirname(fileURLToPath(import.meta.url)), 'build');
@@ -102,8 +102,8 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
         if (req.method === 'GET' && action === 'status') {
           const job = listJobs(config.root).find(item => item.campaign === slug && item.operation === 'revise');
           const lock = campaignLockStatus(config.root, slug);
-          const lines = job ? jobLog(config.root, job.id).split('\n').slice(-100) : [];
-          send(res, 200, { running: lock === 'running', staleLock: lock === 'stale', exitCode: job?.exitCode ?? null, lines }); return;
+          const lines = job ? jobLogTail(config.root, job.id) : [];
+          send(res, 200, { running: lock === 'running', staleLock: false, exitCode: job?.exitCode ?? null, lines }); return;
         }
         if (req.method === 'POST' && (action === 'feedback' || action === 'revise')) {
           if (req.headers['x-requested-with'] !== 'bstudio') { send(res, 403, { error: 'Missing request header' }); return; }

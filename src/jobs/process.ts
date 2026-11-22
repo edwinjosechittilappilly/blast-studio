@@ -29,3 +29,8 @@ export function sameProcess(pid: number, started?: string): boolean {
   if (current.startsWith('linux:') && /^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s/.test(started)) return true;
   return current === started;
 }
+
+/** Process control requires a recorded identity that can still be verified exactly. */
+export function exactProcess(pid: number, started?: string): boolean {
+  return Boolean(started) && processAlive(pid) && processStarted(pid) === started;
+}

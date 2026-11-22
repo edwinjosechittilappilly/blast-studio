@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, cpSync, mkdirSync, readFileSync, statSync, symlinkSync, unlinkSync, watch, writeFileSync } from 'node:fs';
+import fs, { chmodSync, cpSync, mkdirSync, readFileSync, statSync, symlinkSync, unlinkSync, utimesSync, watch, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { request } from 'node:http';
@@ -51,6 +52,48 @@ test('library and status derive live project data', async () => {
   const verbose = fakeIO({ cwd: root, env: io.env });
   await status(['acme/launch', '--verbose'], verbose);
   assert.ok(unverified.every(field => verbose.stdout.includes(`  ${field}`)));
+});
+test('library updatedAt ignores transient files and log directories', () => {
+  const { root, io } = fixture(), config = loadConfig(io);
+  const dir = join(root, 'projects/acme/campaigns/launch');
+  const contentTime = new Date('2040-01-01T00:00:00.000Z');
+  const transientTime = new Date('2050-01-01T00:00:00.000Z');
+  const post = join(dir, 'posts/linkedin.md');
+  utimesSync(post, contentTime, contentTime);
+  mkdirSync(join(dir, 'logs'));
+  for (const name of ['logs/output.log', '.bstudio-job.lock', '.feedback-random.lock', '.feedback-random.tmp']) {
+    const file = join(dir, name);
+    writeFileSync(file, 'transient');
+    utimesSync(file, transientTime, transientTime);
+  }
+  utimesSync(join(dir, 'logs'), transientTime, transientTime);
+  utimesSync(dir, transientTime, transientTime);
+  assert.equal(loadLibrary(config)[0].updatedAt, contentTime.toISOString());
+  const later = new Date('2041-01-01T00:00:00.000Z');
+  utimesSync(post, later, later);
+  assert.equal(loadLibrary(config)[0].updatedAt, later.toISOString());
+});
+
+test('library updatedAt tolerates entries removed during traversal', t => {
+  const { root, io } = fixture(), config = loadConfig(io);
+  const missing = join(root, 'projects/acme/campaigns/launch/vanishing');
+  writeFileSync(missing, 'temporary');
+  const original = fs.lstatSync;
+  t.mock.method(fs, 'lstatSync', ((path: fs.PathLike) => {
+    if (path === missing) {
+      const error = new Error('entry disappeared') as NodeJS.ErrnoException;
+      error.code = 'ENOENT';
+      throw error;
+    }
+    return original(path);
+  }) as typeof fs.lstatSync);
+  syncBuiltinESMExports();
+  try {
+    assert.equal(loadLibrary(config)[0].slug, 'acme/launch');
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  }
 });
 test('dashboard authenticates, contains media and validates settings', async t => {
   const { root, io } = fixture(); const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
@@ -204,7 +247,7 @@ test('dashboard rejects weak or malformed persistent keys', async () => {
   await assert.rejects(startDashboard(io, { port: 0 }), /Invalid dashboard signing key/);
 });
 
-test('dashboard reports revisions and stale locks after restart', async t => {
+test('dashboard reports active locks and permits recovery of dead owners after restart', async t => {
   const { root, io } = fixture(), lock = join(root, 'projects/acme/campaigns/launch/.bstudio-job.lock');
   writeFileSync(lock, JSON.stringify({ id: 'active', pid: process.pid }));
   const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
@@ -214,7 +257,7 @@ test('dashboard reports revisions and stale locks after restart', async t => {
   assert.equal(active.running, true); assert.equal(active.staleLock, false);
   writeFileSync(lock, JSON.stringify({ id: 'stale', pid: 2147483647 }));
   const stale = await (await fetch(url, { headers: { cookie } })).json();
-  assert.equal(stale.running, false); assert.equal(stale.staleLock, true);
+  assert.equal(stale.running, false); assert.equal(stale.staleLock, false); assert.deepEqual(stale.lines, []);
   unlinkSync(lock);
 });
 
@@ -265,6 +308,9 @@ test('revision runs are tracked by full campaign address', async t => {
     const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
     const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
     const headers = { cookie }, base = `http://127.0.0.1:${started.port}/api/projects`;
+    assert.deepEqual((await (await fetch(`${base}/acme%2Flaunch/status`, { headers })).json()).lines, []);
+    first.log('one'); first.log('two');
+    assert.deepEqual((await (await fetch(`${base}/acme%2Flaunch/status`, { headers })).json()).lines, ['one', 'two']);
     for (const project of ['acme', 'other']) {
       assert.equal((await (await fetch(`${base}/${project}%2Flaunch/status`, { headers })).json()).running, true);
     }

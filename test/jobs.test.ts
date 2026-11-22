@@ -7,7 +7,8 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildOperation, campaignRef } from '../src/jobs/registry.ts';
-import { acquireCampaignLock, campaignDirectory, cancelJob, findJob, jobLog, JobConflict, JobNotFound, JobNotRunning, listJobs, processGroupRunning, startCliJob } from '../src/jobs/runner.ts';
+import { acquireCampaignLock, campaignDirectory, campaignLockStatus, cancelJob, findJob, finishSpawnedJob, jobLog, jobLogTail, JobConflict, JobNotFound, JobNotRunning, listJobs, processGroupRunning, startCliJob } from '../src/jobs/runner.ts';
+import { processStarted } from '../src/jobs/process.ts';
 import { saveSecret } from '../src/jobs/secrets.ts';
 import { main, realIO } from '../src/cli.ts';
 import { run as jobsCommand } from '../src/commands/jobs.ts';
@@ -247,6 +248,88 @@ test('a finished global job is recovered without trusting a reused PID', () => {
     writeFileSync(join(dir, `${id}.json`), JSON.stringify({ id, operation: 'doctor', state: 'running', createdAt: '2026-01-01', updatedAt: '2026-01-01', pid: process.pid, processStarted: 'old process', completed: true, exitCode: 0, command: 'bstudio doctor' }));
     assert.equal(listJobs(root)[0].state, 'succeeded');
     assert.throws(() => cancelJob(root, id), /not running/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('unverified child identities neither keep jobs running nor receive cancellation signals', { timeout: 10000 }, async () => {
+  const root = tempStudio(), dir = join(root, 'logs/jobs');
+  const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: process.platform !== 'win32', stdio: 'ignore' });
+  const owners = [0, 1].map(() => spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: process.platform !== 'win32', stdio: 'ignore' }));
+  const ownerExits = owners.map(owner => once(owner, 'exit')), unrelatedExit = once(unrelated, 'exit');
+  try {
+    assert.ok(unrelated.pid);
+    mkdirSync(dir, { recursive: true });
+    const base = { operation: 'doctor', state: 'running', createdAt: '2026-01-01', updatedAt: '2026-01-01', command: 'bstudio doctor', childPids: [unrelated.pid] };
+    for (const [index, childStarted] of [undefined, { [unrelated.pid]: 'Mon Jan  1 00:00:00 2001' }].entries()) {
+      const id = `a000000${index}-0000-4000-8000-000000000000`;
+      writeFileSync(join(dir, `${id}.json`), JSON.stringify({ ...base, id, pid: process.pid, processStarted: 'different process', childStarted, completed: true, exitCode: 0 }));
+      assert.equal(findJob(root, id).state, 'succeeded');
+      assert.throws(() => cancelJob(root, id), JobNotRunning);
+    }
+    for (const [index, started] of [undefined, 'Mon Jan  1 00:00:00 2001'].entries()) {
+      const id = `b000000${index}-0000-4000-8000-000000000000`;
+      writeFileSync(join(dir, `${id}.json`), JSON.stringify({ ...base, id, pid: unrelated.pid, processStarted: started, childPids: [], completed: true, exitCode: 0 }));
+      assert.equal(findJob(root, id).state, 'succeeded');
+      assert.throws(() => cancelJob(root, id), JobNotRunning);
+    }
+    for (const [index, owner] of owners.entries()) {
+      assert.ok(owner.pid);
+      const started = processStarted(owner.pid); assert.ok(started);
+      const id = `a000000${index + 2}-0000-4000-8000-000000000000`;
+      const childStarted = index ? { [unrelated.pid]: 'Mon Jan  1 00:00:00 2001' } : undefined;
+      writeFileSync(join(dir, `${id}.json`), JSON.stringify({ ...base, id, pid: owner.pid, processStarted: started, childStarted }));
+      cancelJob(root, id);
+      await ownerExits[index];
+    }
+    assert.doesNotThrow(() => process.kill(unrelated.pid!, 0));
+  } finally {
+    for (const owner of owners) if (owner.exitCode === null && owner.signalCode === null) owner.kill('SIGKILL');
+    if (unrelated.exitCode === null && unrelated.signalCode === null) unrelated.kill('SIGKILL');
+    await Promise.all([...ownerExits, unrelatedExit]);
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('unverifiable live lock owners remain protected', () => {
+  const root = tempStudio({ 'projects/acme/project.yml': 'name: acme\ncreatedAt: now\n', 'projects/acme/campaigns/demo/brief.md': '# demo' });
+  try {
+    const path = join(root, 'projects/acme/campaigns/demo/.bstudio-job.lock');
+    writeFileSync(path, JSON.stringify({ id: 'old', pid: process.pid }));
+    assert.equal(campaignLockStatus(root, 'acme/demo'), 'running');
+    assert.throws(() => acquireCampaignLock(root, 'acme/demo'), JobConflict);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('spawned job completion releases only its own campaign lock', () => {
+  const root = tempStudio({ 'projects/acme/project.yml': 'name: acme\ncreatedAt: now\n', 'projects/acme/campaigns/demo/brief.md': '# demo' });
+  try {
+    const job = startCliJob(root, 'acme/demo', 'plan');
+    finishSpawnedJob(root, 'acme/demo', job.id, 0);
+    const next = acquireCampaignLock(root, 'acme/demo');
+    finishSpawnedJob(root, 'acme/demo', job.id, 0);
+    assert.throws(() => acquireCampaignLock(root, 'acme/demo'), JobConflict);
+    next(); job.finish(0);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('job log tail reads complete lines from the last 64 KiB', () => {
+  const root = tempStudio({ 'projects/acme/project.yml': 'name: acme\ncreatedAt: now\n', 'projects/acme/campaigns/demo/brief.md': '# demo' });
+  try {
+    const job = startCliJob(root, 'acme/demo', 'plan');
+    const path = join(root, 'projects/acme/campaigns/demo/logs/jobs', `${job.id}.log`);
+    assert.deepEqual(jobLogTail(root, job.id), []);
+    writeFileSync(path, 'first\nsecond\n');
+    assert.deepEqual(jobLogTail(root, job.id), ['first', 'second']);
+    writeFileSync(path, `${'x'.repeat(65536)}\nlast\n`);
+    assert.deepEqual(jobLogTail(root, job.id), ['last']);
+    writeFileSync(path, `${'x'.repeat(8)}\n${'a'.repeat(65534)}\n`);
+    assert.deepEqual(jobLogTail(root, job.id), ['a'.repeat(65534)]);
+    writeFileSync(path, 'x'.repeat(65537));
+    assert.deepEqual(jobLogTail(root, job.id), []);
+    rmSync(path);
+    symlinkSync(join(root, 'studio.yml'), path);
+    assert.throws(() => jobLogTail(root, job.id), /Unsafe job log/);
+    job.finish(0);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

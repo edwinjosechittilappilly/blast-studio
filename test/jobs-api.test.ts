@@ -32,9 +32,18 @@ test('jobs API enforces host, session, origin, header and argument schemas', asy
   try {
     assert.equal((await call('GET', '/api/jobs', { host: 'evil.test' })).status, 421);
     assert.equal((await call('GET', '/api/jobs')).status, 401);
+    config.images.provider = 'none';
     const operations = await call('GET', '/api/operations', { cookie: 'bs=valid' });
     assert.equal(operations.status, 200);
-    assert.ok(Object.hasOwn(JSON.parse(operations.body), 'plan'));
+    const metadata = JSON.parse(operations.body);
+    assert.ok(Object.hasOwn(metadata, 'plan'));
+    for (const name of ['new', 'brief', 'plan', 'make', 'render', 'review', 'revise', 'accept', 'confirm', 'export', 'mark', 'status', 'history', 'restore', 'feedback list', 'feedback add', 'feedback rm']) {
+      assert.equal(metadata[name].fields.campaign.kind, 'campaign', name);
+    }
+    assert.equal(metadata['campaign rename'].fields.source.kind, 'campaign');
+    assert.equal(metadata['campaign rename'].fields.destination.kind, 'campaign');
+    assert.equal(metadata.accept.fields.platform.kind, 'id');
+    for (const name of ['new', 'render', 'revise', 'plan']) assert.equal(metadata[name].requiresTTY, false, name);
     assert.equal((await call('GET', '/api/jobs', { cookie: 'bs=valid' })).status, 200);
     const headers = { cookie: 'bs=valid', origin: `http://${host}`, 'x-requested-with': 'bstudio' };
     assert.equal((await call('POST', '/api/jobs', { ...headers, origin: 'http://evil.test' }, '{}')).status, 403);
@@ -46,6 +55,13 @@ test('jobs API enforces host, session, origin, header and argument schemas', asy
     assert.equal(secret.status, 400); assert.doesNotMatch(secret.body, /sensitive-value/);
     assert.equal((await call('GET', '/api/jobs/a0000000-0000-4000-8000-000000000000', headers)).status, 404);
     config.images.provider = 'omp';
+    const ompMetadata = JSON.parse((await call('GET', '/api/operations', { cookie: 'bs=valid' })).body);
+    for (const name of ['new', 'render', 'revise']) {
+      assert.equal(ompMetadata[name].requiresTTY, true, name);
+      const response = await call('POST', '/api/jobs', headers, JSON.stringify({ op: name, campaign: 'demo/launch', args: {} }));
+      assert.equal(response.status, 422, name);
+    }
+    assert.equal(ompMetadata.plan.requiresTTY, false);
     const tty = await call('POST', '/api/jobs', headers, JSON.stringify({ op: 'render', campaign: 'demo/launch', args: {} }));
     assert.equal(tty.status, 422); assert.equal(JSON.parse(tty.body).command, 'bstudio render demo/launch');
     config.images.provider = 'none';
@@ -67,6 +83,22 @@ test('jobs API enforces host, session, origin, header and argument schemas', asy
     assert.equal((await call('POST', `/api/jobs/${id}/cancel`, headers)).status, 200);
     if (findJob(root, id).state === 'cancelled') { watcher.close(); finished.resolve(); }
     await finished.promise;
+    const logPath = join(root, 'projects/demo/campaigns/launch/logs/jobs', `${id}.log`);
+    writeFileSync(logPath, 'first\nsecond\nthird\n');
+    const readLog = async (query = '') => JSON.parse((await call('GET', `/api/jobs/${id}/log${query}`, headers)).body).log;
+    assert.equal(await readLog(), 'first\nsecond\nthird\n');
+    assert.equal(await readLog('?tail=0'), '');
+    assert.equal(await readLog('?tail=1'), 'third');
+    assert.equal(await readLog('?tail=2'), 'second\nthird');
+    assert.equal(await readLog('?tail=10'), 'first\nsecond\nthird');
+    writeFileSync(logPath, 'first\nsecond');
+    assert.equal(await readLog('?tail=1'), 'second');
+    writeFileSync(logPath, 'first\n\n');
+    assert.equal(await readLog('?tail=1'), '');
+    assert.equal(await readLog('?tail=2'), 'first\n');
+    writeFileSync(logPath, '');
+    assert.equal(await readLog('?tail=1'), '');
+    assert.equal((await call('GET', `/api/jobs/${id}/log?tail=-1`, headers)).status, 400);
   } finally { await new Promise<void>(resolve => server.close(() => resolve())); rmSync(root, { recursive: true, force: true }); }
 });
 
