@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -9,7 +9,8 @@ import { run as exportCommand } from '../src/commands/export.ts';
 import { run as mark } from '../src/commands/mark.ts';
 import { run as accept, confirm } from '../src/commands/accept.ts';
 import { run as library } from '../src/commands/library.ts';
-import { loadLibrary } from '../src/library.ts';
+import { run as status } from '../src/commands/status.ts';
+import { listExports, loadLibrary, projectDetails } from '../src/library.ts';
 import { loadConfig } from '../src/config.ts';
 import { mediaContentHash, reviewHash } from '../src/review-hash.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
@@ -187,4 +188,149 @@ test('library enumerates and searches composite campaign identities', async () =
   assert.deepEqual(loadLibrary(loadConfig(f.io), 'OTHER/DEMO').map(entry => entry.slug), ['other/demo']);
   await library(['search', 'acme'], f.io);
   assert.match(f.io.text(), /acme\tdemo/);
+});
+
+test('local zip exports retain history and update library status', async () => {
+  const f = fixture(), config = loadConfig(f.io);
+  assert.equal(projectDetails(config, 'acme/demo').exported, false);
+  await exportCommand(['acme/demo', '--list'], f.io);
+  assert.match(f.io.stdout.at(-1)!, /No campaign exports/);
+  await exportCommand(['acme/demo'], f.io);
+  assert.match(f.io.stdout.join('\n'), /Import later.*--mb <path>/);
+  assert.equal(projectDetails(config, 'acme/demo').exported, true);
+  const stable = join(f.project, 'export/acme--demo.campaign.zip');
+  const first = readFileSync(stable);
+  await exportCommand(['acme/demo'], f.io);
+  const exports = listExports(config, 'acme/demo');
+  assert.equal(exports.length, 2);
+  assert.notEqual(exports[0].name, exports[1].name);
+  for (const entry of exports) {
+    assert.equal(entry.size, first.length);
+    assert.deepEqual(readFileSync(join(f.project, 'export', entry.name)), first);
+    assert.ok(Number.isFinite(Date.parse(entry.time)));
+  }
+  assert.deepEqual(readFileSync(stable), first);
+  await exportCommand(['acme/demo', '--list'], f.io);
+  assert.match(f.io.stdout.join('\n'), new RegExp(exports[0].name.replaceAll('.', '\\.')));
+});
+
+test('project Market Blaster target is project-relative, expands home and yields to explicit target', async () => {
+  const f = fixture(), target = join(f.root, 'projects/acme/target'), override = join(f.root, 'override');
+  mkdirSync(target); mkdirSync(override);
+  const metadata = join(f.root, 'projects/acme/project.yml');
+  writeFileSync(metadata, `name: Acme\ncreatedAt: '2026-01-01'\nmarketBlaster:\n  project: target\n`);
+  const calls: string[] = [];
+  f.io.run = async (_cmd, _args, opts) => { calls.push(opts!.cwd!); return ''; };
+  await exportCommand(['acme/demo'], f.io);
+  writeFileSync(metadata, `name: Acme\ncreatedAt: '2026-01-01'\nmarketBlaster:\n  project: ~/override\n`);
+  f.io.env.HOME = f.root;
+  await exportCommand(['acme/demo'], f.io);
+  writeFileSync(metadata, `name: Acme\ncreatedAt: '2026-01-01'\nmarketBlaster:\n  project:\n`);
+  await exportCommand(['acme/demo', '--mb', override], f.io);
+  assert.deepEqual(calls, [target, target, override, override, override, override]);
+  await assert.rejects(exportCommand(['acme/demo', '--mb', join(f.root, 'missing')], f.io), /directory not found/);
+});
+
+test('approved draft refusal suggests force without importing twice', async () => {
+  const f = fixture();
+  let calls = 0;
+  f.io.run = async () => { calls++; throw new Error('cannot replace approved drafts'); };
+  await assert.rejects(exportCommand(['acme/demo', '--mb', f.root], f.io), /approved drafts[\s\S]*--force/);
+  assert.equal(calls, 1);
+});
+
+test('library summarizes recent top-level changes, pending feedback and marked platforms', () => {
+  const f = fixture();
+  writeFileSync(join(f.project, 'feedback.yml'), [
+    '- { id: one, target: {}, note: pending, at: "2026-01-01", status: pending }',
+    '- { id: two, target: {}, note: done, at: "2026-01-01", status: applied }',
+    '- { id: three, target: {}, note: no, at: "2026-01-01", status: rejected }',
+  ].join('\n'));
+  writeFileSync(join(f.project, 'published.json'), JSON.stringify({ instagram: { url: 'https://instagram.com/p/1' } }));
+  const latest = new Date('2030-01-01T00:00:00.000Z');
+  utimesSync(join(f.project, 'feedback.yml'), latest, latest);
+  const entry = loadLibrary(loadConfig(f.io))[0];
+  assert.equal(entry.updatedAt, latest.toISOString());
+  assert.equal(entry.pendingFeedback, 1);
+  assert.deepEqual(Object.keys(entry.published), ['instagram']);
+});
+
+test('status reports export time, publication marks and the next export action', async () => {
+  const f = fixture();
+  writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.text(), /exported: not exported/);
+  assert.match(f.io.text(), /published: none/);
+  assert.match(f.io.text(), /next: export: bstudio export acme\/demo/);
+  await exportCommand(['acme/demo'], f.io);
+  const time = new Date('2026-06-01T12:00:00.000Z');
+  utimesSync(join(f.project, 'export/acme--demo.campaign.zip'), time, time);
+  writeFileSync(join(f.project, 'published.json'), JSON.stringify({ instagram: { url: 'https://instagram.com/p/1' } }));
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.text(), /exported: 2026-06-01T12:00:00.000Z/);
+  assert.match(f.io.text(), /published: instagram/);
+});
+
+test('directory exports retain snapshots including handoffs and report exported', async () => {
+  const f = fixture('instagram'), config = loadConfig(f.io);
+  await exportCommand(['acme/demo', '--dir'], f.io);
+  await exportCommand(['acme/demo', '--dir'], f.io);
+  const entries = listExports(config, 'acme/demo');
+  assert.equal(entries.length, 2);
+  assert.ok(entries.every(entry => entry.kind === 'directory' && entry.size > 0));
+  for (const entry of entries) {
+    assert.ok(existsSync(join(f.project, 'export', entry.name, 'manifest.json')));
+    assert.ok(existsSync(join(f.project, 'export', entry.name, 'handoff/instagram/post.md')));
+  }
+  assert.equal(projectDetails(config, 'acme/demo').exported, true);
+  await exportCommand(['acme/demo', '--list'], f.io);
+  assert.match(f.io.text(), /directory/);
+});
+
+test('status suggests re-export for newer posts and marking unpublished manual destinations', async () => {
+  const f = fixture('instagram');
+  writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+  await exportCommand(['acme/demo'], f.io);
+  const stable = join(f.project, 'export/acme--demo.campaign.zip');
+  const future = new Date('2030-01-01T00:00:00Z');
+  utimesSync(stable, future, future);
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.text(), /record publication: bstudio mark acme\/demo instagram --url <url>/);
+  utimesSync(join(f.project, 'posts/instagram.md'), new Date('2031-01-01'), new Date('2031-01-01'));
+  const before = f.io.stdout.length;
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.stdout.slice(before).join('\n'), /next: export: bstudio export acme\/demo/);
+});
+
+test('library updatedAt includes post, review and asset metadata edits', () => {
+  const f = fixture(), config = loadConfig(f.io);
+  for (const [file, year] of [['posts/bluesky.md', 2031], ['reviews/bluesky.json', 2032], ['assets/a/asset.yml', 2033]] as const) {
+    const time = new Date(`${year}-01-01T00:00:00Z`);
+    utimesSync(join(f.project, file), time, time);
+    assert.equal(projectDetails(config, 'acme/demo').updatedAt, time.toISOString());
+  }
+});
+
+test('export history orders collision numbers and uses timestamps in names', () => {
+  const f = fixture(), root = join(f.project, 'export');
+  for (const suffix of ['', '-1', '-10']) {
+    const dir = join(root, `2026-01-02T03-04-05-006Z${suffix}`);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'acme--demo.campaign.zip'), suffix);
+    utimesSync(join(dir, 'acme--demo.campaign.zip'), new Date('2040-01-01'), new Date('2040-01-01'));
+  }
+  const entries = listExports(loadConfig(f.io), 'acme/demo');
+  assert.deepEqual(entries.map(entry => entry.name.split('/')[0]), ['2026-01-02T03-04-05-006Z-10', '2026-01-02T03-04-05-006Z-1', '2026-01-02T03-04-05-006Z']);
+  assert.ok(entries.every(entry => entry.time === '2026-01-02T03:04:05.006Z'));
+});
+
+test('retained history counts as exported when the stable zip is removed', async () => {
+  const f = fixture(), config = loadConfig(f.io);
+  writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+  await exportCommand(['acme/demo'], f.io);
+  const history = listExports(config, 'acme/demo')[0];
+  unlinkSync(join(f.project, 'export/acme--demo.campaign.zip'));
+  assert.equal(projectDetails(config, 'acme/demo').exported, true);
+  await status(['acme/demo'], f.io);
+  assert.ok(f.io.stdout.includes(`  exported: ${history.time}`));
 });

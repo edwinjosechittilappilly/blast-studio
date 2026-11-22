@@ -1,5 +1,5 @@
-import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, linkSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Ajv2020 } from 'ajv/dist/2020.js';
@@ -20,6 +20,15 @@ ajv.addFormat('date-time', { type: 'string', validate: (s: string) => Number.isF
 const validate = ajv.compile(schema);
 type Prepared = { post: Post; review: Review; hash: string; pack: PlatformPack };
 type ExtraMedia = Post['media'][number] & { cover?: boolean; lang?: string; captions?: string };
+
+export function reserveExportHistory(dir: string): string {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  for (let collision = 0; ; collision++) {
+    const path = join(dir, `${timestamp}${collision ? `-${collision}` : ''}`);
+    try { mkdirSync(path); return path; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  }
+}
 
 export function writeCampaignZip(project: string, identity: CampaignRef, prepared: Prepared[], sourceFile: (project: string, path: string) => string): string {
   const slug = compositeSlug(identity);
@@ -83,5 +92,19 @@ export function writeCampaignZip(project: string, identity: CampaignRef, prepare
   const sorted = Object.fromEntries(Object.entries(files).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));
   const zip = zipSync(sorted, { level: 0, mtime: new Date(1980, 0, 1) });
   const dir = join(project, 'export'); mkdirSync(dir, { recursive: true });
-  const path = join(dir, `${slug}.campaign.zip`); writeFileSync(path, zip); return path;
+  const temp = join(dir, `.${slug}-${randomUUID()}.tmp`);
+  let history: string | undefined;
+  try {
+    writeFileSync(temp, zip, { flag: 'wx' });
+    history = reserveExportHistory(dir);
+    linkSync(temp, join(history, `${slug}.campaign.zip`));
+    const path = join(dir, `${slug}.campaign.zip`);
+    renameSync(temp, path);
+    return path;
+  } catch (error) {
+    if (history) rmSync(history, { recursive: true, force: true });
+    throw error;
+  } finally {
+    if (existsSync(temp)) unlinkSync(temp);
+  }
 }

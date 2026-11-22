@@ -42,7 +42,7 @@ Rename a project with `bstudio project rename <project> <new-project>`, or renam
 | `providers.allowUpload` | `false` | Reference-image upload consent flag. Reference-image uploads are not supported by the current adapter even when enabled; this flag does not prevent text prompts being sent to selected providers. |
 | `grounding.waive` | `[]` | Strings whose numeric metrics are waived from the fabricated-metrics grounding check. |
 | `marketBlaster.command` | `[mblast]` | Market Blaster executable and arguments. |
-| `marketBlaster.project` | unset | Default Market Blaster project directory for import. |
+| `marketBlaster.project` | unset | Default Market Blaster project directory for import, resolved relative to the current working directory. A project's `project.yml` may override this setting; its relative path is resolved from that project directory. `--mb` overrides both. `~` expands to the home directory. |
 
 Commands must be nonempty arrays of nonempty strings, except that `reviewer.command` also accepts `null`. Numeric settings must be finite and non-negative, except `maxUsdPerRun`, which must be positive when specified; the review threshold cannot exceed 100. `agent.passEnv` entries must be valid environment variable names. Brand fields other than `name` are populated by the generated configuration, not supplied as load-time defaults if removed.
 
