@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadConfig, campaignDir } from '../config.ts';
 import { compositeSlug, parseCampaignRef } from '../campaigns.ts';
-import { loadLibrary, latestSources } from '../library.ts';
+import { listExports, loadLibrary, latestSources } from '../library.ts';
 import { monthToDate } from '../budget/ledger.ts';
 import type { Command } from '../io.ts';
 import { UserError } from '../types.ts';
@@ -27,7 +27,7 @@ export const run: Command = async (args, io) => {
     io.out(`  ${campaign}`);
     const exportDir = join(campaignDir(config, project.slug), 'export');
     const exportFiles = [join(exportDir, 'manifest.json'), join(exportDir, `${compositeSlug(parseCampaignRef(project.slug))}.campaign.zip`)].filter(existsSync);
-    const exportedAt = exportFiles.length ? new Date(Math.max(...exportFiles.map(file => statSync(file).mtimeMs))).toISOString() : null;
+    const exportedAt = exportFiles.length ? new Date(Math.max(...exportFiles.map(file => statSync(file).mtimeMs))).toISOString() : listExports(config, project.slug)[0]?.time ?? null;
     const published = Object.keys(project.published);
     io.out(`  exported: ${exportedAt ?? 'not exported'}`);
     io.out(`  published: ${published.length ? published.join(', ') : 'none'}`);
@@ -45,7 +45,7 @@ export const run: Command = async (args, io) => {
     });
     const unreviewed = project.posts.some(post => !project.reviews.some(review => review.platform === post.platform));
     const dir = campaignDir(config, project.slug);
-    const inputFiles = [...project.posts.map(post => join(dir, 'posts', `${post.platform}.md`)), ...project.reviews.map(review => join(dir, 'reviews', `${review.platform}.json`))];
+    const inputFiles = [...project.posts.map(post => join(dir, 'posts', `${post.platform}.md`)), ...project.reviews.map(review => join(dir, 'reviews', `${review.platform}.json`)), ...project.assets.map(asset => join(dir, 'assets', asset.id, 'asset.yml'))];
     const latestInput = Math.max(0, ...inputFiles.filter(existsSync).map(file => statSync(file).mtimeMs), ...project.reviews.map(review => Date.parse(review.at ?? '') || 0));
     const staleExport = !exportedAt || latestInput > Date.parse(exportedAt);
     const unmarked = project.posts.find(post => ['instagram', 'youtube-shorts', 'tiktok', 'dailydev'].includes(post.platform) && !published.includes(post.platform));

@@ -44,7 +44,7 @@ export function projectDetails(config: StudioConfig, slug: string) {
   const recentFiles = [...files(dir), ...files(join(dir, 'posts')), ...files(reviewsDir), ...dirs(join(dir, 'assets')).map(id => join(dir, 'assets', id, 'asset.yml')).filter(existsSync)];
   const updatedAt = new Date(recentFiles.reduce((latest, file) => Math.max(latest, statSync(file).mtimeMs), statSync(dir).mtimeMs)).toISOString();
   const pendingFeedback = loadFeedback(dir).filter(entry => entry.status === 'pending').length;
-  return { slug, created: statSync(dir).birthtime.toISOString(), updatedAt, pendingFeedback, inputs: existsSync(brief) ? readBrief(dir).map(s => s.title) : [], posts, reviews, assets, exported: existsSync(join(dir, 'export', 'manifest.json')) || existsSync(join(dir, 'export', `${compositeSlug(parseCampaignRef(slug))}.campaign.zip`)), published: existsSync(marksFile) ? JSON.parse(readFileSync(marksFile, 'utf8')) as Record<string, unknown> : {} };
+  return { slug, created: statSync(dir).birthtime.toISOString(), updatedAt, pendingFeedback, inputs: existsSync(brief) ? readBrief(dir).map(s => s.title) : [], posts, reviews, assets, exported: existsSync(join(dir, 'export', 'manifest.json')) || existsSync(join(dir, 'export', `${compositeSlug(parseCampaignRef(slug))}.campaign.zip`)) || listExports(config, slug).length > 0, published: existsSync(marksFile) ? JSON.parse(readFileSync(marksFile, 'utf8')) as Record<string, unknown> : {} };
 }
 let cachedPacks: Map<PlatformId, PlatformPack> | undefined;
 export function projectReview(config: StudioConfig, slug: string) {

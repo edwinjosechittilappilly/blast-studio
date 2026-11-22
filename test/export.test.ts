@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
@@ -322,4 +322,15 @@ test('export history orders collision numbers and uses timestamps in names', () 
   const entries = listExports(loadConfig(f.io), 'acme/demo');
   assert.deepEqual(entries.map(entry => entry.name.split('/')[0]), ['2026-01-02T03-04-05-006Z-10', '2026-01-02T03-04-05-006Z-1', '2026-01-02T03-04-05-006Z']);
   assert.ok(entries.every(entry => entry.time === '2026-01-02T03:04:05.006Z'));
+});
+
+test('retained history counts as exported when the stable zip is removed', async () => {
+  const f = fixture(), config = loadConfig(f.io);
+  writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+  await exportCommand(['acme/demo'], f.io);
+  const history = listExports(config, 'acme/demo')[0];
+  unlinkSync(join(f.project, 'export/acme--demo.campaign.zip'));
+  assert.equal(projectDetails(config, 'acme/demo').exported, true);
+  await status(['acme/demo'], f.io);
+  assert.ok(f.io.stdout.includes(`  exported: ${history.time}`));
 });
