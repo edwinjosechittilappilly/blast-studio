@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { request } from 'node:http';
 import { EventEmitter } from 'node:events';
 import type { spawn } from 'node:child_process';
+import { createHmac } from 'node:crypto';
 import { loadConfig } from '../src/config.ts';
 import { loadLibrary, latestSources } from '../src/library.ts';
 import { startDashboard } from '../src/dashboard/server.ts';
@@ -101,4 +102,16 @@ test('project review payload includes rubric, threshold and maker review', async
   assert.equal(result.threshold, 75);
   assert.ok(result.rubric.linkedin.some((criterion: { question: string }) => criterion.question));
   assert.equal(result.posts[0].selfReview.summary, 'Ready');
+});
+
+test('dashboard sessions survive restarts and reject tampering and expiration', async t => {
+  const { root, io } = fixture();
+  const first = await startDashboard(io, { port: 0 }); t.after(() => first.server.close());
+  const cookie = (await fetch(first.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const second = await startDashboard(io, { port: 0 }); t.after(() => second.server.close());
+  const url = `http://127.0.0.1:${second.port}/api/library`;
+  assert.equal((await fetch(url, { headers: { cookie } })).status, 200);
+  assert.equal((await fetch(url, { headers: { cookie: cookie.replace(/bs=./, 'bs=x') } })).status, 401);
+  const payload = `1.${'a'.repeat(32)}`, key = readFileSync(join(root, '.dashboard-key'), 'utf8'), signature = createHmac('sha256', key).update(payload).digest('hex');
+  assert.equal((await fetch(url, { headers: { cookie: `bs=${payload}.${signature}` } })).status, 401);
 });

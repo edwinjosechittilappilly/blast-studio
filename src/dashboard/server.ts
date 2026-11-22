@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, realpathSync, statSync, createReadStream, mkdirSync, openSync, closeSync, readSync, readdirSync, unlinkSync } from 'node:fs';
+import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { existsSync, readFileSync, writeFileSync, realpathSync, statSync, createReadStream, mkdirSync, openSync, closeSync, readSync, readdirSync, unlinkSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -30,6 +30,12 @@ function send(res: ServerResponse, status: number, value: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(value));
 }
+function unauthenticated(req: IncomingMessage, res: ServerResponse, error: string) {
+  if (req.method === 'GET' && (req.headers.accept ?? '').includes('text/html')) {
+    res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Session expired — Blast Studio</title><main><h1>Session expired</h1><p>Run <code>bstudio dashboard</code> again and open the new URL.</p></main></html>');
+  } else send(res, 401, { error });
+}
 function equal(a: string, b: string) { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); }
 async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
   let data = '';
@@ -56,7 +62,14 @@ function serveFile(req: IncomingMessage, res: ServerResponse, path: string, medi
 export async function startDashboard(io: IO, options: { port?: number; host?: string; spawnRevise?: typeof spawn } = {}) {
   const host = options.host ?? '127.0.0.1';
   if (host !== '127.0.0.1') throw new Error('Dashboard may only bind to 127.0.0.1');
-  const token = randomBytes(32).toString('hex'), session = randomBytes(32).toString('hex');
+  const token = randomBytes(32).toString('hex');
+  const root = loadConfig(io).root, keyFile = join(root, '.dashboard-key');
+  mkdirSync(root, { recursive: true });
+  try { writeFileSync(keyFile, randomBytes(32).toString('hex'), { mode: 0o600, flag: 'wx' }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+  const key = readFileSync(keyFile, 'utf8');
+  const signature = (payload: string) => createHmac('sha256', key).update(payload).digest('hex');
+  const sessionCookie = () => { const payload = `${Date.now() + 12 * 60 * 60 * 1000}.${randomBytes(16).toString('hex')}`; return `bs=${payload}.${signature(payload)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`; };
+  const validSession = (value: string) => { const parts = value.split('.'); if (parts.length !== 3 || !/^\d+$/.test(parts[0]) || !/^[a-f0-9]{32}$/.test(parts[1])) return false; const expiry = Number(parts[0]); return Number.isSafeInteger(expiry) && expiry > Date.now() && equal(parts[2], signature(`${parts[0]}.${parts[1]}`)); };
   let unused = true;
   const runs = new Map<string, { running: boolean; exitCode: number | null; log: string }>();
   const spawnRevise = options.spawnRevise ?? spawn;
@@ -67,11 +80,12 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
     try {
       const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`);
       if (req.method === 'GET' && url.pathname === '/' && url.searchParams.has('t')) {
-        if (!unused || !equal(url.searchParams.get('t') ?? '', token)) { send(res, 401, { error: 'Invalid token' }); return; }
-        unused = false; res.writeHead(302, { 'Set-Cookie': `bs=${session}; HttpOnly; SameSite=Strict; Path=/`, Location: '/', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); res.end(); return;
+        if (!unused || !equal(url.searchParams.get('t') ?? '', token)) { unauthenticated(req, res, 'Invalid token'); return; }
+        unused = false; res.writeHead(302, { 'Set-Cookie': sessionCookie(), Location: '/', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); res.end(); return;
       }
       const cookie = (req.headers.cookie ?? '').split(';').map(s => s.trim()).find(s => s.startsWith('bs='))?.slice(3) ?? '';
-      if (!equal(cookie, session)) { send(res, 401, { error: 'Authentication required' }); return; }
+      if (!validSession(cookie)) { unauthenticated(req, res, 'Authentication required'); return; }
+      res.setHeader('Set-Cookie', sessionCookie());
       const rawPath = (req.url ?? '').split('?')[0];
       if (rawPath.startsWith('/media/') && decodeURIComponent(rawPath).split(/[\\/]/).some(part => part === '..' || part === '.')) { send(res, 403, { error: 'Forbidden' }); return; }
       const config = loadConfig(io), pathname = url.pathname;
