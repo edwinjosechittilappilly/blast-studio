@@ -25,7 +25,7 @@
 
 - [x] 5.1 Implement branded HTML/CSS templates for cards, quotes, code, posters and thumbnails, and carousel PNG slides plus PDF; verify dimensions, editable sources and output artifacts with rendering tests and document templates.
 - [x] 5.2 Implement SVG logos with required PNG sizes and favicon plus Mermaid and D2 SVG/PNG diagrams; verify outputs and missing-tool errors with tests.
-- [ ] 5.3 Record per-node font size, contrast and safe-zone overflow metrics; verify passing and failing fixtures and Linux perceptual golden comparisons.
+- [x] 5.3 Record per-node font size, contrast and safe-zone overflow metrics; verify passing and failing fixtures and Linux perceptual golden comparisons.
 
 ## 6. M1 — Review, revise and accept
 
@@ -42,7 +42,7 @@
 
 ## 8. M2 — Video, terminal demos and captions
 
-- [ ] 8.1 Implement HyperFrames composition and rendering separately for 9:16, 1:1 and 16:9, including H.264 output and extracted review frames; verify aspect ratios and Linux perceptual frame goldens and document the toolchain.
+- [x] 8.1 Implement HyperFrames composition and rendering separately for 9:16, 1:1 and 16:9, including H.264 output and extracted review frames; verify aspect ratios and Linux perceptual frame goldens and document the toolchain.
 - [x] 8.2 Implement VHS terminal demo rendering and VTT and optional burned-in captions; verify MP4/GIF, caption files and accessible video review with tests.
 
 ## 9. M2 — Providers and budget ledger
