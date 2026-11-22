@@ -1,5 +1,9 @@
 #!/usr/bin/env node
-import { main } from "../src/cli.ts";
+import { existsSync } from "node:fs";
+
+// npm packages need compiled JavaScript; source checkouts can run TypeScript directly.
+const entry = new URL("../dist/cli.js", import.meta.url);
+const { main } = await import(existsSync(entry) ? entry.href : new URL("../src/cli.ts", import.meta.url).href);
 
 try {
   process.exitCode = await main(process.argv.slice(2));

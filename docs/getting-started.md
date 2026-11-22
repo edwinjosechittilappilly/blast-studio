@@ -4,17 +4,29 @@ Blast Studio prepares platform-specific drafts and media for review and handoff.
 
 ## Install
 
-From a checkout, use Node.js 22.18 or later:
+Use Node.js 22.18 or later. Install from npm:
+
+```sh
+npm install -g blast-studio
+npx playwright install chromium
+```
+
+Alternatively, from a checkout:
 
 ```sh
 npm install
 npx playwright install chromium
 npm link
+```
+
+Then initialize and check the studio:
+
+```sh
 bstudio init
 bstudio doctor
 ```
 
-`npm link` puts `bstudio` on your path. `init` creates `~/.config/blast-studio/studio.yml` if it does not already exist, and creates the studio root and its `projects` directory. It preserves an existing configuration. The default root is `~/BlastStudio`; set `studio.root` in the configuration or `BSTUDIO_HOME` to choose another location. `BSTUDIO_CONFIG` selects a different configuration file. Keep unpublished projects and credentials private.
+`init` creates `~/.config/blast-studio/studio.yml` if it does not already exist, and creates the studio root and its `projects` directory. It preserves an existing configuration. The default root is `~/BlastStudio`; set `studio.root` in the configuration or `BSTUDIO_HOME` to choose another location. `BSTUDIO_CONFIG` selects a different configuration file. Keep unpublished projects and credentials private.
 
 `doctor` reports available tools and configuration problems. Its checks require Chromium and Mermaid; Mermaid and HyperFrames are optional npm dependencies installed by default unless optional dependencies are omitted. FFmpeg, HyperFrames, VHS, D2 and Market Blaster support particular media or handoff workflows. Install the tools needed for your formats. The default author and reviewer commands use `omp`; configure `agent.command` and `reviewer.command` if you use other commands. Use a different reviewer model: identical commands or explicitly identical `--model`/`-m` values are rejected. `bstudio install-skills` links the bundled skills into `~/.agents/skills` and `~/.claude/skills`; add `--with-hyperframes` to install HyperFrames skills too.
 

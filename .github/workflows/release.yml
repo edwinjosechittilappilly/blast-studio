@@ -1,0 +1,50 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Install D2
+        run: |
+          curl -fsSLo /tmp/d2.tgz https://github.com/terrastruct/d2/releases/download/v0.9.0/d2-v0.9.0-linux-amd64.tar.gz
+          echo "5669ddc46b99e942cc96078f4a4e36d5e62103348f4c05179ede27802fdd87a9  /tmp/d2.tgz" | sha256sum -c -
+          tar -xzf /tmp/d2.tgz -C /tmp
+          sudo install /tmp/d2-v0.9.0/bin/d2 /usr/local/bin/d2
+      - run: npm test
+      - run: npm run build
+      - name: Verify release tag
+        env:
+          TAG: ${{ github.ref_name }}
+          REF_TYPE: ${{ github.ref_type }}
+        run: |
+          test "$REF_TYPE" = tag
+          test "$TAG" = "v$(node -p "require('./package.json').version")"
+      - run: npm install -g 'npm@^11.5.1'
+      - run: npm pack
+      - name: Publish to npm
+        run: npm publish "blast-studio-$(node -p "require('./package.json').version").tgz" --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" "blast-studio-${TAG#v}.tgz" --generate-notes

@@ -17,13 +17,24 @@ Blast Studio turns an idea, notes, links, a commit, a PR or a Market Blaster bri
 
 ## Quickstart
 
-Requires Node 22.18 or newer, access to this private repository and a configured agent. Rendering and particular inputs may require additional tools; `doctor` reports their availability.
+Requires Node 22.18 or newer and a configured agent. Rendering and particular inputs may require additional tools; `doctor` reports their availability.
+
+```bash
+npm install -g blast-studio
+```
+
+Alternatively, install from source:
 
 ```bash
 gh repo clone edwinjosechittilappilly/blast-studio
 cd blast-studio
 npm install
 npm link
+```
+
+Then initialize the studio:
+
+```bash
 bstudio init
 bstudio install-skills
 bstudio doctor

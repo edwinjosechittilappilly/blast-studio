@@ -4,7 +4,19 @@
   "description": "Create, review and score platform-ready content (text, images, carousels, diagrams, posters, logos, short video) and hand it to Market Blaster.",
   "type": "module",
   "license": "Apache-2.0",
-  "private": true,
+  "author": "Edwin Jose Chittilappilly",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/edwinjosechittilappilly/blast-studio.git"
+  },
+  "homepage": "https://edwinjosechittilappilly.github.io/blast-studio/",
+  "bugs": "https://github.com/edwinjosechittilappilly/blast-studio/issues",
+  "keywords": ["content", "social-media", "cli", "publishing", "studio"],
+  "files": ["bin", "dist", "templates", "platforms", "schemas", "skills", "providers/prices.yml", "test/fixtures/reviews"],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "bin": {
     "bstudio": "bin/bstudio.mjs"
   },
@@ -13,7 +25,9 @@
   },
   "scripts": {
     "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').cpSync('src/dashboard/static', 'dist/dashboard/static', { recursive: true })\"",
+    "prepack": "npm run build"
   },
   "dependencies": {
     "@resvg/resvg-js": "2.6.2",
