@@ -1,0 +1,25 @@
+{
+  "title": "Blast Studio content flow",
+  "subtitle": "Local content preparation and handoff",
+  "nodes": [
+    {"id":"author","label":"Author","kind":"actor","domain":"user","col":0,"row":0},
+    {"id":"cli","label":"Studio CLI","sublabel":"Brief, plan and make","domain":"compute","col":1,"row":0},
+    {"id":"project","label":"Project files","sublabel":"Sources and outputs","kind":"data","domain":"data","col":2,"row":0},
+    {"id":"review","label":"Render and review","sublabel":"Media, gates and scores","domain":"compute","col":3,"row":0},
+    {"id":"export","label":"Export","sublabel":"Manifest and handoffs","domain":"compute","col":4,"row":0},
+    {"id":"market","label":"Market Blaster","sublabel":"Optional import","kind":"external","domain":"external","col":5,"row":0},
+    {"id":"agent","label":"Configured agent","sublabel":"Temporary workspace","kind":"external","domain":"external","col":1,"row":1},
+    {"id":"packs","label":"Platform packs","sublabel":"Policy and rubrics","kind":"data","domain":"data","col":3,"row":1},
+    {"id":"manual","label":"Manual publishing","sublabel":"Handoff files","kind":"external","domain":"external","col":5,"row":1}
+  ],
+  "edges": [
+    {"from":"author","to":"cli","label":"Inputs"},
+    {"from":"cli","to":"project","label":"Writes"},
+    {"from":"cli","to":"agent","label":"Runs","style":"dashed"},
+    {"from":"project","to":"review","label":"Sources"},
+    {"from":"packs","to":"review","label":"Rules"},
+    {"from":"review","to":"export","label":"Pass or accept"},
+    {"from":"export","to":"market","label":"Manifest","style":"dashed"},
+    {"from":"export","to":"manual","label":"Handoff","style":"dashed"}
+  ]
+}

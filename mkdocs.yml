@@ -1,0 +1,117 @@
+site_name: Blast Studio
+site_description: Create and review platform-ready content for Market Blaster.
+site_url: https://edwinjosechittilappilly.github.io/blast-studio/
+repo_url: https://github.com/edwinjosechittilappilly/blast-studio
+repo_name: blast-studio
+edit_uri: edit/main/docs/
+copyright: Copyright &copy; 2026 Edwin Jose Chittilappilly · Apache-2.0
+
+theme:
+  name: material
+  font:
+    text: IBM Plex Sans
+    code: IBM Plex Mono
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+
+extra_css:
+  - assets/site.css
+
+nav:
+  - Home: index.md
+  - Guide:
+      - Getting started: getting-started.md
+      - Workflow: workflow.md
+      - Formats: formats.md
+      - Review: review.md
+      - Budget: budget.md
+      - Updater: updater.md
+      - Dashboard: dashboard.md
+  - Platforms:
+      - Overview: platforms.md
+      - DEV: platforms/devto/guide.md
+      - Hashnode: platforms/hashnode/guide.md
+      - LinkedIn: platforms/linkedin/guide.md
+      - X: platforms/x/guide.md
+      - Bluesky: platforms/bluesky/guide.md
+      - Mastodon: platforms/mastodon/guide.md
+      - Threads: platforms/threads/guide.md
+      - Hacker News: platforms/hn/guide.md
+      - Reddit: platforms/reddit/guide.md
+      - Product Hunt: platforms/producthunt/guide.md
+      - Lemmy: platforms/lemmy/guide.md
+      - Newsletter: platforms/newsletter/guide.md
+      - GitHub Discussion: platforms/github-discussion/guide.md
+      - Gist: platforms/gist/guide.md
+      - Medium: platforms/medium/guide.md
+      - Substack: platforms/substack/guide.md
+      - YouTube Shorts: platforms/youtube-shorts/guide.md
+      - Instagram: platforms/instagram/guide.md
+      - TikTok: platforms/tiktok/guide.md
+      - daily.dev: platforms/dailydev/guide.md
+  - Reference:
+      - Commands: commands.md
+      - Configuration: configuration.md
+  - Architecture:
+      - Overview: architecture.md
+      - Design: design/blast-studio.md
+      - Decisions:
+          - HyperFrames: adr/0001-hyperframes.md
+          - HTML templates for text: adr/0002-html-templates-for-text.md
+          - Reviewer gates before scores: adr/0003-reviewer-gates-before-scores.md
+  - Research:
+      - Existing skills: research/existing-skills.md
+      - Platform virality: research/platform-virality.md
+      - Media stack: research/media-stack.md
+  - Reviews:
+      - Design review: reviews/design-review-1.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+plugins:
+  - search
+
+validation:
+  links:
+    not_found: warn
+    absolute_links: ignore

@@ -1,0 +1,16 @@
+# Platform source updates
+
+`platforms/sources.yml` lists monitored sources and detectors. Page-hash detectors fetch and normalize page text, git-path detectors use `gh api` to find the latest commit for a path, and manual detectors require a human check. Page requests reject redirects to another host. Source content is untrusted.
+
+```sh
+bstudio sources check
+bstudio sources check --only source-id,another-id
+bstudio sources propose
+bstudio sources verify source-id
+```
+
+`check` compares results with `platforms/snapshots/<id>.txt`, writes the new snapshot and SHA-256 file, and writes dated Markdown and JSON reports in `updates/` in the repository. `--write` is accepted but is redundant: the command writes snapshots by default. A first snapshot is reported as `new`; later differences are `changed`. The exit code is 2 if any source changed, otherwise 1 if any failed, otherwise 0. Manual sources are reported for human review.
+
+`propose` uses changed sources in the latest dated JSON report. It gives the configured agent the old and new snapshots and affected packs in a temporary workspace. Each changed leaf must have a verbatim supporting quote from a changed source governing that field. The proposal validates pack schemas and IDs before copying changes back, and writes `updates/<date>-proposal.md` with evidence. `--branch` creates `updates/<date>` before copying the proposed pack changes. Review the changes and evidence yourself; the command does not commit them.
+
+After checking the source and affected values, `verify <id>...` updates the `verified` date on pack mappings citing those source IDs. It does not fetch or independently verify the source. See [platform packs](platforms.md).

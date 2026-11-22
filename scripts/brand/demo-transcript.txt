@@ -1,0 +1,15 @@
+$ export HOME=/tmp/bs2 BSTUDIO_HOME=/tmp/bs2/studio
+$ bstudio init
+Created /tmp/bs2/.config/blast-studio/studio.yml
+Studio root: /tmp/bs2/studio
+
+$ bstudio brief launch --idea "A small release, ready to share."
+Wrote /tmp/bs2/studio/projects/launch/brief.md (1 evidence anchors)
+
+$ bstudio status launch
+launch
+Month to date: $0.00 / $0.00
+Last source check: never
+
+$ bstudio render-preview scripts/brand/sample-card.html --size 1080x1080 --out /tmp/bs2/card.png
+/tmp/bs2/card.png
