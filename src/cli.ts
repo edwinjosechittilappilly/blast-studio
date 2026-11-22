@@ -113,7 +113,7 @@ function runProgram(cmd: string, args: string[], opts: { cwd?: string; env?: Rec
     const timer = opts.timeoutMs ? setTimeout(() => { timedOut = true; child.kill(); }, opts.timeoutMs) : undefined;
     child.once("error", error => { clearTimeout(timer); reject(error); });
     child.once("close", (code, signal) => {
-      if (child.pid) { subprocesses.delete(child.pid); recordProcesses?.([...subprocesses]); }
+      if (child.pid && !interrupted) { subprocesses.delete(child.pid); recordProcesses?.([...subprocesses]); }
       clearTimeout(timer);
       if (code === 0) { resolve(stdout); return; }
       const reason = timedOut ? `timed out after ${opts.timeoutMs! / 1000}s` : `exited with ${code ?? signal}`;
@@ -149,13 +149,13 @@ export async function withCampaignLock(name: string, args: string[], io: IO, run
       const id = io.env.BSTUDIO_JOB_ID;
       recordProcesses = pids => updateJobProcesses(root, ref, id, pids);
       let code = 1;
-      try { code = await run(io); return code; } finally { await stopping; recordProcesses = undefined; try { finishSpawnedJob(root, ref, id, code); } finally { release(); } }
+      try { code = await run(io); return code; } finally { await stopping; subprocesses.clear(); recordProcesses = undefined; try { finishSpawnedJob(root, ref, id, code); } finally { release(); } }
     }
     const job = startCliJob(root, ref, name);
     recordProcesses = pids => updateJobProcesses(root, ref, job.id, pids);
     const logged = { ...io, log: job.log, out: (line: string) => { job.log(line); io.out(line); }, err: (line: string) => { job.log(line); io.err(line); } };
     let code = 1;
-    try { code = await run(logged); return code; } finally { await stopping; recordProcesses = undefined; job.finish(code, Boolean(interrupted)); }
+    try { code = await run(logged); return code; } finally { await stopping; subprocesses.clear(); recordProcesses = undefined; job.finish(code, Boolean(interrupted)); }
   } catch (error) { if (error instanceof JobConflict) throw new UserError(error.message); throw error; }
 }
 export async function main(argv: string[], io: IO = realIO()): Promise<number> {
