@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 import { readBrief } from './brief.ts';
 import { loadPosts } from './posts.ts';
+import { loadPacks, loadSources } from './packs.ts';
 import { repoRoot } from './updater/check.ts';
 import type { AssetMeta, Review, StudioConfig } from './types.ts';
 
@@ -27,9 +28,18 @@ export function loadLibrary(config: StudioConfig, query = '') {
 export function latestSources(config: StudioConfig) {
   const paths = [join(config.root, 'updates'), join(repoRoot, 'updates')];
   const files = paths.flatMap(dir => existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.md')).map(f => ({ name: f, path: join(dir, f) })) : []).sort((a, b) => b.name.localeCompare(a.name));
-  if (!files.length) return { lastCheck: null, changed: [], failed: [], unverified: [], report: '' };
+  const manual = new Set(loadSources().filter(source => source.detector.kind === 'manual').map(source => source.id));
+  const unverified: string[] = [];
+  function visit(value: unknown, path: string): void {
+    if (!value || typeof value !== 'object') return;
+    if (!Array.isArray(value) && 'source' in value && typeof value.source === 'string' && !manual.has(value.source) && !('verified' in value)) unverified.push(path);
+    if (!Array.isArray(value) && 'aiSource' in value && typeof value.aiSource === 'string' && !manual.has(value.aiSource) && !('aiLastVerified' in value)) unverified.push(`${path}.ai`);
+    for (const [key, child] of Object.entries(value)) visit(child, `${path}.${key}`);
+  }
+  for (const [id, pack] of loadPacks()) visit(pack, id);
+  if (!files.length) return { lastCheck: null, changed: [], failed: [], unverified, report: '' };
   const report = readFileSync(files[0].path, 'utf8');
   const rows = report.split(/\r?\n/);
   const find = (word: string) => rows.filter(line => new RegExp(`^## .*: ${word}\\s*$`, 'i').test(line));
-  return { lastCheck: files[0].name.replace(/\.md$/, ''), changed: find('changed'), failed: find('failed'), unverified: [...find('manual'), ...find('new'), ...find('unverified')], report };
+  return { lastCheck: files[0].name.replace(/\.md$/, ''), changed: find('changed'), failed: find('failed'), unverified, report };
 }

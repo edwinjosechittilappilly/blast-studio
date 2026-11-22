@@ -3,6 +3,7 @@
   "name": "Hacker News",
   "marketBlaster": "hn",
   "ai": "none",
+  "aiSource": "hn-24",
   "formats": [
     "text"
   ],

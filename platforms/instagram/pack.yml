@@ -3,6 +3,7 @@
   "name": "Instagram Reels and carousels",
   "marketBlaster": null,
   "ai": "draft",
+  "aiSource": "instagram-47",
   "formats": [
     "video",
     "carousel",
@@ -26,11 +27,12 @@
   "disclosure": {
     "text": "unknown",
     "media": {
-      "rule": "Check Meta AI info labels and disclose branded content with the paid partnership label where required.",
+      "rule": "Check Meta AI info labels where required.",
       "source": "instagram-47"
     },
     "voice": "unknown"
   },
+  "sponsorship": { "rule": "Disclose branded content with the paid partnership label where required.", "source": "instagram-48" },
   "rubric": [
     {
       "id": "hook",

@@ -3,6 +3,7 @@
   "name": "daily.dev",
   "marketBlaster": null,
   "ai": "outline",
+  "aiSource": "dailydev-56",
   "formats": [
     "text",
     "article"

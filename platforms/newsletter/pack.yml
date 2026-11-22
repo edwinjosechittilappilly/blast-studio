@@ -3,6 +3,7 @@
   "name": "Newsletters",
   "marketBlaster": "newsletter",
   "ai": "outline",
+  "aiSource": "newsletter-59",
   "formats": [
     "article",
     "image"

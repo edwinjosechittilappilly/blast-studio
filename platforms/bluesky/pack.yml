@@ -3,6 +3,7 @@
   "name": "Bluesky",
   "marketBlaster": "bluesky",
   "ai": "draft",
+  "aiSource": "bluesky-14",
   "formats": [
     "text",
     "thread",

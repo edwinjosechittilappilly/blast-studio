@@ -3,6 +3,7 @@
   "name": "LinkedIn",
   "marketBlaster": "linkedin",
   "ai": "draft",
+  "aiSource": "linkedin-3",
   "formats": [
     "text",
     "image",
@@ -25,12 +26,13 @@
     }
   ],
   "disclosure": {
-    "text": {
-      "rule": "Paid brand relationships, including free products exchanged for value, require the partnership label.",
-      "source": "linkedin-4"
-    },
+    "text": "recommended",
     "media": "unknown",
     "voice": "unknown"
+  },
+  "sponsorship": {
+    "rule": "Paid brand relationships, including free products exchanged for value, require the partnership label.",
+    "source": "linkedin-4"
   },
   "rubric": [
     {

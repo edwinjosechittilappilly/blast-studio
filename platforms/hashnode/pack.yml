@@ -3,6 +3,7 @@
   "name": "Hashnode",
   "marketBlaster": "hashnode",
   "ai": "draft",
+  "aiSource": "hashnode-33",
   "formats": [
     "article",
     "image"

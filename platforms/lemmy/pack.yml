@@ -3,6 +3,7 @@
   "name": "Lemmy",
   "marketBlaster": "lemmy",
   "ai": "outline",
+  "aiSource": "lemmy-policy",
   "formats": [
     "text",
     "image"
@@ -128,6 +129,7 @@
     }
   ],
   "sources": [
+    "lemmy-policy",
     "cross-platform-63",
     "cross-platform-64"
   ],

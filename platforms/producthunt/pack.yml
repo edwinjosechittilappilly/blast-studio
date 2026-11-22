@@ -3,6 +3,7 @@
   "name": "Product Hunt",
   "marketBlaster": "producthunt",
   "ai": "outline",
+  "aiSource": "producthunt-38",
   "formats": [
     "text",
     "image",

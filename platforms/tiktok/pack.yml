@@ -3,6 +3,7 @@
   "name": "TikTok",
   "marketBlaster": null,
   "ai": "draft",
+  "aiSource": "tiktok-51",
   "formats": [
     "video"
   ],

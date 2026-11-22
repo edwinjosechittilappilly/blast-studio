@@ -3,6 +3,7 @@
   "name": "Reddit",
   "marketBlaster": "reddit",
   "ai": "outline",
+  "aiSource": "reddit-22",
   "formats": [
     "text",
     "image"

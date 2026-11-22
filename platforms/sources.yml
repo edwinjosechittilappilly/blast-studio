@@ -895,5 +895,29 @@
     "governs": [
       "tool.version"
     ]
+  },
+  {
+    "id": "github-discussion-policy",
+    "platform": "github-discussion",
+    "url": "https://docs.github.com/en/site-policy/acceptable-use-policies/github-acceptable-use-policies",
+    "scope": "community rules",
+    "detector": { "kind": "page-hash" },
+    "governs": ["ai"]
+  },
+  {
+    "id": "lemmy-policy",
+    "platform": "lemmy",
+    "url": "https://programming.dev/legal",
+    "scope": "instance rules",
+    "detector": { "kind": "page-hash" },
+    "governs": ["ai"]
+  },
+  {
+    "id": "substack-policy",
+    "platform": "substack",
+    "url": "https://substack.com/content",
+    "scope": "content guidelines",
+    "detector": { "kind": "page-hash" },
+    "governs": ["ai"]
   }
 ]

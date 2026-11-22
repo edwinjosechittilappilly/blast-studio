@@ -45,6 +45,7 @@ export function governedFields(packs: Map<string, unknown>, id: string): string[
   function visit(value: unknown, path: string): void {
     if (!value || typeof value !== 'object') return;
     if (!Array.isArray(value) && (value as Record<string, unknown>).source === id) result.push(path);
+    if (!Array.isArray(value) && (value as Record<string, unknown>).aiSource === id) result.push(`${path}.ai`);
     for (const [key, child] of Object.entries(value)) visit(child, `${path}.${key}`);
   }
   for (const [platform, pack] of packs) visit(pack, platform);
@@ -58,10 +59,12 @@ async function detect(row: SourceRow, io: IO): Promise<string> {
     if (!/^[a-f\d]{40,64}$/i.test(sha)) throw new Error('No valid path commit returned'); return sha;
   }
   if (row.detector.kind !== 'page-hash') throw new Error('Manual source');
-  const response = await io.fetch(row.url, { headers: { 'user-agent': 'BlastStudio/0.1 (+platform source monitor)' }, redirect: 'follow', signal: AbortSignal.timeout(30000) });
+  const response = await io.fetch(row.url, { headers: { 'user-agent': 'BlastStudio/0.1 (+platform source monitor)' }, redirect: 'manual', signal: AbortSignal.timeout(30000) });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   if (response.url && new URL(response.url).host !== new URL(row.url).host) throw new Error('Redirect to another host');
-  return extractText(await response.text(), row.detector.selector);
+  const text = extractText(await response.text(), row.detector.selector);
+  if (!text) throw new Error('Source returned no extractable text');
+  return text;
 }
 export async function check(io: IO, options: { root?: string; sources?: SourceRow[]; packs?: Map<string, unknown>; only?: string[]; write?: boolean; date?: string } = {}): Promise<{ results: Result[]; code: number; report: string }> {
   const root = options.root ?? repoRoot, sources = options.sources ?? loadSources(), packs = options.packs ?? loadPacks(), date = options.date ?? new Date().toISOString().slice(0, 10);
@@ -84,5 +87,5 @@ export async function check(io: IO, options: { root?: string; sources?: SourceRo
   const report = lines.join('\n'); mkdirSync(join(root, 'updates'), { recursive: true });
   writeFileSync(join(root, 'updates', `${date}.md`), report);
   writeFileSync(join(root, 'updates', `${date}.json`), JSON.stringify(results, null, 2));
-  io.out(report); return { results, code: results.some(r => r.status === 'changed') ? 2 : results.some(r => r.status === 'failed') ? 1 : 0, report };
+  io.out(report); return { results, code: results.some(r => r.status === 'changed') ? 2 : results.some(r => r.status === 'failed' || r.status === 'new') ? 1 : 0, report };
 }

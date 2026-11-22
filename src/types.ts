@@ -28,10 +28,10 @@ export type PlatformId = (typeof PLATFORM_IDS)[number];
 export type AiPolicy = "draft" | "outline" | "none";
 
 /** A pack value with provenance; `unknown` when no verified source states it. */
-export type Sourced<T> = { value: T; source: string; verified?: string } | "unknown";
+export type Sourced<T> = { value: T; source: string; verified?: string; lastVerified?: string } | "unknown";
 
 /** Disclosure rule per content kind: required rule text, recommended only, or unknown. */
-export type DisclosureRule = { rule: string; source: string; verified?: string } | "recommended" | "unknown";
+export type DisclosureRule = { rule: string; source: string; verified?: string; lastVerified?: string; accepts?: string[] } | "recommended" | "unknown";
 
 export type PostType =
   | "text"
@@ -85,12 +85,15 @@ export interface PlatformPack {
   /** Market Blaster destination id, or null when Market Blaster cannot deliver (export folder + mark). */
   marketBlaster: string | null;
   ai: AiPolicy;
+  aiSource?: string;
+  aiLastVerified?: string;
   /** Post types worth producing here. */
   formats: PostType[];
   textLimit?: Sourced<number>;
   titleLimit?: Sourced<number>;
   media: MediaSpec[];
   disclosure: { text: DisclosureRule; media: DisclosureRule; voice: DisclosureRule };
+  sponsorship?: DisclosureRule;
   rubric: Criterion[];
   /** Separate review for talking points handed to a human author. */
   outlineRubric?: Criterion[];

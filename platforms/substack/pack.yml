@@ -3,6 +3,7 @@
   "name": "Newsletters",
   "marketBlaster": "substack",
   "ai": "draft",
+  "aiSource": "substack-policy",
   "formats": [
     "article",
     "image"
@@ -99,6 +100,7 @@
     }
   ],
   "sources": [
+    "substack-policy",
     "newsletter-58",
     "newsletter-59",
     "newsletter-60",

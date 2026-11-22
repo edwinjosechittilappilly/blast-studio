@@ -3,6 +3,7 @@
   "name": "X",
   "marketBlaster": "x",
   "ai": "draft",
+  "aiSource": "x-8",
   "formats": [
     "text",
     "thread",

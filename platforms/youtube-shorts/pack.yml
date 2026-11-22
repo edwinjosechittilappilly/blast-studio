@@ -3,6 +3,7 @@
   "name": "YouTube Shorts",
   "marketBlaster": null,
   "ai": "draft",
+  "aiSource": "youtube-shorts-42",
   "formats": [
     "video"
   ],

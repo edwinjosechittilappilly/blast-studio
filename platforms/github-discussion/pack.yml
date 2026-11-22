@@ -3,6 +3,7 @@
   "name": "GitHub: README, Discussions and Releases",
   "marketBlaster": "github-discussion",
   "ai": "draft",
+  "aiSource": "github-discussion-policy",
   "formats": [
     "article",
     "image"
@@ -104,6 +105,7 @@
     }
   ],
   "sources": [
+    "github-discussion-policy",
     "gist-52",
     "gist-53",
     "gist-54",

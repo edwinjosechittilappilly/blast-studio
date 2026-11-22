@@ -3,6 +3,7 @@
   "name": "Medium",
   "marketBlaster": "medium",
   "ai": "draft",
+  "aiSource": "medium-36",
   "formats": [
     "article",
     "image"

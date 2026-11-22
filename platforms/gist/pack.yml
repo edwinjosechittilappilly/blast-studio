@@ -3,6 +3,7 @@
   "name": "GitHub: README, Discussions and Releases",
   "marketBlaster": "gist",
   "ai": "draft",
+  "aiSource": "gist-54",
   "formats": [
     "article",
     "diagram"
