@@ -32,7 +32,7 @@ export function jobRegion(container, ctx) {
     try { const job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op, campaign: slugOf(ctx), args }) }); current = job.id; clearTimeout(timer); await refresh(); }
     catch (error) { status.replaceChildren(notice(error.message)); if (error.command) status.append(el('code', error.command), copyButton('Copy command', error.command)); }
   }
-  refresh(); return run;
+  setTimeout(refresh, 0); return run;
 }
 
 export function openForm(title, description, fields, submitLabel, onSubmit) {
@@ -49,7 +49,7 @@ export function renderActions(container, ctx) {
   container.replaceChildren(); const section = el('section', null, 'surface'); section.append(el('h2', 'Campaign actions'), el('p', 'Run campaign steps and manage review decisions.')); container.append(section); const run = jobRegion(container, ctx); let budget;
   api('/api/budget').then(data => { budget = data; }).catch(() => {});
   const actions = [['plan', 'Plan'], ['make', 'Make'], ['render', 'Render'], ['review', 'Review'], ['revise', 'Revise'], ['accept', 'Accept'], ['confirm', 'Confirm rights'], ['mark', 'Mark published'], ['history', 'History'], ['restore', 'Restore'], ['feedback list', 'List feedback'], ['feedback add', 'Add feedback'], ['feedback rm', 'Remove feedback']];
-  const group = el('div', null, 'form-actions'); section.append(group);
+  const group = el('div', null, 'form-actions'); group.style.flexWrap = 'wrap'; group.style.justifyContent = 'flex-start'; group.style.gap = '0.5rem'; section.append(group);
   for (const [op, label] of actions) { const b = button(label, 'secondary'); group.append(b); b.addEventListener('click', () => {
     const schema = ctx.operations?.[op]; if (!schema) return;
     const fields = [];

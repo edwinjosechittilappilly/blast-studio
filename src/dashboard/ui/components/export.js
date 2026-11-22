@@ -5,7 +5,7 @@ import { jobRegion, openForm } from './actions.js';
 export function renderExport(container, ctx) {
   container.replaceChildren(); const section = el('section', null, 'surface'); section.append(el('h2', 'Export campaign'), el('p', 'Export using the Market Blaster project in project.yml or studio settings, or enter a different project path.'));
   const target = el('cds-text-input'); target.setAttribute('label', 'Market Blaster project path (optional)'); target.setAttribute('helper-text', 'Leave empty to use the configured project.');
-  const buttons = el('div', null, 'form-actions'), local = button('Export locally', 'secondary'), force = button('Force re-import', 'secondary'), submit = button('Export', 'primary'); buttons.append(local, force, submit); section.append(target, buttons); container.append(section);
+  const buttons = el('div', null, 'form-actions'), local = button('Export locally', 'secondary'), force = button('Force re-import', 'secondary'), submit = button('Export', 'primary'); buttons.style.flexWrap = 'wrap'; buttons.style.gap = '0.5rem'; buttons.append(local, force, submit); section.append(target, buttons); container.append(section);
   const run = jobRegion(container, ctx); const args = () => target.value?.trim() ? { mb: target.value.trim() } : {};
   submit.addEventListener('click', () => run('export', args()));
   local.addEventListener('click', () => run('export', { local: true }));
