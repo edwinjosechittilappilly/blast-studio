@@ -1,3 +1,5 @@
+import { copyText } from './clipboard.js';
+
 // A deliberately small Markdown subset. The parser returns data, never HTML.
 export function parseInline(text) {
   const nodes = [], pattern = /(`[^`]+`|\*\*[^*]+\*\*|(?<![\p{L}\p{N}_])__[^_]+__(?![\p{L}\p{N}_])|\*[^*]+\*|(?<![\p{L}\p{N}_])_[^_]+_(?![\p{L}\p{N}_])|\[[^\]]+\]\([^)]+\))/gu;
@@ -42,7 +44,15 @@ export function renderMarkdown(text, document) {
     if (node.type === 'text') return document.createTextNode(node.text);
     const element = document.createElement(node.type === 'link' ? 'a' : node.type);
     if (node.type === 'link') { element.href = node.href; element.target = '_blank'; element.rel = 'noopener noreferrer'; }
-    if (node.type === 'pre') { const code = document.createElement('code'); code.textContent = node.text; element.append(code); }
+    if (node.type === 'pre') {
+      const code = document.createElement('code'), copy = document.createElement('button');
+      code.textContent = node.text; copy.type = 'button'; copy.className = 'code-copy'; copy.textContent = 'Copy code';
+      copy.addEventListener('click', async () => {
+        copy.textContent = await copyText(node.text) ? 'Copied' : 'Copy failed';
+        setTimeout(() => { copy.textContent = 'Copy code'; }, 2000);
+      });
+      element.append(copy, code);
+    }
     else if (node.text !== undefined) element.textContent = node.text;
     for (const child of node.children || []) element.append(build(child));
     return element;
