@@ -115,7 +115,7 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
             send(res, 201, addFeedback(dir, selection as { platform?: string; asset?: string }, data.note.trim())); return;
           }
           const args = { campaign: slug, feedbackOnly: true };
-          const built = buildOperation('revise', args, { imageProvider: config.images.provider });
+          const built = buildOperation('revise', args, { imageProvider: config.images.provider, root: config.root });
           if (built.requiresTTY) { send(res, 422, { error: 'This operation requires a terminal', command: built.command }); return; }
           const job = startJob(config.root, 'revise', args, { imageProvider: config.images.provider, env: { ...io.env, BSTUDIO_HOME: config.root, BSTUDIO_CONFIG: config.file } });
           send(res, 202, job); return;

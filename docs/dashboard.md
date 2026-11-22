@@ -12,7 +12,7 @@ Campaign details compare the independent review, weighted rubric, gates and hook
 
 Requests require the dashboard session cookie. Writes also require an `Origin` matching the dashboard's exact host and port and `X-Requested-With: bstudio`.
 
-- `GET /api/operations` returns an object keyed by operation name. Each entry has `fields` (argument schemas with `kind`, `required`, `positional`, `flag`, and `multiple` where applicable), `campaign`, `paid`, `step`, and `requiresTTY`.
+- `GET /api/operations?campaign=project%2Fcampaign` returns an object keyed by operation name. Each entry has `fields` (argument schemas with `kind`, `required`, `positional`, `flag`, and `multiple` where applicable), `campaign`, `paid`, `step`, and `requiresTTY`. Supply a campaign to include its illustration assets in the terminal policy; without one, campaign-specific requirements are not reported. With the omp image provider, `make`, `render`, and `revise` require a terminal when the campaign plan contains an illustration; a missing plan has no existing illustration assets. `new` always requires a terminal with omp because it creates its plan during the job.
 - `POST /api/jobs` accepts `{ "op": "revise", "campaign": "project/campaign", "args": { "feedbackOnly": true } }`; omit `campaign` for global operations. It returns the job record with status 202. Operations requiring a terminal return 422 with a `command` instead.
 - `GET /api/jobs?campaign=project%2Fcampaign` returns job records, optionally filtered by campaign. `GET /api/jobs/:id` returns one record.
 - `GET /api/jobs/:id/log?tail=100` returns `{ "log": "..." }`; `tail` optionally limits the number of lines.
