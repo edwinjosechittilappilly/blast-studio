@@ -24,13 +24,19 @@ Projects contain shared evidence and independent campaigns. Legacy flat projects
 `bstudio new` runs brief, plan, make, render, and review in order, stopping on an error and printing a resume command. Create the project first; the campaign address is required and the command accepts the same input options as `brief`:
 
 ```text
-bstudio new <address> [--idea text] [--note text] [--url url] [--pr number]
-  [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force]
-bstudio brief <address> [--idea text] [--note text] [--url url] [--pr number]
-  [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force]
+bstudio new <project>/<campaign> [--idea text] [--note text] [--url URL] [--pr number] [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force] [-h|--help]
+bstudio brief <project>/<campaign> [--idea text] [--note text] [--url URL] [--pr number] [--commit sha] [--repo owner/repo|local] [--mb-brief path] [--force] [-h|--help]
 ```
 
 At least one input or shared project evidence is required. `--note` and `--url` can be repeated. `--repo` alone collects repository information; PRs require a GitHub repository and commits can use `local`. `--mb-brief` imports evidence sections from a Market Blaster brief. `--force` overwrites an existing brief. Shared and campaign inputs are stored as evidence in `brief.md`.
+
+Examples (either command accepts these inputs):
+
+```sh
+bstudio brief acme/launch --idea 'Announcing launch' --note 'Available today'
+bstudio brief acme/launch --pr 12 --repo acme/app
+bstudio brief acme/launch --commit abcd1234 --repo local --mb-brief brief.md
+```
 
 - `bstudio plan <address> [--platforms=id,...] [--assets=id,...]` asks the agent for a plan for enabled destinations permitted by their AI policies. Scoped planning retains unselected entries.
 - `bstudio make <address> [--platforms=id,...] [--assets=id,...]` writes selected posts and asset sources using the agent. Both commands also accept `--platforms id,...` and `--assets id,...`.

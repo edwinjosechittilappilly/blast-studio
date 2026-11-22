@@ -47,7 +47,7 @@ function handoff(project: string, post: Post, name: string, notes: string[], gui
   writeFileSync(join(dir, 'README.md'), [`# ${name} manual handoff`, '', '- [ ] Open the platform publishing interface and select the correct account.', '- [ ] Copy the text from post.md and attach the listed media.', '- [ ] Enter the provided alt text, captions and disclosure where applicable.', '- [ ] Review and publish manually, then record the URL with bstudio mark when supported.', '', '## Media', ...media.map(m => `- ${m.file} (${m.kind}; alt: ${m.alt})${'captions' in m && m.captions ? `; captions: ${m.captions}` : ''}`), '', '## Disclosure', ...(disclosures.length ? disclosures : ['- None specified.']), '', '## Platform notes', ...notes.map(n => `- ${n}`), '', '## Platform checklist', checklist, ''].join('\n'));
 }
 
-export function exportProject(project: string, identity: CampaignRef, config: StudioConfig, directory = false): string {
+export function exportProject(project: string, identity: CampaignRef, config: StudioConfig, directory = false): { path: string; history: string } {
   const slug = compositeSlug(identity);
   const posts = loadPosts(project), packs = loadPacks(), briefSections = readBrief(project);
   const assetsDir = join(project, 'assets');
@@ -100,5 +100,5 @@ export function exportProject(project: string, identity: CampaignRef, config: St
     rmSync(history, { recursive: true, force: true });
     throw error;
   }
-  return dir;
+  return { path: dir, history };
 }

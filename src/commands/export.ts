@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse } from 'yaml';
 import { loadConfig, campaignDir, projectRoot } from '../config.ts';
@@ -41,16 +41,17 @@ export const run: Command = async (args, io) => {
   if (ref.project === ref.campaign && existsSync(resolve(projectRoot(config, ref.project), 'project.yml')) && readProject(config, ref.project).migratedFrom === ref.campaign) {
     io.err(`Warning: Market Blaster slug changed from ${ref.campaign} to ${slug}; importing creates a separate campaign and may duplicate previously published posts.`);
   }
-  const dir = exportProject(campaignDir(config, ref), ref, config, parsed.values.dir);
+  const { path: dir, history } = exportProject(campaignDir(config, ref), ref, config, parsed.values.dir);
   io.out(`Wrote ${dir}`);
   if (cwd) {
     const [cmd, ...prefix] = config.marketBlaster.command;
     let imported: string;
-    try { imported = await io.run(cmd, [...prefix, 'import', dir, '--slug', slug, ...(parsed.values.force ? ['--force'] : [])], { cwd, onStderr: text => io.err(text.replace(/\n$/, '')) }); }
+    try { imported = await io.run(cmd, [...prefix, 'import', parsed.values.dir ? history : resolve(history, basename(dir)), '--slug', slug, ...(parsed.values.force ? ['--force'] : [])], { cwd, onStderr: text => io.err(text.replace(/\n$/, '')) }); }
     catch (error) {
       const message = String(error instanceof Error ? error.message : error).slice(-2000);
       throw new UserError(`Market Blaster import failed: ${message}${/approved drafts|--force/i.test(message) && !parsed.values.force ? `\nTo replace approved drafts: bstudio export ${parsed.positionals[0]} --mb ${JSON.stringify(cwd)} --force` : ''}`);
     }
+    writeFileSync(resolve(history, 'imported.json'), JSON.stringify({ at: new Date().toISOString(), project: cwd, slug }, null, 2) + '\n');
     if (imported) io.out(imported);
     let checked: string;
     try { checked = await io.run(cmd, [...prefix, 'check', slug], { cwd }); }
