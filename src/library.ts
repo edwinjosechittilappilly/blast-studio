@@ -5,7 +5,9 @@ import { readBrief } from './brief.ts';
 import { loadPosts } from './posts.ts';
 import { loadPacks, loadSources } from './packs.ts';
 import { repoRoot } from './updater/check.ts';
-import type { AssetMeta, Review, StudioConfig } from './types.ts';
+import { loadFeedback } from './feedback.ts';
+import { readPlan } from './plan.ts';
+import type { AssetMeta, PlatformId, PlatformPack, Review, StudioConfig } from './types.ts';
 
 const dirs = (path: string) => existsSync(path) ? readdirSync(path, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name).sort() : [];
 export function projectDetails(config: StudioConfig, slug: string) {
@@ -20,6 +22,26 @@ export function projectDetails(config: StudioConfig, slug: string) {
   const brief = join(dir, 'brief.md');
   const marksFile = join(dir, 'published.json');
   return { slug, created: statSync(dir).birthtime.toISOString(), inputs: existsSync(brief) ? readBrief(dir).map(s => s.title) : [], posts, reviews, assets, exported: existsSync(join(dir, 'export', 'manifest.json')), published: existsSync(marksFile) ? JSON.parse(readFileSync(marksFile, 'utf8')) as unknown : [] };
+}
+let cachedPacks: Map<PlatformId, PlatformPack> | undefined;
+export function projectReview(config: StudioConfig, slug: string) {
+  const dir = join(config.root, 'projects', slug), project = projectDetails(config, slug);
+  const plan = existsSync(join(dir, 'plan.yml')) ? readPlan(dir) : [];
+  const packs = cachedPacks ??= loadPacks();
+  const rubric = Object.fromEntries(project.posts.map(post => { const pack = packs.get(post.platform); return [post.platform, pack?.ai === 'outline' ? pack.outlineRubric ?? [] : pack?.rubric ?? []]; }));
+  const captions: Record<string, string> = {};
+  for (const asset of project.assets) {
+    const vtt = asset.outputs?.find(output => /\.vtt$/i.test(output.file));
+    if (!vtt) continue;
+    const caption = `assets/${asset.id}/${vtt.file}`;
+    for (const output of asset.outputs) if (/\.(mp4|webm)$/i.test(output.file)) captions[`assets/${asset.id}/${output.file}`] = caption;
+    for (const post of project.posts) for (const media of post.media) if (media.asset === asset.id && media.kind === 'video') captions[media.file] = caption;
+  }
+  for (const post of project.posts) for (const media of post.media) {
+    const caption = (media as typeof media & { captions?: string }).captions;
+    if (caption) captions[media.file] = caption;
+  }
+  return { ...project, plan, rubric, captions, threshold: config.review.threshold, feedback: loadFeedback(dir) };
 }
 export function loadLibrary(config: StudioConfig, query = '') {
   const needle = query.toLocaleLowerCase();

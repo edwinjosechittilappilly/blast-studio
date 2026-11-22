@@ -7,6 +7,7 @@
 *.gate.lock*
 node_modules/
 dist/
+src/dashboard/build/
 site/
 .env
 .env.*

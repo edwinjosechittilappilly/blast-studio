@@ -24,9 +24,12 @@
     "node": ">=22.18"
   },
   "scripts": {
-    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "pretest": "npm run build:ui",
+    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\" \"test/**/*.test.js\"",
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').cpSync('src/dashboard/static', 'dist/dashboard/static', { recursive: true })\"",
+    "build:ui": "node src/dashboard/ui/build.mjs",
+    "dev:ui": "node src/dashboard/ui/build.mjs --watch",
+    "build": "npm run build:ui && tsc -p tsconfig.build.json && node -e \"const fs=require('node:fs'); fs.cpSync('src/dashboard/static', 'dist/dashboard/static', { recursive: true }); fs.cpSync('src/dashboard/build', 'dist/dashboard/static', { recursive: true }); fs.copyFileSync('node_modules/@ibm/plex-sans/fonts/complete/woff2/license.txt', 'dist/dashboard/static/plex-license.txt')\"",
     "prepack": "npm run build"
   },
   "dependencies": {
@@ -41,6 +44,11 @@
     "hyperframes": "0.9.80"
   },
   "devDependencies": {
+    "@carbon/styles": "^1.93.0",
+    "@carbon/web-components": "^2.50.0",
+    "@ibm/plex-mono": "^2.5.0",
+    "@ibm/plex-sans": "^1.1.0",
+    "esbuild": "^0.25.0",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
   }

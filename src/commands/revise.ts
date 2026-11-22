@@ -1,4 +1,4 @@
-import { closeSync, existsSync, openSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse } from 'yaml';
@@ -15,6 +15,7 @@ import { authorFiles, SELF_REVIEW_INSTRUCTIONS } from './make.ts';
 import { snapshot } from '../history.ts';
 import { validBlockers } from '../blockers.ts';
 import type { FeedbackEntry } from '../types.ts';
+import { acquireRevisionLock } from '../revise-lock.ts';
 
 function validateAssets(workspace: string, assets: Set<string>, files: Record<string, string>) {
   const errors: { path: string; message: string }[] = [];
@@ -100,10 +101,8 @@ export const run: Command = async (args, io) => {
   })();
   const [slug] = parsed.positionals, { note, asset, platform } = parsed.values;
   if (parsed.positionals.length !== 1 || !slug || slug.startsWith('-') || (note === undefined && (asset !== undefined || platform !== undefined)) || note === '') throw new UserError(usage);
-  const config = loadConfig(io), dir = projectDir(config, slug), reviewDir = join(dir, 'reviews'), lock = join(dir, '.revise.lock');
-  let lockFd: number;
-  try { lockFd = openSync(lock, 'wx'); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') throw new UserError(`Revision already in progress for ${slug} (${lock})`); throw error; }
+  const config = loadConfig(io), dir = projectDir(config, slug), reviewDir = join(dir, 'reviews');
+  const releaseLock = acquireRevisionLock(dir, slug);
   try {
   if (note !== undefined) addFeedback(dir, { ...(asset !== undefined ? { asset } : {}), ...(platform !== undefined ? { platform } : {}) }, note);
   const pending = loadFeedback(dir).filter(entry => entry.status === 'pending');
@@ -169,5 +168,5 @@ export const run: Command = async (args, io) => {
     await review([slug, `--platforms=${platforms}`], io);
   }
   return 0;
-  } finally { closeSync(lockFd); unlinkSync(lock); }
+  } finally { releaseLock(); }
 };

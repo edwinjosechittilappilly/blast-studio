@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -96,6 +97,43 @@ test('unknown asset is rejected without recording feedback', async () => {
   const f = fixture(0);
   await assert.rejects(revise(['demo', '--note', 'Change it', '--asset', 'missing'], f.io), UserError);
   assert.deepEqual(loadFeedback(f.project), []);
+});
+
+test('concurrent feedback submissions and revision updates preserve every committed change', async () => {
+  const { project } = fixture(0);
+  const applied = addFeedback(project, {}, 'To apply');
+  const rejected = addFeedback(project, {}, 'To reject');
+  const moduleUrl = new URL('../src/feedback.ts', import.meta.url).href;
+  const script = `
+    import { addFeedback, markApplied, rejectFeedback } from ${JSON.stringify(moduleUrl)};
+    const [dir, worker, applied, rejected] = process.argv.slice(1);
+    for (let i = 0; i < 20; i++) {
+      addFeedback(dir, {}, worker + ':' + i);
+      markApplied(dir, [applied]);
+      rejectFeedback(dir, new Map([[rejected, 'No longer relevant']]));
+    }
+  `;
+  await Promise.all(Array.from({ length: 4 }, (_, worker) => {
+    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    const child = spawn(process.execPath, ['--input-type=module', '-e', script, project, String(worker), applied.id, rejected.id]);
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('close', code => code === 0 ? resolve() : reject(new Error(`feedback worker failed (${code}): ${stderr}`)));
+    return promise;
+  }));
+  const entries = loadFeedback(project);
+  assert.equal(entries.length, 82);
+  assert.equal(entries.find(entry => entry.id === applied.id)?.status, 'applied');
+  const rejectedEntry = entries.find(entry => entry.id === rejected.id);
+  assert.equal(rejectedEntry?.status, 'rejected');
+  assert.equal(rejectedEntry?.rejectedReason, 'No longer relevant');
+  for (let worker = 0; worker < 4; worker++) {
+    for (let i = 0; i < 20; i++) {
+      assert.equal(entries.filter(entry => entry.note === `${worker}:${i}` && entry.status === 'pending').length, 1);
+    }
+  }
 });
 
 test('plain revise applies pending dashboard feedback even with zero automatic rounds', async () => {
