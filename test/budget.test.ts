@@ -130,5 +130,9 @@ test("aged recovery and reused PID locks are recovered", async () => {
 test("agent wrapper preserves result and billing metadata", () => {
   const wrapped = JSON.stringify({ result: "```json\n[]\n```", total_cost_usd: 0.2, usage: { tokens: 3 } });
   assert.deepEqual(parseAgentOutput(wrapped), { text: "```json\n[]\n```", usd: 0.2, usage: { tokens: 3 } });
+  for (const key of ["total_cost_usd", "cost_usd"]) {
+    const raw = JSON.stringify({ [key]: 0.2, usage: { tokens: 3 } });
+    assert.deepEqual(parseAgentOutput(raw), { text: raw, usd: 0.2, usage: { tokens: 3 } });
+  }
   assert.equal(parseAgentOutput('{"scores":[]}').text, '{"scores":[]}');
 });

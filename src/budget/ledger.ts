@@ -10,10 +10,11 @@ export interface LedgerEntry { id: string; type: "reserved" | "settled" | "agent
 export function parseAgentOutput(raw: string): { text: string; usd: number | null; usage?: unknown } {
   try {
     const value: unknown = JSON.parse(raw);
-    if (value && typeof value === "object" && !Array.isArray(value) && "result" in value && ("total_cost_usd" in value || "usage" in value)) {
-      const wrapper = value as { result: unknown; total_cost_usd?: unknown; usage?: unknown };
-      const usd = typeof wrapper.total_cost_usd === "number" && Number.isFinite(wrapper.total_cost_usd) && wrapper.total_cost_usd >= 0 ? wrapper.total_cost_usd : null;
-      return { text: typeof wrapper.result === "string" ? wrapper.result : JSON.stringify(wrapper.result), usd, usage: wrapper.usage };
+    if (value && typeof value === "object" && !Array.isArray(value) && ("total_cost_usd" in value || "cost_usd" in value || ("result" in value && "usage" in value))) {
+      const wrapper = value as { result?: unknown; total_cost_usd?: unknown; cost_usd?: unknown; usage?: unknown };
+      const cost = wrapper.total_cost_usd ?? wrapper.cost_usd;
+      const usd = typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : null;
+      return { text: typeof wrapper.result === "string" ? wrapper.result : raw, usd, usage: wrapper.usage };
     }
   } catch { /* Plain agent output is not a wrapper. */ }
   return { text: raw, usd: null };
