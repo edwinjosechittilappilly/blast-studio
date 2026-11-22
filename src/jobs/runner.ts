@@ -14,6 +14,7 @@ export interface Job { id: string; operation: string; campaign?: string; state: 
 export class JobConflict extends Error { owner: string; constructor(owner: string) { super(`Campaign is locked by ${owner}`); this.owner = owner; } }
 export class JobNotFound extends UserError { constructor() { super('Job not found'); } }
 export class JobNotRunning extends UserError { constructor() { super('Job is not running'); } }
+export class JobSignalDenied extends UserError { constructor(id: string) { super(`Not permitted to signal this job's processes; cancel it from the terminal: bstudio jobs cancel ${id}`); } }
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const bin = fileURLToPath(new URL('../../bin/bstudio.mjs', import.meta.url));
 export function processGroupRunning(pid: number): boolean {
@@ -201,11 +202,11 @@ export function startJob(root: string, name: string, values: unknown, options: {
         let childrenAlive = false;
         updateJob(root, dir, id, current => {
           childrenAlive = (current.childPids ?? []).some(pid => sameGroup(pid, current.childStarted?.[pid]));
-          current.state = childrenAlive ? 'running' : current.cancelRequested ? 'cancelled' : code === 0 ? 'succeeded' : 'failed';
+          if (current.state !== 'cancelled') current.state = childrenAlive ? 'running' : current.cancelRequested ? 'cancelled' : code === 0 ? 'succeeded' : 'failed';
           current.exitCode = code; current.updatedAt = new Date().toISOString();
         });
         if (!childrenAlive) release();
-      } catch (error) { console.error('Failed to update job after exit:', error); }
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.error('Failed to update job after exit:', error); }
     });
     return running;
   } catch (error) { release(); throw error; }
@@ -286,15 +287,23 @@ export function jobLogTail(root: string, id: string): string[] {
 }
 export function cancelJob(root: string, id: string): Job {
   const { dir } = findLocatedJob(root, id);
+  let previous: { cancelRequested?: boolean; updatedAt: string } | undefined;
   const current = updateJob(root, dir, id, current => {
     if (current.state !== 'running' || !current.pid) throw new JobNotRunning();
+    previous = { cancelRequested: current.cancelRequested, updatedAt: current.updatedAt };
     current.cancelRequested = true; current.updatedAt = new Date().toISOString();
   });
   const signal = (pid: number, group: boolean, started?: string) => {
     if (!(group ? sameGroup(pid, started) : exactProcess(pid, started))) return;
     try { process.kill(group ? -pid : pid, 'SIGTERM'); } catch (e) { if ((e as NodeJS.ErrnoException).code !== 'ESRCH') throw e; }
   };
-  signal(current.pid!, Boolean(current.processGroup), current.processStarted);
-  for (const pid of current.childPids ?? []) signal(pid, process.platform !== 'win32', current.childStarted?.[pid]);
+  try {
+    signal(current.pid!, Boolean(current.processGroup), current.processStarted);
+    for (const pid of current.childPids ?? []) signal(pid, process.platform !== 'win32', current.childStarted?.[pid]);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+    updateJob(root, dir, id, job => { if (job.state === 'running' && previous) { job.cancelRequested = previous.cancelRequested; job.updatedAt = previous.updatedAt; } });
+    throw new JobSignalDenied(id);
+  }
   return current;
 }

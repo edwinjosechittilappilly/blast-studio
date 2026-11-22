@@ -22,8 +22,8 @@ function terminalCommand(op, schema, campaign, args) {
 }
 
 export function jobRegion(container, ctx) {
-  const region = el('section', null, 'surface job-status'), status = el('div'), details = el('details'), log = el('pre', null, 'job-log'), cancel = button('Cancel job', 'secondary');
-  details.append(el('summary', 'Job log'), log); cancel.hidden = true; region.append(el('h2', 'Job status'), status, cancel, details); container.append(region);
+  const region = el('section', null, 'surface job-status'), status = el('div'), cancelError = el('div'), details = el('details'), log = el('pre', null, 'job-log'), cancel = button('Cancel job', 'secondary');
+  details.append(el('summary', 'Job log'), log); cancel.hidden = true; region.append(el('h2', 'Job status'), status, cancelError, cancel, details); container.append(region);
   let current, timer;
   async function refresh() {
     if (!region.isConnected) { clearTimeout(timer); return; }
@@ -37,7 +37,7 @@ export function jobRegion(container, ctx) {
       if (running) timer = setTimeout(refresh, 2000);
     } catch (error) { status.replaceChildren(notice(error.message)); }
   }
-  cancel.addEventListener('click', async () => { cancel.disabled = true; try { await api(`/api/jobs/${encodeURIComponent(current)}/cancel`, { method: 'POST', headers }); await refresh(); } catch (error) { status.replaceChildren(notice(error.message)); cancel.disabled = false; } });
+  cancel.addEventListener('click', async () => { cancel.disabled = true; try { await api(`/api/jobs/${encodeURIComponent(current)}/cancel`, { method: 'POST', headers }); cancelError.replaceChildren(); await refresh(); } catch (error) { cancelError.replaceChildren(notice(error.message)); cancel.disabled = false; } });
   async function run(op, args = {}) {
     try { const job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op, campaign: slugOf(ctx), args }) }); current = job.id; clearTimeout(timer); await refresh(); }
     catch (error) { status.replaceChildren(notice(error.message)); if (error.command) status.append(el('code', error.command), copyButton('Copy command', error.command)); }

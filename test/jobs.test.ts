@@ -360,6 +360,19 @@ test('job lookup and cancellation expose distinct not-found and not-running erro
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test('permission denied while cancelling preserves the running job and suggests the terminal command', () => {
+  const root = tempStudio(), id = 'a0000000-0000-4000-8000-000000000000', dir = join(root, 'logs/jobs'), originalKill = process.kill;
+  const started = processStarted(process.pid); assert.ok(started);
+  mkdirSync(dir, { recursive: true });
+  const record = { id, operation: 'doctor', state: 'running', createdAt: '2026-01-01', updatedAt: '2026-01-01', pid: process.pid, processStarted: started, command: 'bstudio doctor' };
+  writeFileSync(join(dir, `${id}.json`), JSON.stringify(record));
+  process.kill = ((pid: number, signal?: string | number) => { if (signal === 'SIGTERM') throw Object.assign(new Error('denied'), { code: 'EPERM' }); return originalKill(pid, signal); }) as typeof process.kill;
+  try {
+    assert.throws(() => cancelJob(root, id), new RegExp(`Not permitted to signal.*bstudio jobs cancel ${id}`));
+    const after = findJob(root, id); assert.equal(after.state, 'running'); assert.equal(after.cancelRequested, undefined); assert.equal(after.updatedAt, record.updatedAt);
+  } finally { process.kill = originalKill; rmSync(root, { recursive: true, force: true }); }
+});
+
 test('an aged malformed campaign lock can be recovered', () => {
   const root = tempStudio({ 'projects/acme/project.yml': 'name: acme\ncreatedAt: now\n', 'projects/acme/campaigns/demo/brief.md': '# demo' });
   try {

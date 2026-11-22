@@ -78,15 +78,15 @@ function confirmPaid(budget, start) {
 }
 
 async function monitor(region, job, success, submit) {
-  const status = el('div'), log = el('pre', '', 'job-log'), cancel = button('Cancel job', 'secondary');
+  const status = el('div'), cancelError = el('div'), log = el('pre', '', 'job-log'), cancel = button('Cancel job', 'secondary');
   const details = el('details'); details.open = true; details.append(el('summary', 'Job log'), log);
   status.setAttribute('role', 'status'); log.style.whiteSpace = 'pre-wrap'; log.style.overflowWrap = 'anywhere';
   cancel.addEventListener('click', async () => {
     cancel.disabled = true;
-    try { await api(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST', headers }); }
-    catch (error) { status.replaceChildren(notification('error', 'Could not cancel job', error.message)); cancel.disabled = false; }
+    try { await api(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST', headers }); cancelError.replaceChildren(); }
+    catch (error) { cancelError.replaceChildren(notification('error', 'Could not cancel job', error.message)); cancel.disabled = false; }
   });
-  region.replaceChildren(status, cancel, details);
+  region.replaceChildren(status, cancelError, cancel, details);
   async function update() {
     if (!region.isConnected) return;
     try {
