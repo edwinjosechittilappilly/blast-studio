@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync, symlinkSync } from "node:fs";
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { listProjects, parseCampaignRef, readProject } from "../src/campaigns.ts";
+import { listProjects, parseCampaignRef, readProject, writeProject } from "../src/campaigns.ts";
 import { campaignDir, loadConfig } from "../src/config.ts";
 import { run as project } from "../src/commands/project.ts";
 import { run as brief } from "../src/commands/brief.ts";
@@ -27,6 +27,15 @@ test("campaign addresses validate each component and reject escaping symlinks", 
   assert.throws(() => campaignDir(config, "acme/launch"), /escapes/);
 });
 
+
+test("project metadata preserves overrides and rejects invalid links", () => {
+  const { root, config } = setup();
+  writeProject(config, "brand", { name: "Brand", createdAt: "2026-01-01", brand: { voice: ["clear"] }, links: { home: "https://example.com" } }, "wx");
+  assert.deepEqual(readProject(config, "brand").brand, { voice: ["clear"] });
+  assert.deepEqual(readProject(config, "brand").links, { home: "https://example.com" });
+  writeFileSync(join(root, "projects/brand/project.yml"), "name: Brand\ncreatedAt: 2026-01-01\nlinks: {home: 123}\n");
+  assert.throws(() => readProject(config, "brand"), /Invalid project links/);
+});
 test("project commands persist metadata and share fetched evidence across campaigns", async () => {
   const { root, io, config } = setup();
   await project(["new", "acme", "--repo=org/repo", "--note", "Shared note", "--url", "https://example.com/"], io);
