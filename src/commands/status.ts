@@ -27,7 +27,8 @@ export const run: Command = async (args, io) => {
     io.out(`  ${campaign}`);
     const exportDir = join(campaignDir(config, project.slug), 'export');
     const exportFiles = [join(exportDir, 'manifest.json'), join(exportDir, `${compositeSlug(parseCampaignRef(project.slug))}.campaign.zip`)].filter(existsSync);
-    const exportedAt = exportFiles.length ? new Date(Math.max(...exportFiles.map(file => statSync(file).mtimeMs))).toISOString() : listExports(config, project.slug)[0]?.time ?? null;
+    const latestExport = listExports(config, project.slug)[0];
+    const exportedAt = exportFiles.length ? new Date(Math.max(...exportFiles.map(file => statSync(file).mtimeMs))).toISOString() : latestExport?.time ?? null;
     const published = Object.keys(project.published);
     io.out(`  exported: ${exportedAt ?? 'not exported'}`);
     io.out(`  published: ${published.length ? published.join(', ') : 'none'}`);
@@ -50,7 +51,9 @@ export const run: Command = async (args, io) => {
     const staleExport = !exportedAt || latestInput > Date.parse(exportedAt);
     const unmarked = project.posts.find(post => ['instagram', 'youtube-shorts', 'tiktok', 'dailydev'].includes(post.platform) && !published.includes(post.platform));
     const needsRevision = project.reviews.some(review => review.verdict !== 'pass' && review.verdict !== 'accepted');
-    const next = blocker ? 'resolve blockers: edit the brief or artifact metadata, then remove resolved blockers' : unresolved ? `confirm rights: ${unresolved[0]}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(dir, 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : staleExport ? `export: bstudio export ${project.slug}` : unmarked ? `record publication: bstudio mark ${project.slug} ${unmarked.platform} --url <url>` : 'done';
+    const hasMarketBlasterPosts = project.posts.some(post => !['instagram', 'youtube-shorts', 'tiktok', 'dailydev'].includes(post.platform));
+    const imported = latestExport && existsSync(join(exportDir, latestExport.name.split('/')[0], 'imported.json'));
+    const next = blocker ? 'resolve blockers: edit the brief or artifact metadata, then remove resolved blockers' : unresolved ? `confirm rights: ${unresolved[0]}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(dir, 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : staleExport ? `export: bstudio export ${project.slug}` : unmarked ? `record publication: bstudio mark ${project.slug} ${unmarked.platform} --url <url>` : hasMarketBlasterPosts && !imported ? `import: bstudio export ${project.slug} --mb <path>` : 'done';
     io.out(`  next: ${next}`);
   }
   io.out(`Month to date: $${monthToDate(config.root).toFixed(2)} / $${config.budget.monthlyUsd.toFixed(2)}`);

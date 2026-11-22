@@ -5,6 +5,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { join } from 'node:path';
 import test from 'node:test';
 import { stringify } from 'yaml';
+import { help } from '../src/cli.ts';
+import { run as brief } from '../src/commands/brief.ts';
+import { run as newCampaign } from '../src/commands/new.ts';
 import { run as feedback } from '../src/commands/feedback.ts';
 import { run as history, restore } from '../src/commands/history.ts';
 import { run as make } from '../src/commands/make.ts';
@@ -255,6 +258,25 @@ test('workflow help works without configuration and includes examples', async ()
     io.stdout.length = 0;
     assert.equal(await command(['--help'], io), 0);
     assert.match(io.stdout.join('\n'), /Example: bstudio /);
+  }
+});
+
+test('brief and new help list all input options and examples', async () => {
+  const io = fakeIO({ cwd: '/nonexistent', env: { BSTUDIO_CONFIG: '/nonexistent/studio.yml' } });
+  for (const command of [brief, newCampaign]) {
+    io.stdout.length = 0;
+    assert.equal(await command(['--help'], io), 0);
+    const text = io.stdout.join('\n');
+    for (const option of ['--idea', '--note', '--url', '--pr', '--commit', '--repo', '--mb-brief', '--force', '--help']) {
+      assert.ok(text.includes(option), `missing ${option}`);
+    }
+    assert.match(text, /Examples:/);
+    assert.equal((text.match(/bstudio (?:brief|new) acme\/launch/g) ?? []).length, 3);
+  }
+  const lines = help().split('\n').filter(line => /^\s+(brief|new)\s/.test(line));
+  assert.equal(lines.length, 2);
+  for (const line of lines) {
+    for (const option of ['--pr', '--commit', '--mb-brief']) assert.ok(line.includes(option), `missing ${option}`);
   }
 });
 
