@@ -5,6 +5,8 @@ import { readBrief } from './brief.ts';
 import { loadPosts } from './posts.ts';
 import { loadPacks, loadSources } from './packs.ts';
 import { repoRoot } from './updater/check.ts';
+import { loadFeedback } from './feedback.ts';
+import { readPlan } from './plan.ts';
 import type { AssetMeta, Review, StudioConfig } from './types.ts';
 
 const dirs = (path: string) => existsSync(path) ? readdirSync(path, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name).sort() : [];
@@ -18,8 +20,17 @@ export function projectDetails(config: StudioConfig, slug: string) {
     return existsSync(file) ? [parse(readFileSync(file, 'utf8')) as AssetMeta] : [];
   });
   const brief = join(dir, 'brief.md');
+  const plan = existsSync(join(dir, 'plan.yml')) ? readPlan(dir) : [];
+  const packs = loadPacks();
+  const rubric = Object.fromEntries(posts.map(post => [post.platform, packs.get(post.platform)?.rubric ?? []]));
+  const captions: Record<string, string> = {};
+  for (const file of [...posts.flatMap(post => post.media.map(media => media.file)), ...assets.flatMap(asset => (asset.outputs ?? []).map(output => `assets/${asset.id}/${output.file}`))]) {
+    if (!/\.(mp4|webm)$/i.test(file)) continue;
+    const vtt = file.replace(/\.(mp4|webm)$/i, '.vtt');
+    if (existsSync(join(dir, vtt))) captions[file] = vtt;
+  }
   const marksFile = join(dir, 'published.json');
-  return { slug, created: statSync(dir).birthtime.toISOString(), inputs: existsSync(brief) ? readBrief(dir).map(s => s.title) : [], posts, reviews, assets, exported: existsSync(join(dir, 'export', 'manifest.json')), published: existsSync(marksFile) ? JSON.parse(readFileSync(marksFile, 'utf8')) as unknown : [] };
+  return { slug, created: statSync(dir).birthtime.toISOString(), inputs: existsSync(brief) ? readBrief(dir).map(s => s.title) : [], posts, reviews, assets, plan, rubric, captions, threshold: config.review.threshold, feedback: loadFeedback(dir), exported: existsSync(join(dir, 'export', 'manifest.json')), published: existsSync(marksFile) ? JSON.parse(readFileSync(marksFile, 'utf8')) as unknown : [] };
 }
 export function loadLibrary(config: StudioConfig, query = '') {
   const needle = query.toLocaleLowerCase();

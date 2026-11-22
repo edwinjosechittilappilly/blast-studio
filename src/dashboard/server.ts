@@ -1,9 +1,12 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
-import { existsSync, readFileSync, realpathSync, statSync, createReadStream } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync, createReadStream, mkdirSync, openSync, closeSync } from 'node:fs';
 import { dirname, extname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawn } from 'node:child_process';
+import type { ChildProcess } from 'node:child_process';
+import { addFeedback } from '../feedback.ts';
 import { loadConfig, projectDir, writeConfigField } from '../config.ts';
 import { loadLibrary, projectDetails, latestSources } from '../library.ts';
 import { monthToDate, projectTotal, providerTotals } from '../budget/ledger.ts';
@@ -38,11 +41,13 @@ function serveFile(req: IncomingMessage, res: ServerResponse, path: string, medi
   }
   res.writeHead(200, { ...headers, 'Content-Length': size, ...(type.startsWith('video/') ? { 'Accept-Ranges': 'bytes' } : {}) }); createReadStream(path).pipe(res);
 }
-export async function startDashboard(io: IO, options: { port?: number; host?: string } = {}) {
+export async function startDashboard(io: IO, options: { port?: number; host?: string; spawnRevise?: typeof spawn } = {}) {
   const host = options.host ?? '127.0.0.1';
   if (host !== '127.0.0.1') throw new Error('Dashboard may only bind to 127.0.0.1');
   const token = randomBytes(32).toString('hex'), session = randomBytes(32).toString('hex');
   let unused = true;
+  const runs = new Map<string, { running: boolean; exitCode: number | null; log: string }>();
+  const spawnRevise = options.spawnRevise ?? spawn;
   const server = createServer(async (req, res) => {
     const address = server.address();
     const port = typeof address === 'object' && address ? address.port : options.port ?? 4848;
@@ -58,6 +63,37 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
       const rawPath = (req.url ?? '').split('?')[0];
       if (rawPath.startsWith('/media/') && decodeURIComponent(rawPath).split(/[\\/]/).some(part => part === '..' || part === '.')) { send(res, 403, { error: 'Forbidden' }); return; }
       const config = loadConfig(io), pathname = url.pathname;
+      const projectApi = /^\/api\/projects\/([^/]+)\/(feedback|revise|status)$/.exec(pathname);
+      if (projectApi) {
+        const slug = decodeURIComponent(projectApi[1]), dir = projectDir(config, slug), action = projectApi[2];
+        if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; }
+        if (req.method === 'GET' && action === 'status') {
+          const run = runs.get(slug);
+          const lines = run && existsSync(run.log) ? readFileSync(run.log, 'utf8').split(/\r?\n/).filter((line, index, all) => line || index < all.length - 1).slice(-50) : [];
+          send(res, 200, { running: run?.running ?? false, exitCode: run?.exitCode ?? null, lines }); return;
+        }
+        if (req.method === 'POST' && (action === 'feedback' || action === 'revise')) {
+          if (req.headers['x-requested-with'] !== 'bstudio') { send(res, 403, { error: 'Missing request header' }); return; }
+          if (action === 'feedback') {
+            const data = await body(req), target = data.target;
+            if (!target || typeof target !== 'object' || Array.isArray(target) || Object.keys(target).some(key => key !== 'platform' && key !== 'asset') || typeof data.note !== 'string' || !data.note.trim() || data.note.length > 4000) { send(res, 400, { error: 'Invalid feedback' }); return; }
+            const selection = target as { platform?: unknown; asset?: unknown }, project = projectDetails(config, slug);
+            if ((selection.platform !== undefined && (typeof selection.platform !== 'string' || !project.posts.some(post => post.platform === selection.platform))) || (selection.asset !== undefined && (typeof selection.asset !== 'string' || !project.assets.some(asset => asset.id === selection.asset)))) { send(res, 400, { error: 'Unknown feedback target' }); return; }
+            send(res, 201, addFeedback(dir, selection as { platform?: string; asset?: string }, data.note.trim())); return;
+          }
+          if (runs.get(slug)?.running) { send(res, 409, { error: 'Revision already running' }); return; }
+          const logs = join(dir, 'logs'); mkdirSync(logs, { recursive: true });
+          const log = join(logs, `revise-${Date.now()}-${randomBytes(4).toString('hex')}.log`), fd = openSync(log, 'a');
+          const run = { running: true, exitCode: null as number | null, log }; runs.set(slug, run);
+          try {
+            const child: ChildProcess = spawnRevise(process.execPath, [fileURLToPath(new URL('../../bin/bstudio.mjs', import.meta.url)), 'revise', slug], { detached: true, stdio: ['ignore', fd, fd], env: { ...process.env, ...io.env, BSTUDIO_HOME: config.root, BSTUDIO_CONFIG: config.file } });
+            child.once('error', () => { run.running = false; run.exitCode = 1; });
+            child.once('exit', code => { run.running = false; run.exitCode = code ?? 1; });
+            child.unref();
+          } catch (error) { run.running = false; run.exitCode = 1; throw error; } finally { closeSync(fd); }
+          send(res, 202, { running: true }); return;
+        }
+      }
       if (req.method === 'GET') {
         if (pathname === '/api/library') { send(res, 200, loadLibrary(config, url.searchParams.get('q') ?? '')); return; }
         if (pathname === '/api/budget') { send(res, 200, { cap: config.budget.monthlyUsd, perProject: config.budget.perProjectUsd, mtd: monthToDate(config.root), providerTotals: providerTotals(config.root), projects: Object.fromEntries(loadLibrary(config).map(p => [p.slug, projectTotal(config.root, p.slug)])), providers: { images: config.images.provider, voice: config.voice.provider }, brand: config.brand }); return; }

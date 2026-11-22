@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { request } from 'node:http';
+import { EventEmitter } from 'node:events';
+import type { spawn } from 'node:child_process';
 import { loadConfig } from '../src/config.ts';
 import { loadLibrary, latestSources } from '../src/library.ts';
 import { startDashboard } from '../src/dashboard/server.ts';
@@ -67,4 +69,36 @@ test('dashboard authenticates, contains media and validates settings', async t =
   assert.ok([403, 404].includes(await raw(started.port, '/media/launch/%2e%2e/studio.yml', `127.0.0.1:${started.port}`, cookie)));
   mkdirSync(join(root, 'projects/launch/assets/movie'), { recursive: true }); writeFileSync(join(root, 'projects/launch/assets/movie/test.mp4'), 'abcdef');
   const range = await fetch(base + '/media/launch/assets/movie/test.mp4', { headers: { ...headers, Range: 'bytes=1-3' } }); assert.equal(range.status, 206); assert.equal(await range.text(), 'bcd');
+});
+
+test('feedback and revision endpoints validate targets and serialize runs', async t => {
+  const { root, io } = fixture();
+  const child = Object.assign(new EventEmitter(), { unref() {} });
+  const started = await startDashboard(io, { port: 0, spawnRevise: (() => child) as unknown as typeof spawn }); t.after(() => started.server.close());
+  const base = `http://127.0.0.1:${started.port}`, path = '/api/projects/launch/feedback';
+  const post = (url: string, headers: Record<string, string>, data: unknown = {}) => fetch(base + url, { method: 'POST', headers, body: JSON.stringify(data) });
+  assert.equal((await post(path, {}, { target: {}, note: 'hello' })).status, 401);
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const headers = { cookie, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
+  assert.equal((await post(path, headers, { target: { platform: 'missing' }, note: 'hello' })).status, 400);
+  assert.equal((await post(path, headers, { target: { asset: 'missing' }, note: 'hello' })).status, 400);
+  assert.equal((await post(path, headers, { target: {}, note: 'x'.repeat(4001) })).status, 400);
+  assert.equal((await post(path, headers, { target: { platform: 'linkedin' }, note: 'Make it clearer' })).status, 201);
+  assert.match(readFileSync(join(root, 'projects/launch/feedback.yml'), 'utf8'), /Make it clearer/);
+  assert.equal((await post('/api/projects/launch/revise', headers)).status, 202);
+  assert.equal((await post('/api/projects/launch/revise', headers)).status, 409);
+  assert.equal((await (await fetch(base + '/api/projects/launch/status', { headers })).json()).running, true);
+  child.emit('exit', 0);
+  assert.equal((await (await fetch(base + '/api/projects/launch/status', { headers })).json()).exitCode, 0);
+});
+
+test('project review payload includes rubric, threshold and maker review', async t => {
+  const { root, io } = fixture();
+  writeFileSync(join(root, 'projects/launch/posts/linkedin.md'), '---\nplatform: linkedin\nevidence: []\nmedia: []\nselfReview:\n  checks:\n    - {item: audience, pass: true}\n  summary: Ready\n---\nHello');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const result = await (await fetch(`http://127.0.0.1:${started.port}/api/project/launch`, { headers: { cookie } })).json();
+  assert.equal(result.threshold, 75);
+  assert.ok(result.rubric.linkedin.some((criterion: { question: string }) => criterion.question));
+  assert.equal(result.posts[0].selfReview.summary, 'Ready');
 });
