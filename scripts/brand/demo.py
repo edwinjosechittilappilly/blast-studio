@@ -9,7 +9,7 @@ rows = "\n".join(
     f'<text x="36" y="{92 + i * 27}" fill="{ "#d2baff" if line.startswith("$") else "#eee7fa" }">{escape(line)}</text>'
     for i, line in enumerate(lines)
 )
-svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="{height}" viewBox="0 0 1280 {height}" role="img" aria-label="Recorded Blast Studio session: initialize a studio, write a brief, check status, and render a sample card.">
+svg = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="{height}" viewBox="0 0 1280 {height}" role="img" aria-label="Recorded Blast Studio run on a real commit: brief, plan, make, render, review with per-platform verdicts, revise, and export of one campaign zip into Market Blaster.">
 <metadata>{escape(licenses())}</metadata>
 <style>{face("Mono", "IBMPlexMono.woff2")} text{{font:16px Mono,monospace;white-space:pre}}</style>
 <rect width="1280" height="{height}" rx="12" fill="#18102e"/>

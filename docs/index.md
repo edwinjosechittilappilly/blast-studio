@@ -43,6 +43,8 @@ Requires Node 22.18 or newer. See [getting started](getting-started.md) for setu
 
 </div>
 
-![The Blast Studio content workflow](assets/demo.svg)
+![A real Blast Studio run on a Market Blaster commit: brief, plan, make, render, review verdicts per platform, revise, and export of one campaign zip](assets/demo.svg)
+
+Output from a real run on market-blaster@adbc177, lines trimmed. Reddit stayed a human task: its outline needs the subreddit rules checked by a person.
 
 See the [command reference](commands.md) for the full CLI and [platform packs](platforms.md) for platform-specific guidance.

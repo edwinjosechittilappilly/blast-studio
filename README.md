@@ -44,7 +44,8 @@ bstudio export launch --mb /path/to/market-blaster-project
 
 The agent commands must be installed and configured before planning, making or reviewing. Inspect the content and review before exporting. See [getting started](docs/getting-started.md) for requirements and alternatives.
 
-<p align="center"><img src="docs/assets/demo.svg" alt="A Blast Studio terminal session" width="100%"></p>
+<p align="center"><img src="docs/assets/demo.svg" alt="A real Blast Studio run on a Market Blaster commit: brief, plan, make, render, review verdicts per platform, revise, and export of one campaign zip" width="100%"></p>
+<p align="center"><sub>Output from a real run on <a href="https://github.com/edwinjosechittilappilly/market-blaster/commit/adbc177d3877f45c98912c17b5ba3ccf33287ccb">market-blaster@adbc177</a>, lines trimmed. Reddit stayed a human task: its outline needs the subreddit rules checked by a person.</sub></p>
 
 ## How it works
 

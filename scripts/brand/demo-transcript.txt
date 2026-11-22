@@ -1,15 +1,30 @@
-$ export HOME=/tmp/bs2 BSTUDIO_HOME=/tmp/bs2/studio
-$ bstudio init
-Created /tmp/bs2/.config/blast-studio/studio.yml
-Studio root: /tmp/bs2/studio
+$ bstudio brief media-launch --idea "Market Blaster now attaches images…" --commit edwinjosechittilappilly/market-blaster@adbc177
+Wrote ~/BlastStudio/projects/media-launch/brief.md (2 evidence anchors)
 
-$ bstudio brief launch --idea "A small release, ready to share."
-Wrote /tmp/bs2/studio/projects/launch/brief.md (1 evidence anchors)
+$ bstudio plan media-launch
+I wrote plan.yml with one entry for each of the six allowed platforms. Hacker News is left out because its pack is `ai: none`.
 
-$ bstudio status launch
-launch
-Month to date: $0.00 / $0.00
-Last source check: never
+$ bstudio make media-launch
+I've written all six planned posts and the sources for all seven planned assets…
 
-$ bstudio render-preview scripts/brand/sample-card.html --size 1080x1080 --out /tmp/bs2/card.png
-/tmp/bs2/card.png
+$ bstudio render media-launch
+skipped shorts-voiceover: voiceover needs voice.provider (now none); the video renders silent with captions
+Rendered 6 assets, skipped 1
+
+$ bstudio review media-launch
+bluesky: revise (72.2% editorial judgment)
+devto: pass (92.9% editorial judgment)
+linkedin: pass (94.4% editorial judgment)
+reddit: revise (50.0% editorial judgment)
+x: pass (85.7% editorial judgment)
+youtube-shorts: pass (83.3% editorial judgment)
+
+$ bstudio revise media-launch
+bluesky: pass (94.4% editorial judgment)
+
+$ bstudio export media-launch --mb ~/launches
+Wrote ~/BlastStudio/projects/media-launch/export/media-launch.campaign.zip
+0 error(s), 7 warning(s)
+Imported: bluesky, devto, linkedin, x
+Skipped: hn, reddit
+Manual: youtube-shorts
