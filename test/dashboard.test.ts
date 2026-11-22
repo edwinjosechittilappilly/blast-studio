@@ -1,16 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, cpSync, mkdirSync, readFileSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import fs, { chmodSync, cpSync, mkdirSync, readFileSync, statSync, symlinkSync, unlinkSync, utimesSync, watch, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { request } from 'node:http';
-import { EventEmitter } from 'node:events';
-import type { spawn } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 import { loadConfig } from '../src/config.ts';
 import { loadPack } from '../src/packs.ts';
 import { loadLibrary, latestSources } from '../src/library.ts';
 import { startDashboard } from '../src/dashboard/server.ts';
+import { startCliJob } from '../src/jobs/runner.ts';
 import { run as status } from '../src/commands/status.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
@@ -53,6 +53,48 @@ test('library and status derive live project data', async () => {
   await status(['acme/launch', '--verbose'], verbose);
   assert.ok(unverified.every(field => verbose.stdout.includes(`  ${field}`)));
 });
+test('library updatedAt ignores transient files and log directories', () => {
+  const { root, io } = fixture(), config = loadConfig(io);
+  const dir = join(root, 'projects/acme/campaigns/launch');
+  const contentTime = new Date('2040-01-01T00:00:00.000Z');
+  const transientTime = new Date('2050-01-01T00:00:00.000Z');
+  const post = join(dir, 'posts/linkedin.md');
+  utimesSync(post, contentTime, contentTime);
+  mkdirSync(join(dir, 'logs'));
+  for (const name of ['logs/output.log', '.bstudio-job.lock', '.feedback-random.lock', '.feedback-random.tmp']) {
+    const file = join(dir, name);
+    writeFileSync(file, 'transient');
+    utimesSync(file, transientTime, transientTime);
+  }
+  utimesSync(join(dir, 'logs'), transientTime, transientTime);
+  utimesSync(dir, transientTime, transientTime);
+  assert.equal(loadLibrary(config)[0].updatedAt, contentTime.toISOString());
+  const later = new Date('2041-01-01T00:00:00.000Z');
+  utimesSync(post, later, later);
+  assert.equal(loadLibrary(config)[0].updatedAt, later.toISOString());
+});
+
+test('library updatedAt tolerates entries removed during traversal', t => {
+  const { root, io } = fixture(), config = loadConfig(io);
+  const missing = join(root, 'projects/acme/campaigns/launch/vanishing');
+  writeFileSync(missing, 'temporary');
+  const original = fs.lstatSync;
+  t.mock.method(fs, 'lstatSync', ((path: fs.PathLike) => {
+    if (path === missing) {
+      const error = new Error('entry disappeared') as NodeJS.ErrnoException;
+      error.code = 'ENOENT';
+      throw error;
+    }
+    return original(path);
+  }) as typeof fs.lstatSync);
+  syncBuiltinESMExports();
+  try {
+    assert.equal(loadLibrary(config)[0].slug, 'acme/launch');
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+  }
+});
 test('dashboard authenticates, contains media and validates settings', async t => {
   const { root, io } = fixture(); const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
   const base = `http://127.0.0.1:${started.port}`;
@@ -60,11 +102,13 @@ test('dashboard authenticates, contains media and validates settings', async t =
   assert.equal((await fetch(base + '/api/library')).status, 401);
   const expired = await fetch(base + '/', { headers: { Accept: 'text/html' } });
   assert.equal(expired.status, 401);
-  assert.equal(expired.headers.get('content-security-policy'), "default-src 'none'; base-uri 'none'");
+  assert.equal(expired.headers.get('content-security-policy'), "default-src 'none'; style-src 'self'; font-src 'self' data:; base-uri 'none'");
   const exchange = await fetch(started.url, { redirect: 'manual' }); assert.equal(exchange.status, 302);
   const cookie = exchange.headers.get('set-cookie')!; assert.match(cookie, /HttpOnly/); assert.match(cookie, /SameSite=Strict/);
   assert.equal((await fetch(started.url, { redirect: 'manual' })).status, 401);
-  const headers = { cookie, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
+  const headers = { cookie, origin: base, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
+  assert.equal((await fetch(base + '/api/budget', { method: 'PUT', headers: { ...headers, origin: 'http://evil.test' }, body: '{}' })).status, 403);
+  assert.equal((await fetch(base + '/api/budget', { method: 'PUT', headers: { cookie, 'X-Requested-With': 'bstudio' }, body: '{}' })).status, 403);
   assert.equal((await fetch(base + '/api/library', { headers })).status, 200);
   const html = await fetch(base + '/', { headers }); assert.equal(html.status, 200);
   assert.match(html.headers.get('content-security-policy') ?? '', /font-src 'self' data:/);
@@ -103,7 +147,7 @@ test('missing dashboard assets produce a protected HTML error', async t => {
   const response = await fetch(`http://127.0.0.1:${started.port}/`, { headers: { cookie } });
   assert.equal(response.status, 503);
   assert.match(response.headers.get('content-type') ?? '', /^text\/html/);
-  assert.equal(response.headers.get('content-security-policy'), "default-src 'none'; base-uri 'none'");
+  assert.equal(response.headers.get('content-security-policy'), "default-src 'none'; style-src 'self'; font-src 'self' data:; base-uri 'none'");
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   writeFileSync(join(root, 'src/dashboard/static/app.js'), 'export {};\n');
   const available = await fetch(`http://127.0.0.1:${started.port}/`, { headers: { cookie } });
@@ -111,17 +155,15 @@ test('missing dashboard assets produce a protected HTML error', async t => {
   assert.match(available.headers.get('content-security-policy') ?? '', /font-src 'self' data:/);
 });
 
-test('feedback and revision endpoints validate targets and serialize runs', async t => {
+test('feedback and revision endpoints validate targets and serialize runs', { timeout: 15000 }, async t => {
   const { root, io } = fixture();
-  const child = Object.assign(new EventEmitter(), { unref() {} });
-  let argv: string[] = [], childEnv: NodeJS.ProcessEnv = {};
-  const fakeSpawn = ((command: string, args: string[], options: { env: NodeJS.ProcessEnv }) => { assert.equal(command, process.execPath); argv = args; childEnv = options.env; return child; }) as unknown as typeof spawn;
-  const started = await startDashboard(io, { port: 0, spawnRevise: fakeSpawn }); t.after(() => started.server.close());
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
   const base = `http://127.0.0.1:${started.port}`, path = '/api/projects/acme%2Flaunch/feedback';
   const post = (url: string, headers: Record<string, string>, data: unknown = {}) => fetch(base + url, { method: 'POST', headers, body: JSON.stringify(data) });
   assert.equal((await post(path, {}, { target: {}, note: 'hello' })).status, 401);
   const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
-  const headers = { cookie, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
+  const headers = { cookie, origin: base, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
+  assert.equal((await post(path, { ...headers, origin: 'http://evil.test' }, { target: {}, note: 'hello' })).status, 403);
   assert.equal((await post(path, { cookie }, { target: {}, note: 'hello' })).status, 403);
   assert.equal((await post('/api/projects/acme%2Flaunch/revise', { cookie })).status, 403);
   assert.equal((await post('/api/projects/BAD%2Flaunch/feedback', headers, { target: {}, note: 'hello' })).status, 400);
@@ -131,12 +173,26 @@ test('feedback and revision endpoints validate targets and serialize runs', asyn
   assert.equal((await post(path, headers, { target: {}, note: 'x'.repeat(4001) })).status, 400);
   assert.equal((await post(path, headers, { target: { platform: 'linkedin' }, note: 'Make it clearer' })).status, 201);
   assert.match(readFileSync(join(root, 'projects/acme/campaigns/launch/feedback.yml'), 'utf8'), /Make it clearer/);
-  assert.equal((await post('/api/projects/acme%2Flaunch/revise', headers)).status, 202);
-  assert.deepEqual(argv.slice(1), ['revise', 'acme/launch', '--feedback-only']);
-  assert.equal(childEnv.BSTUDIO_HOME, root); assert.equal(childEnv.BSTUDIO_CONFIG, join(root, 'studio.yml'));
-  assert.equal((await post('/api/projects/acme%2Flaunch/revise', headers)).status, 409);
-  assert.equal((await (await fetch(base + '/api/projects/acme%2Flaunch/status', { headers })).json()).running, true);
-  child.emit('exit', 0);
+  const existing = startCliJob(root, 'acme/launch', 'revise');
+  try {
+    assert.equal((await post('/api/projects/acme%2Flaunch/revise', headers)).status, 409);
+    assert.equal((await (await fetch(base + '/api/projects/acme%2Flaunch/status', { headers })).json()).running, true);
+  } finally { existing.finish(0); }
+  unlinkSync(join(root, 'projects/acme/campaigns/launch/feedback.yml'));
+  const response = await post('/api/projects/acme%2Flaunch/revise', headers);
+  assert.equal(response.status, 202);
+  const job = await response.json() as { id: string; command: string };
+  assert.equal(job.command, 'bstudio revise acme/launch --feedback-only');
+  const finished = Promise.withResolvers<void>();
+  const check = async () => {
+    try {
+      const status = await (await fetch(`${base}/api/jobs/${job.id}`, { headers })).json() as { state: string };
+      if (status.state === 'succeeded') finished.resolve();
+      else if (status.state === 'failed' || status.state === 'cancelled') finished.reject(new Error(`Revision ${status.state}`));
+    } catch (error) { finished.reject(error); }
+  };
+  const watcher = watch(join(root, 'projects/acme/campaigns/launch/logs/jobs'), () => { void check(); });
+  try { await check(); await finished.promise; } finally { watcher.close(); }
   assert.equal((await (await fetch(base + '/api/projects/acme%2Flaunch/status', { headers })).json()).exitCode, 0);
 });
 
@@ -191,17 +247,17 @@ test('dashboard rejects weak or malformed persistent keys', async () => {
   await assert.rejects(startDashboard(io, { port: 0 }), /Invalid dashboard signing key/);
 });
 
-test('dashboard reports revisions and stale locks after restart', async t => {
-  const { root, io } = fixture(), lock = join(root, 'projects/acme/campaigns/launch/.revise.lock');
-  writeFileSync(lock, String(process.pid));
+test('dashboard reports active locks and permits recovery of dead owners after restart', async t => {
+  const { root, io } = fixture(), lock = join(root, 'projects/acme/campaigns/launch/.bstudio-job.lock');
+  writeFileSync(lock, JSON.stringify({ id: 'active', pid: process.pid }));
   const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
   const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
   const url = `http://127.0.0.1:${started.port}/api/projects/acme%2Flaunch/status`;
   const active = await (await fetch(url, { headers: { cookie } })).json();
   assert.equal(active.running, true); assert.equal(active.staleLock, false);
-  writeFileSync(lock, '2147483647');
+  writeFileSync(lock, JSON.stringify({ id: 'stale', pid: 2147483647 }));
   const stale = await (await fetch(url, { headers: { cookie } })).json();
-  assert.equal(stale.running, false); assert.equal(stale.staleLock, true);
+  assert.equal(stale.running, false); assert.equal(stale.staleLock, false); assert.deepEqual(stale.lines, []);
   unlinkSync(lock);
 });
 
@@ -216,8 +272,8 @@ test('dashboard isolates same-named campaigns and rejects escaping paths', async
   writeFileSync(join(root, 'projects/acme/campaigns/launch/preview.txt'), 'acme');
   const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
   const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
-  const headers = { cookie, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
   const base = `http://127.0.0.1:${started.port}`;
+  const headers = { cookie, origin: base, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
   const library = await (await fetch(base + '/api/library', { headers })).json();
   assert.deepEqual(library.map((entry: { slug: string }) => entry.slug).sort(), ['acme/launch', 'other/launch']);
   const budget = await (await fetch(base + '/api/budget', { headers })).json();
@@ -245,21 +301,23 @@ test('dashboard isolates same-named campaigns and rejects escaping paths', async
 test('revision runs are tracked by full campaign address', async t => {
   const { root, io } = fixture();
   mkdirSync(join(root, 'projects/other/campaigns/launch'), { recursive: true });
-  const children: EventEmitter[] = [];
-  const fakeSpawn = (() => {
-    const child = Object.assign(new EventEmitter(), { unref() {} });
-    children.push(child);
-    return child;
-  }) as unknown as typeof spawn;
-  const started = await startDashboard(io, { port: 0, spawnRevise: fakeSpawn }); t.after(() => started.server.close());
-  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
-  const headers = { cookie, 'X-Requested-With': 'bstudio' }, base = `http://127.0.0.1:${started.port}/api/projects`;
-  for (const project of ['acme', 'other']) {
-    assert.equal((await fetch(`${base}/${project}%2Flaunch/revise`, { method: 'POST', headers })).status, 202);
-  }
-  children[0].emit('exit', 0);
-  assert.equal((await (await fetch(`${base}/acme%2Flaunch/status`, { headers })).json()).running, false);
-  assert.equal((await (await fetch(`${base}/other%2Flaunch/status`, { headers })).json()).running, true);
-  children[1].emit('exit', 1);
-  assert.equal((await (await fetch(`${base}/other%2Flaunch/status`, { headers })).json()).exitCode, 1);
+  writeFileSync(join(root, 'projects/other/project.yml'), 'name: Other\ncreatedAt: 2025-01-01\n');
+  const first = startCliJob(root, 'acme/launch', 'revise');
+  const second = startCliJob(root, 'other/launch', 'revise');
+  try {
+    const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+    const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+    const headers = { cookie }, base = `http://127.0.0.1:${started.port}/api/projects`;
+    assert.deepEqual((await (await fetch(`${base}/acme%2Flaunch/status`, { headers })).json()).lines, []);
+    first.log('one'); first.log('two');
+    assert.deepEqual((await (await fetch(`${base}/acme%2Flaunch/status`, { headers })).json()).lines, ['one', 'two']);
+    for (const project of ['acme', 'other']) {
+      assert.equal((await (await fetch(`${base}/${project}%2Flaunch/status`, { headers })).json()).running, true);
+    }
+    first.finish(0);
+    assert.equal((await (await fetch(`${base}/acme%2Flaunch/status`, { headers })).json()).running, false);
+    assert.equal((await (await fetch(`${base}/other%2Flaunch/status`, { headers })).json()).running, true);
+    second.finish(1);
+    assert.equal((await (await fetch(`${base}/other%2Flaunch/status`, { headers })).json()).exitCode, 1);
+  } finally { first.finish(0); second.finish(1); }
 });

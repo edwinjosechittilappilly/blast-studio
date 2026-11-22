@@ -1,11 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { campaignDirectory, cancelJob, findJob, jobLog, listJobs } from '../src/jobs/runner.ts';
+import { processStarted } from '../src/jobs/process.ts';
 
 for (const layout of ['flat without brief', 'flat with brief', 'migrated'] as const) {
   test(`legacy job records remain accessible in ${layout}`, () => {
@@ -17,7 +18,8 @@ for (const layout of ['flat without brief', 'flat with brief', 'migrated'] as co
       mkdirSync(dir, { recursive: true });
       if (layout === 'flat with brief') writeFileSync(join(campaign, 'brief.md'), '# Brief\n');
       const id = randomUUID(), now = new Date().toISOString();
-      const started = execFileSync('ps', ['-o', 'lstart=', '-p', String(child.pid)], { encoding: 'utf8' }).trim();
+      const started = processStarted(child.pid!);
+      assert.ok(started);
       const record = { id, operation: 'brief', campaign: 'demo', state: 'running', createdAt: now, updatedAt: now, pid: child.pid, processStarted: started, command: 'bstudio brief demo' };
       writeFileSync(join(dir, `${id}.json`), JSON.stringify(record));
       writeFileSync(join(dir, `${id}.log`), 'legacy output\n');

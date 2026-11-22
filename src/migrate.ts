@@ -6,6 +6,7 @@ import { parse, stringify } from "yaml";
 import { containedPath, validateId } from "./campaigns.ts";
 import { projectRoot } from "./config.ts";
 import { revisionLockStatus } from "./revise-lock.ts";
+import { processStarted, sameProcess } from "./jobs/process.ts";
 import { UserError, type StudioConfig } from "./types.ts";
 
 const JOURNAL = ".bstudio-migration.json";
@@ -34,12 +35,6 @@ function processInfo(pid: number): { state: string; started: string } | undefine
   return undefined;
 }
 
-function processAlive(pid: number): boolean {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
-  try { process.kill(pid, 0); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === "ESRCH") return false; }
-  return !processInfo(pid)?.state.startsWith("Z");
-}
 
 function studioOwnerAlive(owner: { pid?: number; processStarted?: string }): boolean {
   if (!Number.isSafeInteger(owner.pid) || owner.pid! <= 0) return false;
@@ -53,10 +48,6 @@ function studioOwnerAlive(owner: { pid?: number; processStarted?: string }): boo
   return info.started === owner.processStarted;
 }
 
-function processStarted(pid: number): string | undefined {
-  try { return execFileSync("ps", ["-o", "lstart=", "-p", String(pid)], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || undefined; }
-  catch { return undefined; }
-}
 
 function jobLockAlive(path: string): boolean {
   let lock: { pid?: number; processStarted?: string; childPids?: number[]; childStarted?: Record<string, string> } | undefined;
@@ -67,12 +58,12 @@ function jobLockAlive(path: string): boolean {
     catch (err) { if ((err as NodeJS.ErrnoException).code === "ENOENT") return false; throw err; }
   }
   if (!lock || !Number.isInteger(lock.pid) || lock.pid! <= 0) return true;
-  if (processAlive(lock.pid!) && (!lock.processStarted || processStarted(lock.pid!) === lock.processStarted)) return true;
+  if (sameProcess(lock.pid!, lock.processStarted)) return true;
   return Array.isArray(lock.childPids) && lock.childPids.some(pid => {
     const started = lock!.childStarted?.[pid];
     if (!started || !Number.isSafeInteger(pid) || pid <= 0) return false;
     const current = processStarted(pid);
-    if (current && current !== started) return false;
+    if (current && current !== started && !(current.startsWith("linux:") && !started.startsWith("linux:"))) return false;
     try { process.kill(process.platform === "win32" ? pid : -pid, 0); return true; }
     catch (error) { return (error as NodeJS.ErrnoException).code !== "ESRCH"; }
   });
@@ -104,7 +95,11 @@ export function withStudioLock<T>(root: string, fn: () => T): T {
         throw new UserError(`Timed out waiting for studio lock ${path}. Stop or exit all studio processes, verify no owner is still running, then manually remove the lock and its ${recovery} recovery directory if they remain.`);
       }
       try {
-        linkSync(temp, path);
+        try { linkSync(temp, path); }
+        catch (error) {
+          if (!["ENOTSUP", "EOPNOTSUPP", "EPERM", "ENOSYS"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+          writeFileSync(path, JSON.stringify(owner), { flag: "wx", mode: 0o600 });
+        }
         // A recovering process may have observed the previous owner.
         if (present(recovery)) { unlinkSync(path); Atomics.wait(sleep, 0, 0, 20); continue; }
         break;

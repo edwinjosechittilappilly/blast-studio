@@ -4,7 +4,7 @@ import { UserError } from '../types.ts';
 type Kind = 'id' | 'campaign' | 'ids' | 'text' | 'url' | 'path' | 'number' | 'bool' | 'repo' | 'sha';
 type Field = { kind: Kind; required?: boolean; positional?: boolean; flag?: string; multiple?: boolean };
 export type Operation = { fields: Record<string, Field>; campaign: boolean; paid: boolean; step: string; requiresTTY: boolean };
-const campaign: Field = { kind: 'id', required: true, positional: true };
+const campaign: Field = { kind: 'campaign', required: true, positional: true };
 const id = (required = false): Field => ({ kind: 'id', required, positional: true });
 const option = (kind: Kind, flag: string): Field => ({ kind, flag });
 const scope = { platforms: option('ids', '--platforms'), assets: option('ids', '--assets') };
@@ -42,6 +42,9 @@ export const operations: Readonly<Record<string, Operation>> = {
   'feedback add': operation('feedback', { campaign, note: { ...inputs.note, required: true }, asset: option('id', '--asset'), platform: option('id', '--platform') }),
   'feedback rm': operation('feedback', { campaign, id: id(true) }),
 };
+export function operationRequiresTTY(name: string, operation: Operation, imageProvider?: string): boolean {
+  return operation.requiresTTY || (['render', 'new', 'revise'].includes(name) && imageProvider === 'omp');
+}
 const slug = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export function campaignRef(value: unknown): string {
   if (typeof value !== 'string') throw new UserError('Invalid campaign address');
@@ -75,7 +78,7 @@ export function buildOperation(name: string, raw: unknown, options: { imageProvi
     const items = field.multiple && Array.isArray(v) ? v : [v];
     if (!items.length) throw new UserError(`Invalid ${key}`);
     for (const item of items) {
-      const parsed = key === 'campaign' ? campaignRef(item) : validate(item, field.kind, key);
+      const parsed = validate(item, field.kind, key);
       if (name === 'project new' && key === 'repo' && parsed === 'local') throw new UserError('Invalid repo');
       if (key === 'campaign') ref = parsed as string;
       if (field.positional) positional.push(String(parsed));
@@ -88,5 +91,5 @@ export function buildOperation(name: string, raw: unknown, options: { imageProvi
   // Feedback syntax places the action after its campaign.
   const args = cmd === 'feedback' ? [cmd, ...positional.slice(0, 1), ...sub, ...positional.slice(1), ...flags] : [cmd, ...sub, ...positional, ...flags];
   const quote = (s: string) => /^[a-zA-Z0-9_./:=,-]+$/.test(s) ? s : `'${s.replaceAll("'", "'\\''")}'`;
-  return { operation: op, args, campaign: ref, command: ['bstudio', ...args].map(quote).join(' '), requiresTTY: op.requiresTTY || (['render', 'new', 'revise'].includes(cmd) && options.imageProvider === 'omp') };
+  return { operation: op, args, campaign: ref, command: ['bstudio', ...args].map(quote).join(' '), requiresTTY: operationRequiresTTY(name, op, options.imageProvider) };
 }

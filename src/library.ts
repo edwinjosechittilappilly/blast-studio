@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { campaignDir } from './config.ts';
@@ -29,6 +29,19 @@ export function listExports(config: StudioConfig, ref: CampaignRef | string): { 
     return [];
   }).sort((a, b) => b.time.localeCompare(a.time) || b.collision - a.collision).map(({ collision: _collision, ...entry }) => entry);
 }
+function lastUpdated(path: string): number {
+  try {
+    const stat = lstatSync(path);
+    if (!stat.isDirectory()) return stat.mtimeMs;
+    return readdirSync(path, { withFileTypes: true }).reduce((latest, entry) => {
+      if ((entry.name === 'logs' && entry.isDirectory()) || entry.name.endsWith('.lock') || entry.name.endsWith('.tmp')) return latest;
+      return Math.max(latest, lastUpdated(join(path, entry.name)));
+    }, stat.birthtimeMs);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    throw error;
+  }
+}
 export function projectDetails(config: StudioConfig, slug: string) {
   const dir = campaignDir(config, slug);
   const posts = [...loadPosts(dir).values()];
@@ -40,9 +53,7 @@ export function projectDetails(config: StudioConfig, slug: string) {
   });
   const brief = join(dir, 'brief.md');
   const marksFile = join(dir, 'published.json');
-  const files = (path: string) => existsSync(path) ? readdirSync(path, { withFileTypes: true }).filter(entry => entry.isFile()).map(entry => join(path, entry.name)) : [];
-  const recentFiles = [...files(dir), ...files(join(dir, 'posts')), ...files(reviewsDir), ...dirs(join(dir, 'assets')).map(id => join(dir, 'assets', id, 'asset.yml')).filter(existsSync)];
-  const updatedAt = new Date(recentFiles.reduce((latest, file) => Math.max(latest, statSync(file).mtimeMs), statSync(dir).mtimeMs)).toISOString();
+  const updatedAt = new Date(lastUpdated(dir)).toISOString();
   const pendingFeedback = loadFeedback(dir).filter(entry => entry.status === 'pending').length;
   return { slug, created: statSync(dir).birthtime.toISOString(), updatedAt, pendingFeedback, inputs: existsSync(brief) ? readBrief(dir).map(s => s.title) : [], posts, reviews, assets, exported: existsSync(join(dir, 'export', 'manifest.json')) || existsSync(join(dir, 'export', `${compositeSlug(parseCampaignRef(slug))}.campaign.zip`)) || listExports(config, slug).length > 0, published: existsSync(marksFile) ? JSON.parse(readFileSync(marksFile, 'utf8')) as Record<string, unknown> : {} };
 }
@@ -52,6 +63,10 @@ export function projectReview(config: StudioConfig, slug: string) {
   const plan = existsSync(join(dir, 'plan.yml')) ? readPlan(dir) : [];
   const packs = cachedPacks ??= loadPacks();
   const rubric = Object.fromEntries(project.posts.map(post => { const pack = packs.get(post.platform); return [post.platform, pack?.ai === 'outline' ? pack.outlineRubric ?? [] : pack?.rubric ?? []]; }));
+  const platforms = Object.fromEntries(project.posts.flatMap(post => {
+    const pack = packs.get(post.platform);
+    return pack ? [[post.platform, { name: pack.name, textLimit: pack.textLimit, titleLimit: pack.titleLimit, threadItemLimit: pack.textLimit }]] : [];
+  }));
   const captions: Record<string, string> = {};
   for (const asset of project.assets) {
     const vtt = asset.outputs?.find(output => /\.vtt$/i.test(output.file));
@@ -64,7 +79,7 @@ export function projectReview(config: StudioConfig, slug: string) {
     const caption = (media as typeof media & { captions?: string }).captions;
     if (caption) captions[media.file] = caption;
   }
-  return { ...project, plan, rubric, captions, threshold: config.review.threshold, feedback: loadFeedback(dir) };
+  return { ...project, plan, rubric, platforms, captions, threshold: config.review.threshold, feedback: loadFeedback(dir) };
 }
 export function loadLibrary(config: StudioConfig, query = '') {
   const needle = query.toLocaleLowerCase();
