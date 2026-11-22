@@ -157,7 +157,7 @@ test('history retains 20 snapshots, links unchanged output, and restores removed
   writeFileSync(join(dir, 'assets/logo/out/image.png'), 'image');
   snapshot(dir, 'make');
   for (let n = 1; n <= 20; n++) {
-    writeFileSync(join(dir, 'posts/bluesky.md'), `version ${n}`);
+    writeFileSync(join(dir, 'posts/bluesky.md'), `version ${'x'.repeat(n)}`);
     snapshot(dir, 'make');
   }
   const entries = historyEntries(dir);
