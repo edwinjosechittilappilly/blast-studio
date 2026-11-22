@@ -57,7 +57,10 @@ export async function runBilledAgent(io: IO, config: StudioConfig, settings: { b
   const started = Date.now();
   let report = '';
   try {
-    const wrapped = sandboxCommand(io, config, cwd, temp, command[0], [...command.slice(1), prompt]);
+    // Agent CLIs parse a positional argument starting with "-" as a flag (a SKILL.md begins with "---"), so the
+    // prompt always starts with a plain word.
+    const safePrompt = /^\s*-/.test(prompt) ? `Task:\n${prompt}` : prompt;
+    const wrapped = sandboxCommand(io, config, cwd, temp, command[0], [...command.slice(1), safePrompt]);
     report = await io.run(wrapped.command, wrapped.args, { cwd, env, timeoutMs });
     return report;
   } finally {

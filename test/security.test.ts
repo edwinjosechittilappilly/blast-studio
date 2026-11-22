@@ -67,6 +67,16 @@ test('API-billed maker reserves and settles reported usage', async () => {
   assert.equal(ledger[1].type, 'settled'); assert.equal(ledger[1].usd, 0.2); assert.deepEqual(ledger[1].usage, { input_tokens: 3 });
 });
 
+test('a prompt starting with a SKILL.md frontmatter dash is never passed as a CLI flag', async () => {
+  const root = tempStudio(), argvs: string[][] = [];
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml' }, run: async (_cmd, args) => { argvs.push(args); return ''; } });
+  const config = loadConfig(io); config.agent.sandbox = 'off';
+  await runAgentInWorkspace({ config, io, projectDir: join(root, 'projects/p'), files: {}, allowOut: [], prompt: '---\nname: studio-reviewer\n---\nReview this.', timeoutMs: 1000 });
+  const prompt = argvs[0].at(-1)!;
+  assert.ok(!prompt.startsWith('-'), `prompt must not start with a dash: ${prompt.slice(0, 20)}`);
+  assert.match(prompt, /name: studio-reviewer/);
+});
+
 test('HTML render blocks private files, network and symlink escapes while allowing sibling outputs', { timeout: 20000 }, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-security-render-'));
   try {
