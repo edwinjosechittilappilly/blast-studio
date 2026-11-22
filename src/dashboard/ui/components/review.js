@@ -1,17 +1,21 @@
+import CheckmarkFilled16 from '@carbon/icons/es/checkmark--filled/16.js';
+import ErrorFilled16 from '@carbon/icons/es/error--filled/16.js';
+import { copyText } from '../../static/clipboard.js';
+
 export const el = (tag, text, cls) => { const n = document.createElement(tag); if (text != null) n.textContent = text; if (cls) n.className = cls; return n; };
 export function button(label, kind = 'ghost') { const b = el('cds-button', label); b.setAttribute('kind', kind); return b; }
 export function verdictTag(review) { const tag = el('cds-tag', review?.verdict || 'unreviewed'); tag.setAttribute('type', review?.verdict === 'pass' || review?.verdict === 'accepted' ? 'green' : review ? 'red' : 'gray'); return tag; }
 function statusIcon(pass) {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 16 16'); svg.setAttribute('width', '16'); svg.setAttribute('height', '16');
-  svg.setAttribute('aria-hidden', 'true'); svg.setAttribute('fill', 'currentColor');
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path.setAttribute('d', pass ? 'M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm-1 10L4.3 8.3l.9-.8L7 9.3l4-3.9.9.8z' : 'M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm.75 10.5h-1.5V10h1.5zm0-3h-1.5v-5h1.5z');
-  svg.append(path); return svg;
-}
-export async function copyText(value) {
-  try { if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(value); return true; } } catch { /* Try the selection fallback below. */ }
-  const area = el('textarea'); area.value = value; area.style.position = 'fixed'; area.style.opacity = '0'; document.body.append(area); area.select(); const ok = document.execCommand('copy'); area.remove(); return ok;
+  const descriptor = pass ? CheckmarkFilled16 : ErrorFilled16;
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', descriptor.elem);
+  for (const [name, value] of Object.entries(descriptor.attrs)) svg.setAttribute(name, String(value));
+  svg.setAttribute('aria-hidden', 'true');
+  for (const child of descriptor.content) {
+    const node = document.createElementNS('http://www.w3.org/2000/svg', child.elem);
+    for (const [name, value] of Object.entries(child.attrs)) node.setAttribute(name, String(value));
+    svg.append(node);
+  }
+  return svg;
 }
 export function copyButton(label, value) {
   const b = button(label); b.className = 'copy-control';
@@ -27,12 +31,12 @@ export function scoreMeter(review, threshold) {
   section.append(el('p', `Score ${total == null ? 'N/A' : Number(total).toFixed(1) + ' / 100'}`, 'score-value'));
   if (total != null) {
     const value = Math.max(0, Math.min(100, Number(total))), limit = Math.max(0, Math.min(100, Number(threshold)));
-    const wrap = el('div', null, 'score-bar'), meter = el('meter'), marker = el('span', String(threshold), 'threshold-marker');
+    const wrap = el('div', null, 'score-bar'), meter = el('meter'), marker = el('span', null, 'threshold-marker'), label = el('span', String(threshold), 'threshold-label');
     meter.min = 0; meter.max = 100; meter.value = value; meter.low = limit; meter.high = limit; meter.optimum = 100;
     meter.setAttribute('aria-label', `Review score; pass threshold ${threshold}`);
     meter.className = value >= limit ? 'score-pass' : 'score-fail';
     marker.style.left = `${limit}%`; marker.setAttribute('aria-hidden', 'true');
-    wrap.append(meter, marker); section.append(wrap, el('p', `Pass threshold ${threshold}`, 'muted'));
+    marker.append(label); wrap.append(meter, marker); section.append(wrap, el('p', `Pass threshold ${threshold}`, 'muted'));
   }
   return section;
 }
@@ -57,7 +61,8 @@ export function rubricTable(rubric, scores, blocked = false) {
   entries.sort((a, b) => (a.score?.score ?? Infinity) - (b.score?.score ?? Infinity));
   for (const { criterion, score } of entries) {
     const details = el('details', null, 'rubric-item'), summary = el('summary');
-    summary.append(el('span', criterion.question), el('span', score?.score == null ? 'N/A' : `${score.score} / 2`, 'rubric-score'));
+    const scoreClass = score?.score == null ? 'na' : `s${score.score}`;
+    summary.append(el('span', criterion.question), el('span', score?.score == null ? 'N/A' : `${score.score} / 2`, `rubric-score rubric-score-${scoreClass}`));
     if (showWeight) summary.append(el('span', `Weight ${criterion.weight ?? 1}`, 'muted'));
     details.append(summary);
     if (score?.evidence) details.append(el('p', `Evidence: ${score.evidence}`));
@@ -78,10 +83,13 @@ export function hookComparison(hooks, comparisons) {
   const section = el('section', null, 'hooks'); section.append(el('h3', 'Hook comparison'));
   const list = el('ol');
   hooks.forEach((hook, index) => {
-    const li = el('li'), content = el('div'), preferred = (comparisons || []).filter(item => String(item.preferred).toUpperCase() === String.fromCharCode(65 + index));
+    const li = el('li'), content = el('div'), preferred = (comparisons || []).filter(item => item.preferred === hook);
     content.append(el('span', hook));
-    for (const item of preferred) { const tag = el('cds-tag', 'Preferred'); tag.setAttribute('type', 'green'); content.append(tag); if (item.evidence) content.append(el('p', item.evidence)); }
+    if (preferred.length) { const tag = el('cds-tag', 'Preferred'); tag.setAttribute('type', 'green'); content.append(tag); }
+    for (const item of preferred) if (item.evidence) content.append(el('p', item.evidence));
     li.append(content, copyButton(`Copy hook ${String.fromCharCode(65 + index)}`, hook)); list.append(li);
   });
-  section.append(list); return section;
+  section.append(list);
+  for (const item of comparisons || []) if (!hooks.includes(item.preferred) && item.evidence) section.append(el('p', item.evidence));
+  return section;
 }

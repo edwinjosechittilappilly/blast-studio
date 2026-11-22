@@ -1,4 +1,5 @@
-import { el, button, copyText } from './review.js';
+import { el, button } from './review.js';
+import { copyText } from '../../static/clipboard.js';
 export const mediaUrl = (slug, path) => `/media/${encodeURIComponent(slug)}/${path.split('/').map(encodeURIComponent).join('/')}`;
 function kindOf(path, kind) { return /\.(mp4|webm)$/i.test(path) ? 'video' : /\.pdf$/i.test(path) ? 'pdf' : /\.(png|jpe?g|gif|webp|svg)$/i.test(path) ? 'image' : kind === 'video' ? 'video' : kind === 'document' ? 'pdf' : kind === 'image' || kind === 'gif' ? 'image' : 'file'; }
 function filename(item) { return item.file.split('/').pop(); }

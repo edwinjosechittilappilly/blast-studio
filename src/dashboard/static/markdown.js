@@ -1,4 +1,4 @@
-import { copyText } from '../ui/components/review.js';
+import { copyText } from './clipboard.js';
 
 // A deliberately small Markdown subset. The parser returns data, never HTML.
 export function parseInline(text) {

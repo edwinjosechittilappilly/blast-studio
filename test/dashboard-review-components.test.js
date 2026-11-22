@@ -35,10 +35,25 @@ test('score is exposed as a meter with its threshold', () => {
   assert.match(meter.attributes['aria-label'], /75/); assert.equal(meter.className, 'score-fail');
 });
 
-test('preferred hook is marked on the corresponding option', () => {
-  const list = hookComparison(['First', 'Second'], [{ preferred: 'B', evidence: 'Clearer' }]).children[1];
-  assert.equal(list.children[1].children[0].children[1].textContent, 'Preferred');
-  assert.equal(list.children[1].children[0].children[2].textContent, 'Clearer');
+test('preferred hook uses its text, combines evidence, and retains unmatched comparisons', () => {
+  const first = 'Set up agents on a new machine', second = 'Install your tools with one command';
+  const section = hookComparison([first, second], [
+    { preferred: second, evidence: 'Clearer' }, { preferred: second, evidence: 'More specific' },
+    { preferred: null, evidence: 'No preference' }, { preferred: 'A different hook', evidence: 'Unmatched' },
+  ]);
+  const content = section.children[1].children[1].children[0];
+  assert.equal(content.children.filter(child => child.textContent === 'Preferred').length, 1);
+  assert.deepEqual(content.children.slice(2).map(child => child.textContent), ['Clearer', 'More specific']);
+  assert.deepEqual(section.children.slice(2).map(child => child.textContent), ['No preference', 'Unmatched']);
+  assert.equal(hookComparison([], [{ preferred: null, evidence: 'No hooks' }]).children[2].textContent, 'No hooks');
+});
+
+test('rubric scores carry distinct status classes and readable values', () => {
+  const criteria = ['a', 'b', 'c', 'd'].map(id => ({ id, question: id }));
+  const scores = [{ criterion: 'a', score: 0 }, { criterion: 'b', score: 1 }, { criterion: 'c', score: 2 }];
+  const pills = rubricTable(criteria, scores).children.map(row => row.children[0].children[1]);
+  assert.deepEqual(pills.map(p => p.textContent), ['0 / 2', '1 / 2', '2 / 2', 'N/A']);
+  assert.deepEqual(pills.map(p => p.className), ['rubric-score rubric-score-s0', 'rubric-score rubric-score-s1', 'rubric-score rubric-score-s2', 'rubric-score rubric-score-na']);
 });
 
 test('code copy control writes only the code', async () => {
