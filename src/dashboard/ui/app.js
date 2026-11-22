@@ -8,6 +8,7 @@ import '@carbon/web-components/es/components/textarea/index.js';
 import '@carbon/web-components/es/components/data-table/index.js';
 import '@carbon/web-components/es/components/notification/index.js';
 import '@carbon/web-components/es/components/copy-button/index.js';
+import '@carbon/web-components/es/components/overflow-menu/index.js';
 import { renderMarkdown } from '../static/markdown.js';
 import { el, button, verdictTag, copyButton, scoreMeter, selfReview, rubricTable, gateList, hookComparison } from './components/review.js';
 import { mediaGallery } from './components/media.js';
@@ -15,6 +16,7 @@ const $ = s => document.querySelector(s), headers = { 'Content-Type': 'applicati
 let timer, activeProject = null, activeTab = 'overview';
 async function api(path, options) { const response = await fetch(path, options), data = await response.json(); if (!response.ok) throw new Error(data.error || 'Request failed'); return data; }
 function message(text) { $('#message').textContent = text; }
+function toast(text, failed = false) { const notice = el('cds-toast-notification', null, 'job-toast'); notice.setAttribute('kind', failed ? 'error' : 'success'); const title = el('span', text); title.slot = 'title'; notice.append(title); notice.addEventListener('cds-notification-closed', () => notice.remove()); document.body.append(notice); }
 function show(view) { document.querySelectorAll('.view').forEach(n => { n.hidden = n.id !== view; }); document.querySelectorAll('.shell-nav a').forEach(n => n.classList.toggle('active', n.dataset.view === (view === 'project' ? 'projects' : view))); }
 function formatMoney(value) { return `$${Number(value).toFixed(2)}`; }
 const dark = matchMedia('(prefers-color-scheme: dark)'); function theme() { document.body.classList.toggle('cds--g100', dark.matches); document.body.classList.toggle('cds--g10', !dark.matches); } dark.addEventListener('change', theme); theme();
@@ -45,7 +47,7 @@ async function jobStatus(project, region, apply) {
   if (status.lines.length) { const details = el('details'); details.append(el('summary', 'Revision log'), el('pre', status.lines.join('\n'))); region.append(details); }
   apply.disabled = status.running || !project.feedback.some(entry => entry.status === 'pending');
   if (status.running) { region.dataset.running = 'yes'; timer = setTimeout(() => jobStatus(project, region, apply).catch(error => message(error.message)), 3000); }
-  else if (region.dataset.running === 'yes') { region.dataset.running = ''; message(status.exitCode === 0 ? 'Revision completed.' : 'Revision failed. Review the log.'); await openProject(project.slug, activeTab); }
+  else if (region.dataset.running === 'yes') { region.dataset.running = ''; const text = status.exitCode === 0 ? 'Revision completed.' : 'Revision failed. Review the log.'; message(text); toast(text, status.exitCode !== 0); await openProject(project.slug, activeTab); }
 }
 function platformPanel(project, post) {
   const review = project.reviews.find(r => r.platform === post.platform), panel = el('div', null, 'platform-grid'), left = el('section', null, 'surface post-panel'), right = el('section', null, 'surface reviewer-panel');

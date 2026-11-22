@@ -5,3 +5,4 @@
 .score-bar{position:relative}.threshold-marker{position:absolute;bottom:-3px;height:14px;border-left:2px solid var(--cds-text-primary,#161616)}.table-scroll cds-table{min-width:38rem}.sort-button{border:0;background:transparent;color:inherit;font-weight:600;padding:0;cursor:pointer}.sort-button:after{content:' ↕';font-size:.75rem}.feedback-form cds-textarea{display:block}
 .copy-control{display:inline-flex;align-items:center;gap:.25rem;color:var(--cds-link-primary,#0f62fe);font-size:.875rem;margin-right:.75rem}.copy-control cds-copy-button{display:inline-block}
 @media(max-width:900px){.shell-layout{grid-template-columns:minmax(0,1fr)}.shell-nav,.shell-nav nav,.platform-grid>*{min-width:0}.shell-nav nav{max-width:100%}.table-scroll{max-width:100%}}
+.job-toast{position:fixed;z-index:10;right:1rem;top:4rem;max-width:min(24rem,calc(100vw - 2rem))}

@@ -1,12 +1,14 @@
 export const el = (tag, text, cls) => { const n = document.createElement(tag); if (text != null) n.textContent = text; if (cls) n.className = cls; return n; };
 export function button(label, kind = 'ghost') { const b = el('cds-button', label); b.setAttribute('kind', kind); return b; }
 export function verdictTag(review) { const tag = el('cds-tag', review?.verdict || 'unreviewed'); tag.setAttribute('type', review?.verdict === 'pass' || review?.verdict === 'accepted' ? 'green' : review ? 'red' : 'gray'); return tag; }
+export async function copyText(value) {
+  try { if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(value); return true; } } catch { /* Try the selection fallback below. */ }
+  const area = el('textarea'); area.value = value; area.style.position = 'fixed'; area.style.opacity = '0'; document.body.append(area); area.select(); const ok = document.execCommand('copy'); area.remove(); return ok;
+}
 export function copyButton(label, value) {
   const wrapper = el('span', null, 'copy-control'), b = el('cds-copy-button'); b.setAttribute('aria-label', label); b.setAttribute('feedback', 'Copied'); wrapper.append(b, el('span', label));
   b.addEventListener('click', async () => {
-    try { if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(value); else throw new Error('Clipboard unavailable'); }
-    catch { const area = el('textarea'); area.value = value; area.style.position = 'fixed'; area.style.opacity = '0'; document.body.append(area); area.select(); const ok = document.execCommand('copy'); area.remove(); if (!ok) { b.textContent = 'Copy failed'; return; } }
-    b.setAttribute('feedback', 'Copied');
+    if (!await copyText(value)) b.setAttribute('feedback', 'Copy failed'); else b.setAttribute('feedback', 'Copied');
   }); return wrapper;
 }
 export function scoreMeter(review, threshold) {

@@ -1,4 +1,4 @@
-import { el, button, copyButton } from './review.js';
+import { el, button, copyText } from './review.js';
 export const mediaUrl = (slug, path) => `/media/${encodeURIComponent(slug)}/${path.split('/').map(encodeURIComponent).join('/')}`;
 function kindOf(path, kind) { return kind === 'video' || /\.(mp4|webm)$/i.test(path) ? 'video' : kind === 'document' || /\.pdf$/i.test(path) ? 'pdf' : /\.(png|jpe?g|gif|webp|svg)$/i.test(path) || kind === 'image' || kind === 'gif' ? 'image' : 'file'; }
 function visual(slug, item, captions) {
@@ -19,6 +19,17 @@ export function mediaViewer(slug, item, captions, trigger) {
 }
 export function mediaGallery(slug, items, captions) {
   const gallery = el('div', null, 'media-gallery');
-  for (const item of items) { if (/\.vtt$/i.test(item.file)) continue; const tile = el('cds-tile', null, 'media-tile'); const kind = kindOf(item.file, item.kind); if (kind === 'image' || kind === 'video') { const thumbnail = visual(slug, item, captions); tile.append(thumbnail); } else tile.append(el('p', kind === 'pdf' ? 'PDF document' : 'File')); tile.append(el('p', item.alt || item.file)); const actions = el('div', null, 'media-actions'), view = button('View'); view.setAttribute('aria-label', `View ${item.alt || item.file}`); view.addEventListener('click', () => mediaViewer(slug, item, captions, view)); actions.append(view); if (item.alt) actions.append(copyButton('Copy alt text', item.alt)); const download = el('a', 'Download'); download.href = mediaUrl(slug, item.file); download.download = item.file.split('/').pop(); actions.append(download); tile.append(actions); gallery.append(tile); }
+  for (const item of items) {
+    if (/\.vtt$/i.test(item.file)) continue;
+    const tile = el('cds-tile', null, 'media-tile'), kind = kindOf(item.file, item.kind);
+    if (kind === 'image' || kind === 'video') tile.append(visual(slug, item, captions)); else tile.append(el('p', kind === 'pdf' ? 'PDF document' : 'File'));
+    tile.append(el('p', item.alt || item.file));
+    const actions = el('div', null, 'media-actions'), view = button('View'), overflow = el('cds-overflow-menu'), menu = el('cds-menu');
+    view.setAttribute('aria-label', `View ${item.alt || item.file}`); view.addEventListener('click', () => mediaViewer(slug, item, captions, view));
+    overflow.setAttribute('label', `More actions for ${item.alt || item.file}`); overflow.setAttribute('enable-v12-overflowmenu', '');
+    const download = el('cds-menu-item'); download.setAttribute('label', 'Download'); download.addEventListener('click', () => { const link = el('a'); link.href = mediaUrl(slug, item.file); link.download = item.file.split('/').pop(); document.body.append(link); link.click(); link.remove(); }); menu.append(download);
+    if (item.alt) { const copy = el('cds-menu-item'); copy.setAttribute('label', 'Copy alt text'); copy.addEventListener('click', async () => { const ok = await copyText(item.alt); const notice = el('cds-toast-notification', null, 'job-toast'); notice.setAttribute('kind', ok ? 'success' : 'error'); const title = el('span', ok ? 'Alt text copied' : 'Copy failed'); title.slot = 'title'; notice.append(title); notice.addEventListener('cds-notification-closed', () => notice.remove()); document.body.append(notice); }); menu.append(copy); }
+    overflow.append(menu); actions.append(view, overflow); tile.append(actions); gallery.append(tile);
+  }
   return gallery;
 }
