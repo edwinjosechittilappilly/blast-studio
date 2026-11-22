@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, realpathSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readlinkSync, realpathSync, statSync } from 'node:fs';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -28,7 +28,7 @@ export function agentEnv(io: IO, options: { temp: string; home?: string; bin?: s
 let warnedSandbox = false;
 let bwrapProbe: { path: string; available: boolean } | undefined;
 /** Wrap subprocesses in the OS sandbox where available. */
-export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, temp: string, command: string, args: string[], options: { render?: boolean; loopback?: boolean; pty?: boolean; readPaths?: string[]; readDirs?: string[]; writeDirs?: string[] } = {}): { command: string; args: string[] } {
+export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, temp: string, command: string, args: string[], options: { render?: boolean; loopback?: boolean; pty?: boolean; readPaths?: string[]; readDirs?: string[]; writeDirs?: string[]; privateCache?: { source: string; target: string } } = {}): { command: string; args: string[] } {
   if (config.agent.sandbox !== 'on') return { command, args };
   const home = io.env.HOME;
   const canonical = (path: string) => { try { return realpathSync(path); } catch { return resolve(path); } };
@@ -68,7 +68,18 @@ export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, 
     if (bwrap && (!bwrapProbe || bwrapProbe.path !== bwrap)) bwrapProbe = { path: bwrap, available: spawnSync(bwrap, ['--ro-bind', '/', '/', '--', '/bin/true'], { stdio: 'ignore' }).status === 0 };
     // Bubblewrap brings up loopback in the isolated network namespace for local renderer servers.
     if (bwrap && bwrapProbe?.available) {
-      const mounts = ['--unshare-pid', '--die-with-parent', ...(options.render ? ['--unshare-net'] : []), '--ro-bind', '/', '/', '--dev', '/dev', '--proc', '/proc'];
+      const mounts = ['--unshare-pid', '--die-with-parent', ...(options.render ? ['--unshare-net'] : [])];
+      if (options.privateCache) {
+        // A synthetic root keeps the cache's ancestors owned by this namespace's user.
+        // Host-root files otherwise appear as an unmapped UID to HyperFrames.
+        for (const entry of readdirSync('/', { withFileTypes: true })) {
+          if (entry.name === 'dev' || entry.name === 'proc' || `/${entry.name}` === options.privateCache.target) continue;
+          const path = join('/', entry.name);
+          if (entry.isSymbolicLink()) mounts.push('--symlink', readlinkSync(path), path);
+          else mounts.push('--ro-bind', path, path);
+        }
+      } else mounts.push('--ro-bind', '/', '/');
+      mounts.push('--dev', '/dev', '--proc', '/proc');
       if (home && existsSync(home)) mounts.push('--tmpfs', canonical(home));
       const bind = (path: string, write: boolean) => {
         if (!existsSync(path)) return;
@@ -85,6 +96,14 @@ export function sandboxCommand(io: IO, config: StudioConfig, workspace: string, 
       for (const path of [config.root, config.file].map(canonical)) if (existsSync(path)) mounts.push(...(statSync(path).isDirectory() ? ['--tmpfs', path] : ['--ro-bind', '/dev/null', path]));
       for (const path of readPaths) bind(path, false);
       for (const path of writable) bind(path, true);
+      if (options.privateCache) {
+        const source = canonical(options.privateCache.source), root = canonical(config.root);
+        if (source !== root && !source.startsWith(root.endsWith('/') ? root : `${root}/`)) {
+          mounts.push('--ro-bind', source, options.privateCache.target);
+          const locks = join(source, 'locks');
+          if (existsSync(locks)) mounts.push('--bind', locks, join(options.privateCache.target, 'locks'));
+        }
+      }
       return { command: bwrap, args: [...mounts, '--', command, ...args] };
     }
     if (!warnedSandbox) { io.err('Warning: bwrap is unavailable or unusable; process is running without an OS sandbox.'); warnedSandbox = true; }

@@ -79,6 +79,27 @@ test('sandboxed HyperFrames can read browser caches but cannot modify them', asy
   } finally { rmSync(home, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); rmSync(work, { recursive: true, force: true }); }
 });
 
+test('Linux HyperFrames keeps its private cache visible through bwrap', async t => {
+  if (process.platform !== 'linux' || spawnSync('bwrap', ['--ro-bind', '/', '/', '--', '/bin/true'], { stdio: 'ignore' }).status !== 0) {
+    t.skip('usable Linux bwrap required'); return;
+  }
+  const home = process.env.HOME!;
+  const fixture = mkdtempSync(join(home, '.bstudio-cache-test-')), root = tempStudio({ '.env': 'secret' });
+  const work = mkdtempSync(join(tmpdir(), 'bstudio-browser-work-')), cache = join(fixture, 'hyperframes');
+  try {
+    mkdirSync(cache, { mode: 0o700 }); writeFileSync(join(cache, 'browser'), 'ok');
+    const io = fakeIO({ cwd: root, env: { HOME: home, PATH: process.env.PATH, BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml', HYPERFRAMES_CACHE_DIR: cache },
+      run: async (command, args, opts) => {
+        const result = spawnSync(command, args, { ...opts, encoding: 'utf8' });
+        assert.equal(result.status, 0, result.stderr);
+        assert.equal(result.stdout, 'ok');
+        return '';
+      } });
+    const config = loadConfig(io); config.agent.sandbox = 'on';
+    await runTool(io, 'hyperframes', '/bin/sh', ['-c', 'test "$HOME" != "$1" && test "$HYPERFRAMES_CACHE_DIR" != "$2" && for dir in "$HYPERFRAMES_CACHE_DIR" /; do owner=$(stat -c %u "$dir"); if [ "$owner" != 0 ] && [ "$owner" != "$(id -u)" ]; then echo "untrusted owner $owner at $dir" >&2; exit 1; fi; done && cat "$HYPERFRAMES_CACHE_DIR/browser" && touch "$HYPERFRAMES_CACHE_DIR/locks/allowed" && ! touch "$HYPERFRAMES_CACHE_DIR/forbidden" 2>/dev/null && ! cat "$3" 2>/dev/null', 'sh', home, cache, join(root, '.env')], work, { config, workspace: work });
+  } finally { rmSync(fixture, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }); rmSync(work, { recursive: true, force: true }); }
+});
+
 test('OS sandbox denies reading the studio root and writes outside the workspace', () => {
   if (process.platform !== 'darwin') return;
   const root = tempStudio({ '.env': 'secret' }), work = mkdtempSync(join(tmpdir(), 'bstudio-work-')), temp = mkdtempSync(join(tmpdir(), 'bstudio-temp-'));

@@ -18,12 +18,14 @@ export async function runTool(io: IO, name: keyof typeof guidance, command: stri
     const timeoutMs = Number.isFinite(configured) && configured > 0 ? configured : (name === "vhs" || name === "hyperframes" ? 1_800_000 : 120_000);
     const env = agentEnv(io, { temp, home: temp, minimal: true });
     const readDirs: string[] = [], writeDirs: string[] = [];
+    let managedCache: string | undefined;
     if (name === "hyperframes") {
       const home = io.env.HOME ?? homedir();
       const managed = resolve(io.cwd, io.env.HYPERFRAMES_CACHE_DIR || join(home, ".cache/hyperframes"));
       const puppeteer = join(home, ".cache/puppeteer");
       if (existsSync(home)) {
         mkdirSync(managed, { recursive: true, mode: 0o700 });
+        managedCache = managed;
         env.HYPERFRAMES_CACHE_DIR = managed; readDirs.push(managed);
         if (sandbox?.config.agent.sandbox === "on") {
           const locks = join(managed, "locks");
@@ -37,7 +39,10 @@ export async function runTool(io: IO, name: keyof typeof guidance, command: stri
         readDirs.push(puppeteer);
       }
     }
-    const wrapped = sandbox ? sandboxCommand(io, sandbox.config, sandbox.workspace, temp, command, args, { render: true, loopback: name === "vhs" || name === "hyperframes", pty: name === "vhs", readDirs, writeDirs }) : { command, args };
+    const privateCache = process.platform === "linux" && managedCache ? { source: managedCache, target: "/.bstudio-hyperframes-cache" } : undefined;
+    const wrapped = sandbox ? sandboxCommand(io, sandbox.config, sandbox.workspace, temp, command, args, { render: true, loopback: name === "vhs" || name === "hyperframes", pty: name === "vhs", readDirs, writeDirs, privateCache }) : { command, args };
+    // The synthetic root prevents unmapped host-root owners from invalidating the pinned cache.
+    if (privateCache && wrapped.command !== command) env.HYPERFRAMES_CACHE_DIR = privateCache.target;
     if (name === "hyperframes" && wrapped.command !== command) env.HYPERFRAMES_CHROME_SANDBOX = "0";
     if (name === "vhs" && wrapped.command !== command) env.VHS_NO_SANDBOX = "1";
     return await io.run(wrapped.command, wrapped.args, { cwd, env, timeoutMs });
