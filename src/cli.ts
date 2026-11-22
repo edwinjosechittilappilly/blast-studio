@@ -24,7 +24,7 @@ import { run as revise } from "./commands/revise.ts";
 import { run as sources } from "./commands/sources.ts";
 import { run as status } from "./commands/status.ts";
 import { loadConfig } from "./config.ts";
-import { acquireCampaignLock, finishSpawnedJob, JobConflict, startCliJob, updateJobProcesses } from "./jobs/runner.ts";
+import { acquireCampaignLock, finishSpawnedJob, JobConflict, processGroupRunning, startCliJob, updateJobProcesses } from "./jobs/runner.ts";
 import { campaignRef } from "./jobs/registry.ts";
 import { keychainGet } from "./keychain.ts";
 import type { Command, IO } from "./io.ts";
@@ -84,10 +84,7 @@ function stopSubprocesses(signal: NodeJS.Signals): Promise<void> {
   if (!groups.length) return Promise.resolve();
   const { promise, resolve } = Promise.withResolvers<void>(), start = Date.now();
   const timer = setInterval(() => {
-    const alive = groups.filter(pid => {
-      try { process.kill(process.platform === "win32" ? pid : -pid, 0); return true; }
-      catch (error) { return (error as NodeJS.ErrnoException).code !== "ESRCH"; }
-    });
+    const alive = groups.filter(processGroupRunning);
     if (Date.now() - start >= 5000) for (const pid of alive) signalGroup(pid, "SIGKILL");
     if (!alive.length) { clearInterval(timer); resolve(); }
   }, 50);

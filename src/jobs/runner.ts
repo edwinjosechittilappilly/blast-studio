@@ -11,20 +11,40 @@ export interface Job { id: string; operation: string; campaign?: string; state: 
 export class JobConflict extends Error { owner: string; constructor(owner: string) { super(`Campaign is locked by ${owner}`); this.owner = owner; } }
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const bin = fileURLToPath(new URL('../../bin/bstudio.mjs', import.meta.url));
-function alive(pid: number): boolean { try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; } }
+function linuxStat(pid: number): string[] | undefined {
+  try { const raw = readFileSync(`/proc/${pid}/stat`, 'utf8'); return raw.slice(raw.lastIndexOf(')') + 2).split(' '); }
+  catch { return undefined; }
+}
+function alive(pid: number): boolean {
+  if (process.platform === 'linux' && linuxStat(pid)?.[0] === 'Z') return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; }
+}
+export function processGroupRunning(pid: number): boolean {
+  if (process.platform === 'linux') {
+    try {
+      for (const name of readdirSync('/proc')) {
+        if (!/^\d+$/.test(name)) continue;
+        const stat = linuxStat(Number(name));
+        if (stat && Number(stat[2]) === pid && stat[0] !== 'Z') return true;
+      }
+      return false;
+    } catch { /* Fall back to the OS group probe if procfs is unavailable. */ }
+  }
+  try { process.kill(process.platform === 'win32' ? pid : -pid, 0); return true; }
+  catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM'; }
+}
 function processStarted(pid: number): string | undefined {
   try { return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || undefined; }
   catch { return undefined; }
 }
 function sameProcess(pid: number, started?: string): boolean {
-  return Boolean(started && processStarted(pid) === started);
+  return Boolean(started && alive(pid) && processStarted(pid) === started);
 }
 function sameGroup(pid: number, started?: string): boolean {
   if (!started) return false;
   const current = processStarted(pid);
-  if (current) return current === started;
-  try { process.kill(process.platform === 'win32' ? pid : -pid, 0); return true; }
-  catch (error) { return (error as NodeJS.ErrnoException).code === 'EPERM'; }
+  if (current && current !== started) return false;
+  return processGroupRunning(pid);
 }
 function safeDir(root: string, parts: string[]): string {
   const base = resolve(root); mkdirSync(base, { recursive: true });

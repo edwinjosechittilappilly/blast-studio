@@ -3,11 +3,11 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildOperation, campaignRef } from '../src/jobs/registry.ts';
-import { acquireCampaignLock, cancelJob, JobConflict, listJobs } from '../src/jobs/runner.ts';
+import { acquireCampaignLock, cancelJob, JobConflict, listJobs, processGroupRunning } from '../src/jobs/runner.ts';
 import { saveSecret } from '../src/jobs/secrets.ts';
 import { main, realIO } from '../src/cli.ts';
 import { runBilledAgent } from '../src/agent-env.ts';
@@ -202,9 +202,15 @@ test('an aged malformed campaign lock can be recovered', () => {
 });
 
 test('program timeout terminates descendants holding output pipes', { timeout: 5000 }, async () => {
-  let grandchild = 0;
-  const script = `const {spawn}=require('node:child_process'); const c=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000)'],{stdio:'inherit'}); console.log('child:'+c.pid); setInterval(()=>{},1000);`;
-  await assert.rejects(realIO().run(process.execPath, ['-e', script], { timeoutMs: 500, onOutput: line => { if (line.startsWith('child:')) grandchild = Number(line.slice(6)); } }), /timed out/);
+  let grandchild = 0, group = 0;
+  const script = `const {spawn}=require('node:child_process'); const c=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000)'],{stdio:'inherit'}); console.log('group:'+process.pid); console.log('child:'+c.pid); setInterval(()=>{},1000);`;
+  await assert.rejects(realIO().run(process.execPath, ['-e', script], { timeoutMs: 500, onOutput: line => { if (line.startsWith('child:')) grandchild = Number(line.slice(6)); if (line.startsWith('group:')) group = Number(line.slice(6)); } }), /timed out/);
   assert.ok(grandchild);
-  assert.throws(() => process.kill(grandchild, 0), { code: 'ESRCH' });
+  assert.ok(group); assert.equal(processGroupRunning(group), false);
+  if (process.platform === 'linux') {
+    let state = '';
+    try { const stat = readFileSync(`/proc/${grandchild}/stat`, 'utf8'); state = stat.slice(stat.lastIndexOf(')') + 2).split(' ')[0]; }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    assert.ok(state === '' || state === 'Z', `descendant is still running: ${state}`);
+  } else assert.throws(() => process.kill(grandchild, 0), { code: 'ESRCH' });
 });
