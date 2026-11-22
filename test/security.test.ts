@@ -23,6 +23,8 @@ test('maker and reviewer inherit only allowed environment and retain real HOME',
   const config = loadConfig(io); config.agent.passEnv = ['CUSTOM_TOKEN'];
   await runAgentInWorkspace({ config, io, projectDir: join(root, 'projects/p/campaigns/c'), files: {}, allowOut: [], prompt: 'test', timeoutMs: 1000 });
   await runReviewer({ config, io, post: { platform: 'x', path: 'x.md', body: 'text', media: [], evidence: [] }, rubric: [], brief: '', projectDir: join(root, 'projects/p/campaigns/c') });
+  const entries = readFileSync(join(root, 'ledger.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(entries.map(entry => entry.projectSlug), ['p/c', 'p/c']);
   assert.equal(calls.length, 2);
   for (const call of calls) {
     assert.equal(call.env?.HOME, '/real-home'); assert.notEqual(call.env?.TMPDIR, call.cwd);
@@ -153,6 +155,7 @@ test('API-billed maker reserves and settles reported usage', async () => {
   await runAgentInWorkspace({ config, io, projectDir: join(root, 'projects/p/campaigns/c'), files: {}, allowOut: [], prompt: '', timeoutMs: 1000 });
   const ledger = readFileSync(join(root, 'ledger.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
   assert.equal(ledger[0].type, 'reserved'); assert.equal(ledger[0].usd, 0.5);
+  assert.equal(ledger[0].projectSlug, 'p/c');
   assert.equal(ledger[1].type, 'settled'); assert.equal(ledger[1].usd, 0.2); assert.deepEqual(ledger[1].usage, { input_tokens: 3 });
 });
 

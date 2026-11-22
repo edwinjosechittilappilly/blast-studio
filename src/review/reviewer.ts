@@ -1,10 +1,11 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, join, resolve, sep } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Ajv } from 'ajv';
 import type { IO } from '../io.ts';
 import { agentEnv, runBilledAgent } from '../agent-env.ts';
+import { campaignAddressForDir } from '../campaigns.ts';
 import { parseAgentOutput } from '../budget/ledger.ts';
 import { UserError, type Criterion, type Post, type ScoreResult, type StudioConfig } from '../types.ts';
 import { analyzeSlop } from './slop.ts';
@@ -38,7 +39,7 @@ export async function runReviewer(input: { config: StudioConfig; io: IO; post: P
       const prompt = `${base}\n${calls > 1 ? 'Also return hookComparison: {"preferred": index or null, "evidence": "reason"}, with the zero-based index of the preferred hook in the displayed order.' : ''}\n<untrusted-hooks>${JSON.stringify(hooks ?? []).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')}</untrusted-hooks>`;
       let parsed: { scores: ScoreResult[]; hookComparison?: { preferred: number | null; evidence: string } } | undefined;
       for (let attempt = 0; attempt < 2; attempt++) {
-        const raw = await runBilledAgent(io, config, config.reviewer, input.projectDir ? basename(input.projectDir) : '', command, prompt + (attempt ? '\nYour prior response was invalid; return schema-compliant JSON only.' : ''), dir, temp, env, config.reviewer.timeoutSeconds * 1000);
+        const raw = await runBilledAgent(io, config, config.reviewer, input.projectDir ? campaignAddressForDir(config, input.projectDir) : '', command, prompt + (attempt ? '\nYour prior response was invalid; return schema-compliant JSON only.' : ''), dir, temp, env, config.reviewer.timeoutSeconds * 1000);
         try {
           const text = parseAgentOutput(raw).text;
           const fenced = text.trim().match(/^```(?:json)?\s*\n([\s\S]*?)\n```\s*$/i);

@@ -23,6 +23,12 @@ export function parseCampaignRef(address: string): CampaignRef {
   return { project: validateId(parts[0]), campaign: validateId(parts[1]) };
 }
 
+export function campaignAddressForDir(config: StudioConfig, dir: string): string {
+  const parts = relative(resolve(config.root, "projects"), resolve(dir)).split(process.platform === "win32" ? "\\" : "/");
+  if (parts.length !== 3 || parts[1] !== "campaigns" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(parts[0]) || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(parts[2])) return "";
+  return `${parts[0]}/${parts[2]}`;
+}
+
 // Resolve existing ancestors too, so a symlink cannot escape the studio or project.
 export function containedPath(root: string, ...parts: string[]): string {
   const base = resolve(root);
@@ -46,7 +52,11 @@ export function containedPath(root: string, ...parts: string[]): string {
 export function readProject(config: StudioConfig, project: string): ProjectMetadata {
   const path = containedPath(config.root, "projects", validateId(project), "project.yml");
   const data: unknown = parse(readFileSync(path, "utf8"));
-  if (!data || typeof data !== "object" || typeof (data as ProjectMetadata).name !== "string" || typeof (data as ProjectMetadata).createdAt !== "string") throw new UserError(`Invalid project metadata: ${path}`);
+  if (!data || typeof data !== "object" || !("name" in data) || typeof data.name !== "string" || !("createdAt" in data) || typeof data.createdAt !== "string") throw new UserError(`Invalid project metadata: ${path}`);
+  const record = data as Record<string, unknown>;
+  if (record.brand !== undefined && (!record.brand || typeof record.brand !== "object" || Array.isArray(record.brand))) throw new UserError(`Invalid project brand: ${path}`);
+  if (record.links !== undefined && (!record.links || typeof record.links !== "object" || Array.isArray(record.links) || Object.values(record.links).some(value => typeof value !== "string"))) throw new UserError(`Invalid project links: ${path}`);
+  if (record.migratedFrom !== undefined && typeof record.migratedFrom !== "string") throw new UserError(`Invalid project migration metadata: ${path}`);
   return data as ProjectMetadata;
 }
 

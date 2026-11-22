@@ -1,12 +1,13 @@
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse, stringify } from 'yaml';
 import type { IO } from './io.ts';
 import type { Post, StudioConfig } from './types.ts';
 import { UserError } from './types.ts';
 import { agentEnv, runBilledAgent } from './agent-env.ts';
+import { campaignAddressForDir } from './campaigns.ts';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 import { parsePost, serializePost } from './posts.ts';
@@ -28,7 +29,7 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
     writeFileSync(shim, `#!/bin/sh\nif [ "$1" != render-preview ]; then echo 'Only render-preview is available' >&2; exit 1; fi\nexec ${JSON.stringify(process.execPath)} ${JSON.stringify(cli)} "$@"\n`); chmodSync(shim, 0o755);
     const env = agentEnv(io, { temp, bin, billing: config.agent.billing, passEnv: [...(config.agent.passEnv ?? []), ...passEnv] });
     for (let attempt = 0; attempt < 2; attempt++) {
-      const report = await runBilledAgent(io, config, config.agent, basename(projectDir), config.agent.command, prompt, dir, temp, env, timeoutMs);
+      const report = await runBilledAgent(io, config, config.agent, campaignAddressForDir(config, projectDir), config.agent.command, prompt, dir, temp, env, timeoutMs);
       if (report.trim()) io.out(report.trim());
       const outputs: { rel: string; data: Buffer }[] = [];
       const errors: { path: string; message: string }[] = [];
