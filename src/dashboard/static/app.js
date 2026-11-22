@@ -15,7 +15,7 @@ async function openProject(slug) {
   const platforms = el('div', null, 'platforms');
   for (const post of project.posts) {
     const review = project.reviews.find(r => r.platform === post.platform), card = el('article', null, 'platform'), header = el('header');
-    header.append(el('h2', post.platform), el('span', review ? `${review.verdict} · ${review.total == null ? 'N/A' : `${review.total}/100`}` : 'Unreviewed', 'badge')); card.append(header);
+    header.append(el('h2', post.platform), el('span', review ? `${review.verdict} · ${review.total == null ? 'N/A' : `${review.total.toFixed(1)}/100`}` : 'Unreviewed', 'badge')); card.append(header);
     if (post.title) card.append(el('h3', post.title)); card.append(el('div', post.body, 'post-text'));
     const media = el('div', null, 'media');
     for (const item of post.media) { let node; if (item.kind === 'video') { node = el('video'); node.controls = true; node.setAttribute('aria-label', item.alt || 'Video'); } else if (item.kind === 'document' || item.file.toLowerCase().endsWith('.pdf')) { node = el('a', item.alt || 'Open PDF'); node.href = mediaUrl(slug, item.file); } else { node = el('img'); node.alt = item.alt; } if (node.tagName !== 'A') node.src = mediaUrl(slug, item.file); media.append(node); } card.append(media);
