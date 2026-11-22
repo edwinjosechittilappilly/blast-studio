@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { existsSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
-import { main } from "../src/cli.ts";
+import { main, realIO } from "../src/cli.ts";
 import { campaignDir, loadConfig, writeConfigField } from "../src/config.ts";
 import { loadEnv } from "../src/env.ts";
 import { installSkills } from "../src/commands/install-skills.ts";
@@ -126,4 +126,11 @@ test("version and project help work without configuration", async () => {
   assert.match(io.stdout[0], /^\d+\.\d+\.\d+/);
   assert.equal(await main(["project", "new", "--help"], io), 0);
   assert.match(io.text(), /Example: bstudio project new/);
+});
+
+test("subprocess IO exposes successful stderr without contaminating stdout", async () => {
+  const warnings: string[] = [];
+  const stdout = await realIO().run(process.execPath, ["-e", "process.stdout.write('output'); process.stderr.write('warning')"], { onStderr: text => warnings.push(text) });
+  assert.equal(stdout, "output");
+  assert.deepEqual(warnings, ["warning"]);
 });
