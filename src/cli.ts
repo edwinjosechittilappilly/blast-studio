@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { createInterface, type Interface } from "node:readline/promises";
 import { run as accept, confirm } from "./commands/accept.ts";
 import { run as auth } from "./commands/auth.ts";
@@ -17,13 +18,15 @@ import { run as mark } from "./commands/mark.ts";
 import { run as make } from "./commands/make.ts";
 import { run as newProject } from "./commands/new.ts";
 import { run as plan } from "./commands/plan.ts";
+import { run as project } from "./commands/project.ts";
 import { run as render } from "./commands/render.ts";
 import { run as renderPreview } from "./commands/render-preview.ts";
 import { run as review } from "./commands/review.ts";
 import { run as revise } from "./commands/revise.ts";
 import { run as sources } from "./commands/sources.ts";
 import { run as status } from "./commands/status.ts";
-import { loadConfig } from "./config.ts";
+import { configFile, loadConfig } from "./config.ts";
+import { migrateProjects } from "./migrate.ts";
 import { acquireCampaignLock, finishSpawnedJob, JobConflict, processGroupRunning, startCliJob, updateJobProcesses } from "./jobs/runner.ts";
 import { campaignRef } from "./jobs/registry.ts";
 import { keychainGet } from "./keychain.ts";
@@ -33,6 +36,7 @@ import { UserError } from "./types.ts";
 const COMMANDS: Record<string, { summary: string; run: Command }> = {
   init: { summary: "initialize the private studio and global configuration", run: init },
   jobs: { summary: "inspect or cancel durable jobs: jobs [list|log <id>|cancel <id>]", run: jobs },
+  project: { summary: "create and list projects: project new <project> | project list", run: project },
   doctor: { summary: "check tools, providers and budget", run: doctor },
   "install-skills": { summary: "link studio skills [--with-hyperframes]", run: installSkills },
   new: {
@@ -181,8 +185,14 @@ export async function withCampaignLock(name: string, args: string[], io: IO, run
     try { code = await run(logged); return code; } finally { await stopping; subprocesses.clear(); recordProcesses = undefined; abortJob = undefined; finish(); }
   } catch (error) { if (error instanceof JobConflict) throw new UserError(error.message); throw error; }
 }
+const migratedRoots = new Set<string>();
 export async function main(argv: string[], io: IO = realIO()): Promise<number> {
   const [name, ...rest] = argv;
+  if (name === "--version" || name === "-v") {
+    const metadata: unknown = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+    if (!metadata || typeof metadata !== "object" || !("version" in metadata) || typeof metadata.version !== "string") throw new Error("Invalid package version");
+    io.out(metadata.version); return 0;
+  }
   if (!name || name === "--help" || name === "-h" || name === "help") { io.out(help()); return name ? 0 : 1; }
   const command = COMMANDS[name];
   if (!command) { io.err(`unknown command "${name}"\n\n${help()}`); return 1; }
@@ -196,7 +206,18 @@ export async function main(argv: string[], io: IO = realIO()): Promise<number> {
   };
   const onTerm = () => onSignal("SIGTERM"), onInt = () => onSignal("SIGINT"), onHangup = () => onSignal("SIGHUP");
   if (managed) { process.on("SIGTERM", onTerm); process.on("SIGINT", onInt); process.on("SIGHUP", onHangup); }
-  try { return await withCampaignLock(name, commandArgs, commandIO, currentIO => command.run(commandArgs, currentIO)); }
-  catch (err) { if (interrupted) return interrupted === "SIGINT" ? 130 : 143; if (err instanceof UserError) { io.err(`error: ${err.message}`); return 1; } throw err; }
-  finally { if (managed) { process.off("SIGTERM", onTerm); process.off("SIGINT", onInt); process.off("SIGHUP", onHangup); interrupted = undefined; stopping = undefined; } readline?.close(); readline = undefined; }
+  try {
+    if (existsSync(configFile(io))) {
+      const config = loadConfig(io);
+      if (!migratedRoots.has(config.root)) {
+        migrateProjects(config, message => io.out(message));
+        migratedRoots.add(config.root);
+      }
+    }
+    return await withCampaignLock(name, commandArgs, commandIO, currentIO => command.run(commandArgs, currentIO));
+  } catch (err) {
+    if (interrupted) return interrupted === "SIGINT" ? 130 : 143;
+    if (err instanceof UserError || (err instanceof TypeError && "code" in err && typeof err.code === "string" && err.code.startsWith("ERR_PARSE_ARGS_"))) { io.err(`error: ${err.message}`); return 1; }
+    throw err;
+  } finally { if (managed) { process.off("SIGTERM", onTerm); process.off("SIGINT", onInt); process.off("SIGHUP", onHangup); interrupted = undefined; stopping = undefined; } readline?.close(); readline = undefined; }
 }

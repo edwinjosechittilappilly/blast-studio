@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { loadConfig, projectDir } from '../config.ts';
+import { parseArgs } from 'node:util';
+import { loadConfig, campaignDir } from '../config.ts';
+import { parseCampaignRef } from '../campaigns.ts';
 import { loadPack } from '../packs.ts';
 import { loadPosts } from '../posts.ts';
 import type { Command } from '../io.ts';
@@ -10,14 +12,21 @@ import type { PlatformId } from '../types.ts';
 const hosts: Partial<Record<PlatformId, string[]>> = {
   'youtube-shorts': ['youtube.com', 'youtu.be'], instagram: ['instagram.com'], tiktok: ['tiktok.com'], dailydev: ['app.daily.dev'],
 };
+const usage = 'usage: bstudio mark <project>/<campaign> <platform> --url <https URL>';
 export const run: Command = async (args, io) => {
-  if (args.length !== 4 || args[2] !== '--url' || !PLATFORM_IDS.includes(args[1] as PlatformId)) throw new UserError('usage: bstudio mark <slug> <platform> --url <https URL>');
-  const platform = args[1] as PlatformId, pack = loadPack(platform), allowed = hosts[platform];
+  const parsed = (() => {
+    try { return parseArgs({ args, allowPositionals: true, options: { url: { type: 'string' }, help: { type: 'boolean', short: 'h' } } }); }
+    catch { throw new UserError(usage); }
+  })();
+  if (parsed.values.help) { io.out(`${usage}\nExample: bstudio mark acme/launch instagram --url https://instagram.com/p/example`); return 0; }
+  const [address, platformId] = parsed.positionals;
+  if (parsed.positionals.length !== 2 || !parsed.values.url || !PLATFORM_IDS.includes(platformId as PlatformId)) throw new UserError(usage);
+  const ref = parseCampaignRef(address), platform = platformId as PlatformId, pack = loadPack(platform), allowed = hosts[platform];
   if (pack.marketBlaster !== null || !allowed) throw new UserError(`${platform}: mark is only available for manual destinations`);
   let url: URL;
-  try { url = new URL(args[3]); } catch { throw new UserError(`${platform}: invalid publication URL`); }
+  try { url = new URL(parsed.values.url); } catch { throw new UserError(`${platform}: invalid publication URL`); }
   if (url.protocol !== 'https:' || url.username || url.password || !allowed.some(host => url.hostname === host || url.hostname.endsWith(`.${host}`))) throw new UserError(`${platform}: invalid publication URL host`);
-  const dir = projectDir(loadConfig(io), args[0]);
+  const dir = campaignDir(loadConfig(io), ref);
   if (!loadPosts(dir).has(platform)) throw new UserError(`${platform}: post not found`);
   const file = join(dir, 'published.json');
   let published: Record<string, unknown> = {};

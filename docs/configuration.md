@@ -2,6 +2,12 @@
 
 `bstudio init` creates `~/.config/blast-studio/studio.yml` without overwriting an existing file. `BSTUDIO_CONFIG` overrides that path. `studio.root` defaults to `~/BlastStudio`; `BSTUDIO_HOME` overrides it. Relative paths resolve against the current working directory; `~` expansion applies to the studio root, not `BSTUDIO_CONFIG`. The root contains projects, provider caches, the spend ledger, and an optional `.env` file. Keep unpublished work and credentials private.
 
+## Project storage and migration
+
+Projects live at `projects/<project>/`, with `project.yml` metadata, shared `evidence/`, and independent campaigns under `campaigns/<campaign>/`. Use `bstudio project new acme --repo owner/repo --url https://example.com --note "Context"` to collect reusable evidence, and `bstudio project list` to list projects. Campaign commands use addresses such as `acme/launch`.
+
+On startup, a legacy `projects/<slug>/brief.md` project is migrated to `projects/<slug>/campaigns/<slug>/`, including unknown files. Back up the studio before upgrading. Migration records its progress in `.bstudio-migration.json` and resumes on the next run after an interruption. If a destination or metadata conflict is reported, preserve both copies, resolve the indicated paths manually, and retry; do not remove the journal while recovery is pending.
+
 | Key | Default | Purpose |
 | --- | --- | --- |
 | `studio.root` | `~/BlastStudio` | Private studio directory. |

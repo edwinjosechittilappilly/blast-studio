@@ -17,8 +17,8 @@ import { reviewHash } from '../src/review-hash.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 test('slow: offline idea becomes a reviewed campaign with a still and manual handoff', { timeout: 60_000 }, async () => {
-  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [bluesky, instagram]\nreviewer: {command: null}\n' });
-  const project = join(root, 'projects/demo'); let calls = 0;
+  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [bluesky, instagram]\nreviewer: {command: null}\n', 'projects/demo/project.yml': 'name: Demo\ncreatedAt: 2025-01-01T00:00:00Z\n' });
+  const project = join(root, 'projects/demo/campaigns/launch'); let calls = 0;
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') }, run: async (_cmd, _args, opts) => {
     calls++; const dir = opts!.cwd!;
     if (calls === 1) {
@@ -32,11 +32,11 @@ test('slow: offline idea becomes a reviewed campaign with a still and manual han
     }
     return '';
   } });
-  assert.equal(await brief(['demo', '--idea', 'A useful idea.'], io), 0);
-  assert.equal(await plan(['demo'], io), 0);
-  assert.equal(await make(['demo'], io), 0);
-  assert.equal(await render(['demo'], io), 0);
-  assert.equal(await review(['demo'], io), 0);
+  assert.equal(await brief(['demo/launch', '--idea', 'A useful idea.'], io), 0);
+  assert.equal(await plan(['demo/launch'], io), 0);
+  assert.equal(await make(['demo/launch'], io), 0);
+  assert.equal(await render(['demo/launch'], io), 0);
+  assert.equal(await review(['demo/launch'], io), 0);
   assert.equal(calls, 2);
   for (const path of ['brief.md', 'plan.yml', 'posts/bluesky.md', 'assets/card/source.html', 'assets/card/out/image.png', 'review.md']) assert.ok(existsSync(join(project, path)), path);
   const posts = loadPosts(project);
@@ -46,10 +46,10 @@ test('slow: offline idea becomes a reviewed campaign with a still and manual han
     assert.ok(result.gates.every((gate: { pass: boolean }) => gate.pass), JSON.stringify(result.gates));
     const post = posts.get(platform)!;
     assert.equal(result.postHash, reviewHash({ ...post, media: post.media.map(m => ({ path: m.file, alt: m.alt })) }));
-    assert.equal(await accept(['demo', platform, '--reason', 'Reviewed offline'], io), 0);
+    assert.equal(await accept(['demo/launch', platform, '--reason', 'Reviewed offline'], io), 0);
   }
-  assert.equal(await exportCommand(['demo'], io), 0);
-  const entries = unzipSync(readFileSync(join(project, 'export/demo.campaign.zip')));
+  assert.equal(await exportCommand(['demo/launch'], io), 0);
+  const entries = unzipSync(readFileSync(join(project, 'export/launch.campaign.zip')));
   assert.ok(entries['handoff/instagram/post.md']); assert.ok(entries['handoff/instagram/README.md']);
   const manifest: { manual: { platform: string }[]; destinations: { review: { reviewHash: string } }[] } = JSON.parse(strFromU8(entries['campaign.json']));
   const ajv = new Ajv2020({ allErrors: true });

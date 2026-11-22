@@ -1,17 +1,21 @@
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { loadConfig, projectDir } from '../config.ts';
+import { loadConfig, campaignDir } from '../config.ts';
+import { parseCampaignRef } from '../campaigns.ts';
 import { exportProject } from '../export.ts';
 import type { Command } from '../io.ts';
 import { UserError } from '../types.ts';
 
+const usage = 'usage: bstudio export <project>/<campaign> [--mb <project>] [--force] [--dir]';
+
 export const run: Command = async (args, io) => {
   const parsed = (() => {
-    try { return parseArgs({ args, allowPositionals: true, options: { mb: { type: 'string' }, force: { type: 'boolean' }, dir: { type: 'boolean' } } }); }
-    catch { throw new UserError('usage: bstudio export <slug> [--mb <project>] [--force] [--dir]'); }
+    try { return parseArgs({ args, allowPositionals: true, options: { mb: { type: 'string' }, force: { type: 'boolean' }, dir: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } }); }
+    catch { throw new UserError(usage); }
   })();
-  if (parsed.positionals.length !== 1 || (parsed.values.mb !== undefined && (typeof parsed.values.mb !== 'string' || !parsed.values.mb.trim()))) throw new UserError('usage: bstudio export <slug> [--mb <project>] [--force] [--dir]');
-  const slug = parsed.positionals[0], config = loadConfig(io), dir = exportProject(projectDir(config, slug), slug, config, parsed.values.dir);
+  if (parsed.values.help) { io.out(`${usage}\nExample: bstudio export acme/launch --mb ../market-blaster --force`); return 0; }
+  if (parsed.positionals.length !== 1 || (parsed.values.mb !== undefined && !parsed.values.mb.trim())) throw new UserError(usage);
+  const ref = parseCampaignRef(parsed.positionals[0]), slug = ref.campaign, config = loadConfig(io), dir = exportProject(campaignDir(config, ref), slug, config, parsed.values.dir);
   io.out(`Wrote ${dir}`);
   const mb = parsed.values.mb as string | undefined ?? config.marketBlaster.project;
   if (mb) {

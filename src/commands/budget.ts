@@ -1,9 +1,16 @@
+import { parseArgs } from "node:util";
 import { loadConfig, writeConfigField } from "../config.ts";
 import type { Command } from "../io.ts";
 import { UserError } from "../types.ts";
 import { monthToDate, providerTotals } from "../budget/ledger.ts";
 
 export const run: Command = async (args, io) => {
+  const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { help: { type: "boolean" } } });
+  if (values.help) {
+    io.out("Usage: bstudio budget [show | set <usd> | set-project <usd>]\n\nExamples:\n  bstudio budget show\n  bstudio budget set 100");
+    return 0;
+  }
+  args = positionals;
   const config = loadConfig(io);
   if (args.length === 0 || (args.length === 1 && args[0] === "show")) {
     io.out(`Monthly cap: $${config.budget.monthlyUsd}`);

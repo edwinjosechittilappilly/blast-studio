@@ -57,9 +57,9 @@ test('calibration reports exact agreement', () => {
   assert.deepEqual(agreement([{ expected: [s], actual: [s] }, { expected: [s], actual: [{ ...s, score: 1 }] }]), { a: 50 });
 });
 test('accept refuses a failed gate', async () => {
-  const root = tempStudio({ 'projects/p/reviews/x.json': JSON.stringify({ gates: [{ id: 'rights', pass: false }] }) });
+  const root = tempStudio({ 'projects/p/campaigns/launch/reviews/x.json': JSON.stringify({ gates: [{ id: 'rights', pass: false }] }) });
   const fake = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: 'studio.yml' } });
-  await assert.rejects(() => accept(['p', 'x', '--reason', 'yes'], fake), /failed gate/);
+  await assert.rejects(() => accept(['p/launch', 'x', '--reason', 'yes'], fake), /failed gate/);
 });
 
 test('metric grounding compares normalized whole claims and ignores ordinary numbers', () => {

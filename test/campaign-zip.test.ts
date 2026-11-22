@@ -13,7 +13,7 @@ import type { Review } from '../src/types.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 function fixture() {
-  const root = tempStudio(), project = join(root, 'projects/demo');
+  const root = tempStudio(), project = join(root, 'projects/acme/campaigns/demo');
   for (const dir of ['posts', 'reviews', 'assets/a/out']) mkdirSync(join(project, dir), { recursive: true });
   writeFileSync(join(project, 'brief.md'), '# Campaign\n\n## [E1] Example\n\nstatus: shipped\n\nSource: https://example.com/source\n\nEvidence.\n');
   writeFileSync(join(project, 'review.md'), '# Review\n');
@@ -29,9 +29,9 @@ function fixture() {
 
 test('campaign zip contains a validated complete deterministic package', async () => {
   const f = fixture();
-  await exportCommand(['demo'], f.io);
+  await exportCommand(['acme/demo'], f.io);
   const path = join(f.project, 'export/demo.campaign.zip'), first = readFileSync(path);
-  await exportCommand(['demo'], f.io);
+  await exportCommand(['acme/demo'], f.io);
   assert.deepEqual(readFileSync(path), first);
   const entries = unzipSync(first), names = Object.keys(entries);
   assert.deepEqual(JSON.parse(strFromU8(entries['campaign.json'])).destinations[0].tags, ['typescript', 'testing']);
@@ -55,7 +55,7 @@ test('absent source status remains null', async () => {
   const f = fixture();
   const brief = join(f.project, 'brief.md');
   writeFileSync(brief, readFileSync(brief, 'utf8').replace('status: shipped\n\n', ''));
-  await exportCommand(['demo'], f.io);
+  await exportCommand(['acme/demo'], f.io);
   const zip = unzipSync(readFileSync(join(f.project, 'export/demo.campaign.zip')));
   const manifest = JSON.parse(strFromU8(zip['campaign.json'])) as { sources: { status: string | null }[] };
   assert.equal(manifest.sources[0].status, null);
@@ -65,7 +65,7 @@ test('shared hash vector and stale reviews', async () => {
   assert.equal(reviewHash({ title: 'T', body: '  Hello\n', media: [{ path: 'a/img.png', alt: ' Alt ' }] }), '5d5491c0f7ae06bef68e9dabfd55f2e6c8152f8e6fdb96cd24d294cd203bc977');
   const f = fixture();
   writeFileSync(join(f.project, 'posts/bluesky.md'), readFileSync(join(f.project, 'posts/bluesky.md'), 'utf8').replace('Hello', 'Changed'));
-  await assert.rejects(exportCommand(['demo'], f.io), /bluesky.*stale/);
+  await assert.rejects(exportCommand(['acme/demo'], f.io), /bluesky.*stale/);
 });
 
 test('campaign zip rejects an oversized media entry before reading it', () => {

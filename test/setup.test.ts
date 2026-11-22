@@ -3,9 +3,16 @@ import { existsSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from
 import { join } from "node:path";
 import { test } from "node:test";
 import { main } from "../src/cli.ts";
-import { loadConfig, projectDir, writeConfigField } from "../src/config.ts";
+import { campaignDir, loadConfig, writeConfigField } from "../src/config.ts";
 import { loadEnv } from "../src/env.ts";
 import { installSkills } from "../src/commands/install-skills.ts";
+import { run as auth } from "../src/commands/auth.ts";
+import { run as budget } from "../src/commands/budget.ts";
+import { run as dashboard } from "../src/commands/dashboard.ts";
+import { run as doctor } from "../src/commands/doctor.ts";
+import { run as init } from "../src/commands/init.ts";
+import { run as sources } from "../src/commands/sources.ts";
+import { run as renderPreview } from "../src/commands/render-preview.ts";
 import { fakeIO, tempStudio } from "./helpers.ts";
 
 test("init writes private defaults once and resolves overrides independently of cwd", async () => {
@@ -21,8 +28,8 @@ test("init writes private defaults once and resolves overrides independently of 
   assert.equal(config.providers.allowUpload, false);
   assert.deepEqual(config.reviewer.command, ["omp", "-p", "--model", "@review"]);
   assert.ok(existsSync(join(root, "projects")));
-  assert.equal(projectDir(config, "launch-1"), join(root, "projects", "launch-1"));
-  assert.throws(() => projectDir(config, "../escape"));
+  assert.equal(campaignDir(config, "demo/launch-1"), join(root, "projects", "demo", "campaigns", "launch-1"));
+  assert.throws(() => campaignDir(config, "../escape"));
   const before = readFileSync(file, "utf8");
   assert.equal(await main(["init"], io), 0);
   assert.equal(readFileSync(file, "utf8"), before);
@@ -85,4 +92,29 @@ test("install-skills links shipped skills idempotently and protects real directo
   const withHyperframes = fakeIO({ cwd: home, env: { HOME: home }, run: async (cmd, args) => { calls.push([cmd, ...args]); return ""; } });
   assert.equal(await main(["install-skills", "--with-hyperframes"], withHyperframes), 0);
   assert.deepEqual(calls, [["npx", "--yes", "skills@1.9.0", "add", "heygen-com/hyperframes"]]);
+});
+
+test("command help is side-effect free and unknown flags are rejected", async () => {
+  const home = tempStudio();
+  const commands = [auth, budget, dashboard, doctor, init, installSkills, sources, renderPreview];
+  for (const command of commands) {
+    const io = fakeIO({ cwd: home, env: {} });
+    assert.equal(await command(["--help"], io), 0);
+    assert.match(io.text(), /Usage: bstudio/);
+    assert.match(io.text(), /Example/);
+    await assert.rejects(command(["--unknown"], io), /unknown option/i);
+  }
+});
+
+test("value options accept both equals and separated forms", async () => {
+  const io = fakeIO({ cwd: tempStudio(), env: {} });
+  for (const args of [
+    ["--port=invalid"], ["--port", "invalid"],
+  ]) await assert.rejects(dashboard(args, io), /usage: bstudio dashboard/);
+  for (const args of [
+    ["check", "--only="], ["check", "--only", ""],
+  ]) await assert.rejects(sources(args, io), /usage: bstudio sources check/);
+  for (const args of [
+    ["--size=0x1", "--out=x"], ["--size", "0x1", "--out", "x"],
+  ]) await assert.rejects(renderPreview(args, io), /usage: bstudio render-preview/);
 });

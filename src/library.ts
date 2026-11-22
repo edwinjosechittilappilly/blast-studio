@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
+import { campaignDir } from './config.ts';
 import { readBrief } from './brief.ts';
 import { loadPosts } from './posts.ts';
 import { loadPacks, loadSources } from './packs.ts';
@@ -11,7 +12,7 @@ import type { AssetMeta, PlatformId, PlatformPack, Review, StudioConfig } from '
 
 const dirs = (path: string) => existsSync(path) ? readdirSync(path, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name).sort() : [];
 export function projectDetails(config: StudioConfig, slug: string) {
-  const dir = join(config.root, 'projects', slug);
+  const dir = campaignDir(config, slug);
   const posts = [...loadPosts(dir).values()];
   const reviewsDir = join(dir, 'reviews');
   const reviews: Review[] = existsSync(reviewsDir) ? readdirSync(reviewsDir).filter(f => f.endsWith('.json')).sort().map(f => JSON.parse(readFileSync(join(reviewsDir, f), 'utf8')) as Review) : [];
@@ -45,7 +46,9 @@ export function projectReview(config: StudioConfig, slug: string) {
 }
 export function loadLibrary(config: StudioConfig, query = '') {
   const needle = query.toLocaleLowerCase();
-  return dirs(join(config.root, 'projects')).map(slug => projectDetails(config, slug)).filter(p => !needle || [p.slug, ...p.inputs, ...p.posts.flatMap(post => [post.title ?? '', post.body]), ...p.assets.map(a => a.kind)].some(s => s.toLocaleLowerCase().includes(needle)));
+  const root = join(config.root, 'projects');
+  const validId = (id: string) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id);
+  return dirs(root).filter(validId).flatMap(project => dirs(join(root, project, 'campaigns')).filter(validId).map(campaign => projectDetails(config, `${project}/${campaign}`))).filter(p => !needle || [p.slug, ...p.inputs, ...p.posts.flatMap(post => [post.title ?? '', post.body]), ...p.assets.map(a => a.kind)].some(s => s.toLocaleLowerCase().includes(needle)));
 }
 export function latestSources(config: StudioConfig) {
   const paths = [join(config.root, 'updates'), join(repoRoot, 'updates')];
