@@ -85,10 +85,10 @@ function feedbackForm(project, target) {
 }
 async function jobStatus(project, region, apply) {
   const status = await feedbackJobStatus(project.slug); if (activeProject !== project.slug || $('#project').hidden || !region.isConnected) return;
-  const state = status.staleLock ? 'stale' : status.running ? 'running' : status.exitCode == null ? 'idle' : status.exitCode === 0 ? 'success' : 'failure';
-  if (region.dataset.state !== state) { const announcement = region.querySelector('.job-announcement'); announcement.replaceChildren(); if (state !== 'idle') { const notification = el('cds-inline-notification'); notification.setAttribute('kind', state === 'stale' || state === 'failure' ? 'error' : state === 'running' ? 'info' : 'success'); notification.setAttribute('hide-close-button', ''); notification.setAttribute('title', state === 'stale' ? 'Stale revision lock. Confirm no revision is running before removing the lock.' : state === 'running' ? 'Applying feedback…' : state === 'success' ? 'Revision completed' : `Revision failed (${status.exitCode}). Review the log and retry.`); announcement.append(notification); } region.dataset.state = state; }
+  const state = status.running ? 'running' : status.exitCode == null ? 'idle' : status.exitCode === 0 ? 'success' : 'failure';
+  if (region.dataset.state !== state) { const announcement = region.querySelector('.job-announcement'); announcement.replaceChildren(); if (state !== 'idle') { const notification = el('cds-inline-notification'); notification.setAttribute('kind', state === 'failure' ? 'error' : state === 'running' ? 'info' : 'success'); notification.setAttribute('hide-close-button', ''); notification.setAttribute('title', state === 'running' ? 'Applying feedback…' : state === 'success' ? 'Revision completed' : `Revision failed (${status.exitCode}). Review the log and retry.`); announcement.append(notification); } region.dataset.state = state; }
   const log = region.querySelector('.job-log'); if (log.textContent !== status.lines.join('\n')) log.textContent = status.lines.join('\n'); log.parentElement.hidden = !status.lines.length;
-  apply.disabled = status.running || status.staleLock || !project.feedback.some(entry => entry.status === 'pending');
+  apply.disabled = status.running || !project.feedback.some(entry => entry.status === 'pending');
   if (status.running) { region.dataset.running = 'yes'; scheduleStatus(project, region, apply); }
   else if (region.dataset.running === 'yes') { region.dataset.running = ''; toast(status.exitCode === 0 ? 'Revision completed. Review the updated campaign.' : 'Revision failed. Review the log and retry.', status.exitCode !== 0); }
 }
