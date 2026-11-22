@@ -32,7 +32,7 @@ function marketBlasterDir(): string {
   return process.env.MARKET_BLASTER_DIR
     ? resolve(process.env.MARKET_BLASTER_DIR)
     : [new URL('../../market-blaster/', import.meta.url), new URL('../../../market-blaster/', import.meta.url)]
-      .map(fileURLToPath).find(path => existsSync(join(path, 'bin/mblast.mjs'))) ?? fileURLToPath(new URL('../../market-blaster/', import.meta.url));
+      .map(url => fileURLToPath(url)).find(path => existsSync(join(path, 'bin/mblast.mjs'))) ?? fileURLToPath(new URL('../../market-blaster/', import.meta.url));
 }
 
 test('shared review hash vector', () => {
