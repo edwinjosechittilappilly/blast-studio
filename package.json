@@ -26,10 +26,14 @@
   "scripts": {
     "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
     "typecheck": "tsc --noEmit",
-    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').cpSync('src/dashboard/static', 'dist/dashboard/static', { recursive: true })\"",
+    "build:ui": "esbuild src/dashboard/ui/app.js --bundle --format=esm --outfile=src/dashboard/build/app.js && esbuild src/dashboard/ui/app.css --bundle --outfile=src/dashboard/build/app.css",
+    "dev:ui": "esbuild src/dashboard/ui/app.js src/dashboard/ui/app.css --bundle --format=esm --outdir=src/dashboard/build --watch",
+    "build": "npm run build:ui && tsc -p tsconfig.build.json && node -e \"require('node:fs').cpSync('src/dashboard/static', 'dist/dashboard/static', { recursive: true }); require('node:fs').cpSync('src/dashboard/build', 'dist/dashboard/static', { recursive: true })\"",
     "prepack": "npm run build"
   },
   "dependencies": {
+    "@carbon/styles": "^1.93.0",
+    "@carbon/web-components": "^2.50.0",
     "@resvg/resvg-js": "2.6.2",
     "ajv": "8.20.0",
     "fflate": "0.8.3",
@@ -41,6 +45,7 @@
     "hyperframes": "0.9.80"
   },
   "devDependencies": {
+    "esbuild": "^0.25.0",
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0"
   }
