@@ -46,6 +46,6 @@ Prerequisites: reconcile merged/merging PRs #7 (feedback.yml), #9 (dashboard rev
 
 ## 6. Slice F — Documentation and Slipway end-to-end
 
-- [ ] 6.1 Update CLI, storage/migration/recovery, package/manifest, dashboard security/offline and component inventory documentation; document breaking addresses, unambiguous composite naming, CLI-only `install-skills`, `render-preview`, `sources propose`, `review --calibrate`, and P1/P2 deferral to beads.
-- [ ] 6.2 Add a Slipway end-to-end test creating a project with shared evidence and multiple campaigns, streaming jobs, exercising blockers and feedback, snapshot/restore, scoped reruns, local and MB export history/download and grouped status.
-- [ ] 6.3 Run focused migration, CLI, schema/import, shared-lock/restart, feedback/blocker, history, API security/job, offline and accessible responsive tests, plus the Slipway end-to-end test; verify no Market Blaster changes are required.
+- [x] 6.1 Update CLI, storage/migration/recovery, package/manifest, dashboard security/offline and component inventory documentation; document breaking addresses, unambiguous composite naming, CLI-only `install-skills`, `render-preview`, `sources propose`, `review --calibrate`, and P1/P2 deferral to beads.
+- [x] 6.2 Add a Slipway end-to-end test creating a project with shared evidence and multiple campaigns, streaming jobs, exercising blockers and feedback, snapshot/restore, scoped reruns, local and MB export history/download and grouped status.
+- [x] 6.3 Run focused migration, CLI, schema/import, shared-lock/restart, feedback/blocker, history, API security/job, offline and accessible responsive tests, plus the Slipway end-to-end test; verify no Market Blaster changes are required.
