@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
+import { parseBrief } from "../src/brief.ts";
 import { listProjects, parseCampaignRef, readProject, writeProject } from "../src/campaigns.ts";
 import { campaignDir, loadConfig } from "../src/config.ts";
 import { run as project } from "../src/commands/project.ts";
@@ -60,6 +61,20 @@ test("project commands persist metadata and share fetched evidence across campai
   await project(["list"], io);
   assert.match(io.text(), /acme\s+2/);
   await assert.rejects(project(["new", "acme"], io), /already exists/);
+});
+
+test("forcing a brief does not duplicate shared repository and URL evidence", async () => {
+  const { root, io } = setup();
+  await project(["new", "acme", "--repo", "org/repo", "--url", "https://example.com/"], io);
+  await brief(["acme/launch", "--idea", "Initial idea"], io);
+  await brief(["acme/launch", "--force", "--repo", "org/repo", "--url", "https://example.com/", "--url", "https://example.org/", "--note", "Campaign note"], io);
+  const text = readFileSync(join(root, "projects/acme/campaigns/launch/brief.md"), "utf8");
+  assert.deepEqual(
+    parseBrief(text).map(section => section.title),
+    ["URL", "Repository", "Repository README", "Note", "URL"],
+  );
+  assert.match(text, /Source: https:\/\/example\.org\//);
+  assert.match(text, /Campaign note/);
 });
 
 test("shared evidence retains provenance, status and one outer untrusted fence", async () => {

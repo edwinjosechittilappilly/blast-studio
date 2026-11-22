@@ -75,7 +75,12 @@ export const run: Command = async (args, io) => {
   if (inGit(dir) && !explicitlyConfigured(io, config.file)) throw new UserError("Project directory is inside a git repository; explicitly set studio.root or BSTUDIO_HOME to allow it");
   if (existsSync(path) && !values.force) throw new UserError(`${path} already exists; use --force to overwrite it`);
   const sections: string[] = [];
+  const sharedSources = new Set<string>();
+  let importingShared = false;
   const add = (title: string, status: ClaimStatus | undefined, body: string, source?: string) => {
+    const key = source && JSON.stringify([title, source]);
+    if (key && !importingShared && sharedSources.has(key)) return;
+    if (key && importingShared) sharedSources.add(key);
     sections.push(evidenceSection(sections.length + 1, title, status, body, source));
   };
   const addImported = (section: BriefSection, file: string, untrustedSource = false) => {
@@ -89,7 +94,9 @@ export const run: Command = async (args, io) => {
   };
   const shared = containedPath(project, "evidence", "sources.md");
   if (existsSync(shared)) {
+    importingShared = true;
     for (const section of parseBrief(readFileSync(shared, "utf8"))) addImported(section, shared);
+    importingShared = false;
   }
   if (values.idea) add("Idea", "claim", values.idea);
   await collectNotesAndUrls(io, add, values.note ?? [], values.url ?? []);
