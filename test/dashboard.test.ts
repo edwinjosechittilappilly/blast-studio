@@ -135,7 +135,17 @@ test('export history downloads only authenticated contained zip entries', async 
   unlinkSync(join(history, 'acme--launch.campaign.zip'));
   const outside = join(root, 'outside.zip'); writeFileSync(outside, 'outside');
   symlinkSync(outside, join(history, 'acme--launch.campaign.zip'));
-  assert.equal((await fetch(`${base}${path}/${encodeURIComponent(entries[0].name)}`, { headers })).status, 403);
+  assert.deepEqual(await (await fetch(base + path, { headers })).json(), []);
+  assert.equal((await fetch(`${base}${path}/${encodeURIComponent(entries[0].name)}`, { headers })).status, 404);
+});
+test('snapshot history requires a session and returns version metadata', async t => {
+  const { root, io } = fixture(), dir = join(root, 'projects/acme/campaigns/launch/history/3-make-2025-01-02T03-04-05.000Z');
+  mkdirSync(dir, { recursive: true }); writeFileSync(join(dir, 'plan.yml'), 'test');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const base = `http://127.0.0.1:${started.port}`, path = '/api/campaigns/acme/launch/history';
+  assert.equal((await fetch(base + path)).status, 401);
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  assert.deepEqual(await (await fetch(base + path, { headers: { cookie } })).json(), [{ n: 3, step: 'make', time: '2025-01-02T03:04:05.000Z', size: 4 }]);
 });
 test('dashboard authenticates, contains media and validates settings', async t => {
   const { root, io } = fixture(); const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());

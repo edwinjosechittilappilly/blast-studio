@@ -78,6 +78,7 @@ export function buildOperation(name: string, raw: unknown, options: { imageProvi
   if (!op || !raw || typeof raw !== 'object' || Array.isArray(raw)) throw new UserError('Unknown operation or invalid arguments');
   const values = raw as Record<string, unknown>;
   if (Object.keys(values).some(k => !Object.hasOwn(op.fields, k))) throw new UserError('Unknown argument');
+  if (name === 'export' && values.local === true && (values.force === true || values.mb !== undefined)) throw new UserError('Local export cannot be combined with force or a Market Blaster path');
   const [cmd, ...sub] = name.split(' '), positional: string[] = [], flags: string[] = [];
   let ref: string | undefined;
   for (const [key, field] of Object.entries(op.fields)) {

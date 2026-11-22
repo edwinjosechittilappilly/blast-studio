@@ -90,7 +90,7 @@ test('jobs API enforces host, session, origin, header and argument schemas', asy
     process.kill = ((pid: number, signal?: string | number) => { if (signal === 'SIGTERM') throw Object.assign(new Error('denied'), { code: 'EPERM' }); return originalKill(pid, signal); }) as typeof process.kill;
     try {
       const denied = await call('POST', `/api/jobs/${id}/cancel`, headers);
-      assert.equal(denied.status, 403); assert.match(JSON.parse(denied.body).error, new RegExp(`Not permitted to signal.*bstudio jobs cancel ${id}`));
+      assert.equal(denied.status, 403); assert.match(JSON.parse(denied.body).error, /another user.*elevated privileges/);
       const current = findJob(root, id); assert.equal(current.state, 'running'); assert.notEqual(current.cancelRequested, true);
     } finally { process.kill = originalKill; }
     const finished = Promise.withResolvers<void>();

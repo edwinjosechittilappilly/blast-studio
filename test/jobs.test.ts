@@ -25,6 +25,8 @@ test('registry validates campaign addresses and constructs an argument vector', 
   assert.throws(() => buildOperation('sh -c', { campaign: 'acme/launch' }));
   assert.throws(() => buildOperation('render', { campaign: 'acme/launch', shell: 'touch /tmp/x' }));
   assert.throws(() => buildOperation('mark', { campaign: 'acme/launch', platform: 'x', url: 'javascript:alert(1)' }));
+  assert.throws(() => buildOperation('export', { campaign: 'acme/launch', local: true, force: true }), /Local export/);
+  assert.throws(() => buildOperation('export', { campaign: 'acme/launch', local: true, mb: '/tmp' }), /Local export/);
 });
 
 test('project operations use global structured arguments', () => {
@@ -360,7 +362,7 @@ test('job lookup and cancellation expose distinct not-found and not-running erro
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('permission denied while cancelling preserves the running job and suggests the terminal command', () => {
+test('permission denied while cancelling preserves the running job and suggests elevated privileges', () => {
   const root = tempStudio(), id = 'a0000000-0000-4000-8000-000000000000', dir = join(root, 'logs/jobs'), originalKill = process.kill;
   const started = processStarted(process.pid); assert.ok(started);
   mkdirSync(dir, { recursive: true });
@@ -368,9 +370,21 @@ test('permission denied while cancelling preserves the running job and suggests 
   writeFileSync(join(dir, `${id}.json`), JSON.stringify(record));
   process.kill = ((pid: number, signal?: string | number) => { if (signal === 'SIGTERM') throw Object.assign(new Error('denied'), { code: 'EPERM' }); return originalKill(pid, signal); }) as typeof process.kill;
   try {
-    assert.throws(() => cancelJob(root, id), new RegExp(`Not permitted to signal.*bstudio jobs cancel ${id}`));
+    assert.throws(() => cancelJob(root, id), /another user.*elevated privileges/);
     const after = findJob(root, id); assert.equal(after.state, 'running'); assert.equal(after.cancelRequested, undefined); assert.equal(after.updatedAt, record.updatedAt);
   } finally { process.kill = originalKill; rmSync(root, { recursive: true, force: true }); }
+});
+test('partial signal delivery keeps cancellation requested when a child is denied', async () => {
+  if (process.platform === 'win32') return;
+  const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { detached: true, stdio: 'ignore' });
+  await once(child, 'spawn');
+  const root = tempStudio(), id = 'b0000000-0000-4000-8000-000000000000', dir = join(root, 'logs/jobs'), originalKill = process.kill;
+  const started = processStarted(process.pid), childStart = processStarted(child.pid!); assert.ok(started); assert.ok(childStart);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, `${id}.json`), JSON.stringify({ id, operation: 'doctor', state: 'running', createdAt: '2026-01-01', updatedAt: '2026-01-01', pid: process.pid, processStarted: started, childPids: [child.pid], childStarted: { [child.pid!]: childStart }, command: 'bstudio doctor' }));
+  process.kill = ((pid: number, signal?: string | number) => { if (signal === 'SIGTERM') { if (pid === process.pid) return true; throw Object.assign(new Error('denied'), { code: 'EPERM' }); } return originalKill(pid, signal); }) as typeof process.kill;
+  try { assert.equal(cancelJob(root, id).cancelRequested, true); assert.equal(findJob(root, id).cancelRequested, true); }
+  finally { process.kill = originalKill; originalKill(-child.pid!, 'SIGKILL'); await once(child, 'exit'); rmSync(root, { recursive: true, force: true }); }
 });
 
 test('an aged malformed campaign lock can be recovered', () => {
