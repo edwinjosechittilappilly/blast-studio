@@ -11,7 +11,7 @@ export const run: Command = async (args, io) => {
   const slug = args[0];
   for (const [name, command, commandArgs] of [['brief', brief, args], ['plan', plan, [slug]], ['make', make, [slug]], ['render', render, [slug]], ['review', review, [slug]]] as const) {
     try {
-      const result = await command([...commandArgs], io);
+      const result = await command([...commandArgs], { ...io, step: name });
       if (result !== 0) { io.err(`Resume with: bstudio ${name} ${name === 'brief' ? args.map(a => JSON.stringify(a)).join(' ') : slug}`); return result; }
     } catch (error) {
       io.err(`Resume with: bstudio ${name} ${name === 'brief' ? args.map(a => JSON.stringify(a)).join(' ') : slug}`); throw error;

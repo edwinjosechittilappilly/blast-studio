@@ -6,7 +6,7 @@ import type { StudioConfig } from "../types.ts";
 import { UserError } from "../types.ts";
 
 export interface LedgerMeta { projectSlug: string; provider: string; model: string; [key: string]: unknown }
-export interface LedgerEntry { id: string; type: "reserved" | "settled" | "agent"; at: string; usd: number | null; projectSlug: string; provider: string; model: string; usage?: unknown; ms?: number }
+export interface LedgerEntry { id: string; type: "reserved" | "settled" | "agent"; at: string; usd: number | null; projectSlug: string; provider: string; model: string; usage?: unknown; ms?: number; step?: string; succeeded?: boolean }
 export function parseAgentOutput(raw: string): { text: string; usd: number | null; usage?: unknown } {
   try {
     const value: unknown = JSON.parse(raw);
@@ -27,6 +27,11 @@ function entries(root: string): LedgerEntry[] {
     try { return JSON.parse(line) as LedgerEntry; }
     catch { throw new UserError(`Invalid ledger line ${index + 1}; repair ${file} before continuing`); }
   });
+}
+/** Mean duration of completed historical agent runs for this workflow step. */
+export function usualStepMs(root: string, step: string): number | undefined {
+  const samples = entries(root).filter(e => e.type === "agent" && e.succeeded === true && e.step === step && typeof e.ms === "number" && Number.isFinite(e.ms) && e.ms >= 0);
+  return samples.length ? samples.reduce((sum, e) => sum + e.ms!, 0) / samples.length : undefined;
 }
 function effective(root: string): LedgerEntry[] {
   const all = entries(root), settled = new Map(all.filter(e => e.type === "settled").map(e => [e.id, e]));
@@ -111,6 +116,6 @@ export async function reserveAgentRun(config: StudioConfig, run: { command: stri
 export async function settleAgentRun(config: StudioConfig, id: string, run: { usd: number; usage?: unknown }): Promise<void> {
   await settle(config.root, id, run.usd, run.usage);
 }
-export async function recordAgentRun(config: StudioConfig, run: { model: string; ms: number; usage?: unknown; usd: null; projectSlug?: string; provider?: string }): Promise<void> {
-  await locked(config.root, () => append(config.root, { id: randomUUID(), type: "agent", at: new Date().toISOString(), projectSlug: run.projectSlug ?? "", provider: run.provider ?? "agent", model: run.model, ms: run.ms, usage: run.usage, usd: null }));
+export async function recordAgentRun(config: StudioConfig, run: { model: string; ms: number; usage?: unknown; usd: null; projectSlug?: string; provider?: string; step?: string; succeeded?: boolean }): Promise<void> {
+  await locked(config.root, () => append(config.root, { id: randomUUID(), type: "agent", at: new Date().toISOString(), projectSlug: run.projectSlug ?? "", provider: run.provider ?? "agent", model: run.model, ms: run.ms, step: run.step, succeeded: run.succeeded, usage: run.usage, usd: null }));
 }
