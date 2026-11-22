@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { appendFileSync, closeSync, existsSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseCampaignRef } from '../campaigns.ts';
 import { UserError } from '../types.ts';
-import { buildOperation, campaignRef } from './registry.ts';
+import { buildOperation } from './registry.ts';
 
 export type JobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
 export interface Job { id: string; operation: string; campaign?: string; state: JobState; createdAt: string; updatedAt: string; pid?: number; processStarted?: string; childStarted?: Record<string, string>; exitCode?: number | null; completed?: boolean; command: string; cancelRequested?: boolean; processGroup?: boolean; childPids?: number[] }
@@ -59,11 +60,17 @@ function safeDir(root: string, parts: string[]): string {
   return current;
 }
 export function campaignDirectory(root: string, ref: string, create = false): string {
-  const slug = campaignRef(ref);
-  if (slug.includes('/')) throw new UserError('Project/campaign addresses are not yet supported');
-  const path = join(resolve(root), 'projects', slug);
-  if (!create && !existsSync(path)) throw new UserError(`Campaign not found: ${slug}`);
-  return safeDir(root, ['projects', slug]);
+  const { project, campaign } = parseCampaignRef(ref);
+  const projects = join(resolve(root), 'projects');
+  const projectDir = join(projects, project);
+  for (const path of [projects, projectDir]) {
+    if (existsSync(path) && lstatSync(path).isSymbolicLink()) throw new UserError('Unsafe job directory');
+  }
+  const metadata = join(projectDir, 'project.yml');
+  if (!existsSync(metadata) || lstatSync(metadata).isSymbolicLink()) throw new UserError(`Project ${project} does not exist; run bstudio project new ${project}`);
+  const path = join(projectDir, 'campaigns', campaign);
+  if (!create && !existsSync(path)) throw new UserError(`Campaign not found: ${ref}`);
+  return safeDir(root, ['projects', project, 'campaigns', campaign]);
 }
 function logDir(root: string, ref?: string): string { return ref ? safeDir(campaignDirectory(root, ref), ['logs', 'jobs']) : safeDir(root, ['logs', 'jobs']); }
 function recordPath(dir: string, id: string): string { if (!idPattern.test(id)) throw new UserError('Invalid job id'); return join(dir, `${id}.json`); }
@@ -169,11 +176,10 @@ export function startJob(root: string, name: string, values: unknown, options: {
 }
 function dirs(root: string): string[] {
   const result = [logDir(root)], projects = join(realpathSync(resolve(root)), 'projects');
-  if (!existsSync(projects)) return result;
+  if (!existsSync(projects) || lstatSync(projects).isSymbolicLink()) return result;
   for (const project of readdirSync(projects, { withFileTypes: true })) {
     if (!project.isDirectory() || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(project.name)) continue;
-    const p = join(projects, project.name), legacy = join(p, 'logs', 'jobs');
-    if (existsSync(legacy)) result.push(legacy);
+    const p = join(projects, project.name);
     const campaigns = join(p, 'campaigns'); if (!existsSync(campaigns) || lstatSync(campaigns).isSymbolicLink()) continue;
     for (const c of readdirSync(campaigns, { withFileTypes: true })) if (c.isDirectory() && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(c.name)) { const d = join(campaigns, c.name, 'logs', 'jobs'); if (existsSync(d)) result.push(d); }
   }
