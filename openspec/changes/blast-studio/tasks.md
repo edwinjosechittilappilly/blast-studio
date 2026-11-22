@@ -9,7 +9,7 @@
 ## 2. M1 — Inputs and brief
 
 - [x] 2.1 Implement idea, note, URL, PR, commit, repo and Market Blaster brief ingestion with anchored sections and evidence statuses; verify combined inputs and status preservation with fixtures and document input flags.
-- [ ] 2.2 Fence external content as untrusted and implement resumable `new` orchestration; verify hostile content remains fenced and failures print the correct resume command.
+- [x] 2.2 Fence external content as untrusted and implement resumable `new` orchestration; verify hostile content remains fenced and failures print the correct resume command.
 
 ## 3. M1 — Platform packs and source registry
 
@@ -31,7 +31,7 @@
 
 - [x] 6.1 Implement deterministic policy, disclosure, specification, accessibility, grounding and rights gates including AI inheritance and waiver handling; verify pass, failure and unknown-warning cases with fixtures and document review rules.
 - [x] 6.2 Implement reviewer workspace, distinct model, schema validation and one retry, standard and outline rubrics, evidence and fixes, verdicts and freshness warnings; verify all verdicts, invalid responses and N/A scoring with tests.
-- [ ] 6.3 Implement bounded revise/rerender/rereview and reasoned accept without gate override; verify round limits and rejected gate overrides with tests and document commands.
+- [x] 6.3 Implement bounded revise/rerender/rereview and reasoned accept without gate override; verify round limits and rejected gate overrides with tests and document commands.
 - [x] 6.4 Implement hook order comparison and calibration against approximately 20 owner-labelled fixtures; verify call bounds and per-criterion agreement reporting with tests and document scores as editorial judgments.
 
 ## 7. M1 — Export manifest and handoff
@@ -54,7 +54,7 @@
 ## 10. M3 — Updater proposals, verification and CI
 
 - [x] 10.1 Implement snapshot-diff proposals on update branches with quoted-evidence and schema validation, and human `sources verify`; verify unsupported quotes are rejected and verification metadata is written with tests and document the workflow.
-- [ ] 10.2 Implement weekly issue reporting and key-gated read-only proposal job with separate PR job limited to pack data and snapshots; verify workflow permissions, path restrictions and no automatic merge with tests.
+- [x] 10.2 Implement weekly issue reporting and key-gated read-only proposal job with separate PR job limited to pack data and snapshots; verify workflow permissions, path restrictions and no automatic merge with tests.
 
 ## 11. M3 — Status, library and dashboard
 
@@ -65,4 +65,4 @@
 ## 12. M3 — Documentation and offline proof
 
 - [ ] 12.1 Complete end-to-end user and operator documentation, including dependencies, policy limits, manual handoffs, privacy and costs; verify documented commands against the implemented CLI.
-- [ ] 12.2 Exercise an offline idea-to-brief-to-plan-to-stills-to-review-to-export proof with deterministic local fixtures and no paid calls; verify artifacts, gates and handoff contract in an end-to-end test.
+- [x] 12.2 Exercise an offline idea-to-brief-to-plan-to-stills-to-review-to-export proof with deterministic local fixtures and no paid calls; verify artifacts, gates and handoff contract in an end-to-end test.
