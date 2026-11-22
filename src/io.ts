@@ -4,6 +4,11 @@ import type { Env } from "./types.ts";
 export interface IO {
   cwd: string;
   env: Env;
+  /** Current workflow step for progress and timing attribution. */
+  step?: string;
+  quiet?: boolean;
+  /** Write only to the durable job log, without displaying live output. */
+  log?(line: string): void;
   out(line: string): void;
   err(line: string): void;
   /** True when stdin is an interactive terminal. */
@@ -18,7 +23,7 @@ export interface IO {
   run(
     cmd: string,
     args: string[],
-    opts?: { cwd?: string; env?: Env; input?: string; timeoutMs?: number },
+    opts?: { cwd?: string; env?: Env; input?: string; timeoutMs?: number; onOutput?: (line: string) => void },
   ): Promise<string>;
   /** Reads a credential from the macOS Keychain; undefined in tests so no test can touch the real Keychain. */
   keychain?: (key: string) => string | undefined;

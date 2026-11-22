@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type { IO } from './io.ts';
 import { UserError, type Env, type StudioConfig } from './types.ts';
-import { parseAgentOutput, recordAgentRun, reserveAgentRun, settleAgentRun } from './budget/ledger.ts';
+import { parseAgentOutput, recordAgentRun, reserveAgentRun, settleAgentRun, usualStepMs } from './budget/ledger.ts';
 const protectedEnv = new Set(['DEV_API_KEY', 'HASHNODE_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN', 'BLUESKY_IDENTIFIER', 'BLUESKY_APP_PASSWORD', 'BLUESKY_HOST', 'MASTODON_TOKEN', 'MASTODON_HOST', 'LINKEDIN_ACCESS_TOKEN', 'LINKEDIN_CLIENT_ID', 'LINKEDIN_CLIENT_SECRET', 'LINKEDIN_TOKEN_ISSUED', 'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET', 'NOSTR_PRIVATE_KEY']);
 const providerKeys = new Set(['GEMINI_API_KEY', 'OPENAI_API_KEY']);
 
@@ -118,19 +118,31 @@ export async function runBilledAgent(io: IO, config: StudioConfig, settings: { b
   if (settings.billing === 'api' && (!(maxUsd && maxUsd > 0) || !Number.isFinite(maxUsd))) throw new UserError('API-billed agent requires a positive maxUsdPerRun');
   const id = settings.billing === 'api' ? await reserveAgentRun(config, { command: model, projectSlug, maxUsd: maxUsd! }) : undefined;
   const started = Date.now();
+  const step = io.step ?? 'agent', usual = usualStepMs(config.root, step);
+  const progress = () => {
+    const seconds = Math.floor((Date.now() - started) / 1000);
+    const elapsed = `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+    const line = `[${step}] agent · ${elapsed} (usual ${usual === undefined ? 'unavailable' : `~${Math.max(1, Math.round(usual / 60000))}m`})`;
+    if (io.quiet) io.log?.(line); else io.err(line);
+  };
+  let shown = false;
+  const showProgress = () => { shown = true; progress(); };
+  const timer = setInterval(showProgress, 10000);
   let report = '';
   try {
     // Agent CLIs parse a positional argument starting with "-" as a flag (a SKILL.md begins with "---"), so the
     // prompt always starts with a plain word.
     const safePrompt = /^\s*-/.test(prompt) ? `Task:\n${prompt}` : prompt;
     const wrapped = sandboxCommand(io, config, cwd, temp, command[0], [...command.slice(1), safePrompt]);
-    report = await io.run(wrapped.command, wrapped.args, { cwd, env, timeoutMs });
+    report = await io.run(wrapped.command, wrapped.args, { cwd, env, timeoutMs, onOutput: line => { if (!shown) showProgress(); if (io.quiet) io.log?.(line); else io.err(line); } });
     return report;
   } finally {
+    clearInterval(timer);
     if (id) {
       const parsed = parseAgentOutput(report);
       const usd = parsed.usd ?? maxUsd!, usage = parsed.usage;
       await settleAgentRun(config, id, { usd, usage });
-    } else await recordAgentRun(config, { model, ms: Date.now() - started, usd: null, projectSlug });
+    }
+    await recordAgentRun(config, { model, ms: Date.now() - started, usd: null, projectSlug, step });
   }
 }
