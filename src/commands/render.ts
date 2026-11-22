@@ -5,6 +5,7 @@ import { parse, stringify } from 'yaml';
 import { loadConfig, projectDir } from '../config.ts';
 import { loadPacks, knownValue } from '../packs.ts';
 import { readPlan } from '../plan.ts';
+import { loadPosts, serializePost } from '../posts.ts';
 import { closeBrowser, renderDiagram, renderHtml, renderSvg } from '../render/stills.ts';
 import { renderVideo } from '../render/video.ts';
 import { generateImage } from '../providers/images.ts';
@@ -18,8 +19,12 @@ export const run: Command = async (args, io) => {
   if (pos.length !== 1 || pos[0].startsWith('-')) throw new UserError('usage: bstudio render <slug> [--regen]');
   const config = loadConfig(io), project = projectDir(config, pos[0]), plan = readPlan(project), packs = loadPacks();
   const metadata = new Map<string, { dir: string; meta: AssetMeta }>();
+  const selections = new Map<string, Map<string, { image?: string; document?: string; slides?: string[] }>>();
+  const rendered = new Set<string>();
   try {
     for (const entry of plan) for (const asset of entry.assets) {
+      if (rendered.has(asset.id)) continue;
+      rendered.add(asset.id);
       const dir = join(project, 'assets', asset.id), metaPath = join(dir, 'asset.yml');
       if (!existsSync(metaPath)) throw new UserError(`Missing ${metaPath}`);
       const raw = parse(readFileSync(metaPath, 'utf8')) as AssetMeta & { size?: { width: number; height: number }; width?: number; height?: number };
@@ -27,16 +32,33 @@ export const run: Command = async (args, io) => {
       const out = join(dir, 'out'); mkdirSync(out, { recursive: true });
       const outputs: AssetMeta['outputs'] = [], metrics: NonNullable<AssetMeta['metrics']> = [];
       const add = (file: string, width?: number, height?: number) => outputs.push({ file: `out/${basename(file)}`, bytes: statSync(file).size, ...(width ? { width } : {}), ...(height ? { height } : {}) });
-      const pack = packs.get(entry.platform), spec = pack?.media.find(m => m.kind === 'image');
-      const width = raw.size?.width ?? raw.width ?? knownValue(spec?.width) ?? 1080, height = raw.size?.height ?? raw.height ?? knownValue(spec?.height) ?? 1080;
+      const uses = plan.flatMap(p => p.assets.filter(a => a.id === asset.id).map(a => ({ platform: p.platform, asset: a })));
+      const dimensions = uses.map(use => {
+        const spec = packs.get(use.platform)?.media.find(m => m.kind === 'image');
+        const ratio = use.asset.aspect ?? knownValue(spec?.aspectRatios)?.[0];
+        const parts = ratio?.match(/^(\d+(?:\.\d+)?):(\d+(?:\.\d+)?)$/);
+        const w = raw.size?.width ?? raw.width ?? knownValue(spec?.width) ?? 1080;
+        const h = raw.size?.height ?? raw.height ?? knownValue(spec?.height) ?? (parts ? Math.round(w * Number(parts[2]) / Number(parts[1])) : 1080);
+        return { platform: use.platform, width: w, height: h };
+      });
+      const variants = [...new Map(dimensions.map(d => [`${d.width}x${d.height}`, d])).values()];
+      const { width, height } = variants[0];
       const html = (file: string) => { const text = readFileSync(file, 'utf8'), base = `<base href="${pathToFileURL(`${dirname(file)}/`).href}">`; return /<head(?:\s[^>]*)?>/i.test(text) ? text.replace(/<head(?:\s[^>]*)?>/i, `$&${base}`) : base + text; };
-      const still = async (source: string, dest: string) => { const result = await renderHtml({ html: html(source), width, height, out: dest }); add(dest, width, height); metrics.push({ file: `out/${basename(dest)}`, minFontPx: result.metrics.minFontPx ?? 0, minContrast: result.metrics.minContrast, overflow: result.metrics.overflow }); };
+      const still = async (source: string, dest: string, width: number, height: number) => { const result = await renderHtml({ html: html(source), width, height, out: dest }); add(dest, width, height); metrics.push({ file: `out/${basename(dest)}`, minFontPx: result.metrics.minFontPx ?? 0, minContrast: result.metrics.minContrast, overflow: result.metrics.overflow }); };
       if (asset.kind === 'video' || asset.kind === 'terminal-demo') outputs.push(...await renderVideo(dir, config, io));
       else if (asset.kind === 'illustration') {
         const promptFile = join(dir, 'source.json'); const data = parse(readFileSync(promptFile, 'utf8')) as { prompt: string; size?: string };
-        const generated = await generateImage({ config, io, projectSlug: pos[0], prompt: data.prompt, size: data.size ?? `${width}x${height}`, out: join(out, 'illustration.png'), regen });
-        raw.provider = generated.provider as AssetMeta['provider']; raw.aiGenerated = generated.aiGenerated; raw.costUsd = generated.costUsd; raw.promptHash = generated.promptHash; raw.license = generated.license;
-        const png = readFileSync(generated.file); if (png.length < 24 || png.toString('ascii', 12, 16) !== 'IHDR') throw new UserError('Generated image has invalid PNG dimensions'); add(generated.file, png.readUInt32BE(16), png.readUInt32BE(20));
+        const chosen = new Map<string, { image?: string }>();
+        let cost: number | null = 0;
+        for (const variant of variants) {
+          const suffix = variants.length > 1 ? `-${variant.width}x${variant.height}` : '', file = `illustration${suffix}.png`;
+          const generated = await generateImage({ config, io, projectSlug: pos[0], prompt: data.prompt, size: data.size ?? `${variant.width}x${variant.height}`, out: join(out, file), regen });
+          raw.provider = generated.provider as AssetMeta['provider']; raw.aiGenerated = generated.aiGenerated; raw.promptHash = generated.promptHash; raw.license = generated.license;
+          cost = cost === null || generated.costUsd === null ? null : cost + generated.costUsd;
+          const png = readFileSync(generated.file); if (png.length < 24 || png.toString('ascii', 12, 16) !== 'IHDR') throw new UserError('Generated image has invalid PNG dimensions'); add(generated.file, png.readUInt32BE(16), png.readUInt32BE(20));
+          for (const use of dimensions.filter(d => d.width === variant.width && d.height === variant.height)) chosen.set(use.platform, { image: `assets/${asset.id}/out/${file}` });
+        }
+        raw.costUsd = cost; selections.set(asset.id, chosen);
       } else if (asset.kind === 'voiceover') {
         const generated = await generateVoice({ config, io, projectSlug: pos[0], text: readFileSync(join(dir, 'source.txt'), 'utf8'), out: join(out, 'voiceover.wav'), regen });
         raw.provider = generated.provider; raw.aiGenerated = generated.aiGenerated; raw.costUsd = generated.costUsd; raw.promptHash = generated.promptHash; raw.license = generated.license; add(generated.file);
@@ -49,15 +71,47 @@ export const run: Command = async (args, io) => {
         const result = await renderDiagram(source, join(out, 'diagram')); add(result.svg); add(result.png); raw.provider = extname(source) === '.mmd' ? 'mermaid' : 'd2';
       } else if (asset.kind === 'carousel') {
         const slidesDir = join(dir, 'source'); const slides = readdirSync(slidesDir).filter(f => f.endsWith('.html')).sort(); if (!slides.length) throw new UserError(`No carousel slides in ${slidesDir}`);
-        for (const [index, slide] of slides.entries()) await still(join(slidesDir, slide), join(out, `slide-${index + 1}.png`));
         const bodies = slides.map(slide => { const content = html(join(slidesDir, slide)); const styles = [...content.matchAll(/<style\b[^>]*>[\s\S]*?<\/style>/gi)].map(m => m[0]).join(''); const body = content.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? content; return `${styles}<div class="slide">${body}</div>`; }).join('\n');
-        const pdf = join(out, 'carousel.pdf'); await renderHtml({ html: `<base href="${pathToFileURL(`${dir}/`).href}">${bodies}`, width, height, out: pdf, pdf: true }); add(pdf);
-      } else if (asset.kind === 'card' || asset.kind === 'poster') await still(join(dir, 'source.html'), join(out, 'image.png'));
+        const chosen = new Map<string, { image?: string; document?: string; slides?: string[] }>();
+        for (const variant of variants) {
+          const suffix = variants.length > 1 ? `-${variant.width}x${variant.height}` : '';
+          const files: string[] = [];
+          for (const [index, slide] of slides.entries()) { const file = `slide-${index + 1}${suffix}.png`; await still(join(slidesDir, slide), join(out, file), variant.width, variant.height); files.push(`assets/${asset.id}/out/${file}`); }
+          const pdfName = `carousel${suffix}.pdf`, pdf = join(out, pdfName); await renderHtml({ html: `<base href="${pathToFileURL(`${slidesDir}/`).href}">${bodies}`, width: variant.width, height: variant.height, out: pdf, pdf: true }); add(pdf, variant.width, variant.height);
+          for (const use of dimensions.filter(d => d.width === variant.width && d.height === variant.height)) chosen.set(use.platform, { image: files[0], slides: files, document: `assets/${asset.id}/out/${pdfName}` });
+        }
+        selections.set(asset.id, chosen);
+      } else if (asset.kind === 'card' || asset.kind === 'poster') {
+        const chosen = new Map<string, { image?: string }>();
+        for (const variant of variants) {
+          const suffix = variants.length > 1 ? `-${variant.width}x${variant.height}` : '', file = `image${suffix}.png`;
+          await still(join(dir, 'source.html'), join(out, file), variant.width, variant.height);
+          for (const use of dimensions.filter(d => d.width === variant.width && d.height === variant.height)) chosen.set(use.platform, { image: `assets/${asset.id}/out/${file}` });
+        }
+        selections.set(asset.id, chosen);
+      }
       else throw new UserError(`Unsupported asset kind: ${asset.kind}`);
       raw.outputs = outputs; raw.metrics = metrics; metadata.set(asset.id, { dir, meta: raw });
     }
     const resolveAI = (id: string, visiting = new Set<string>()): boolean => { const item = metadata.get(id); if (!item) throw new UserError(`Unknown embedded asset: ${id}`); if (visiting.has(id)) throw new UserError(`Cyclic asset embeds: ${id}`); visiting.add(id); const inherited = (item.meta.embeds ?? []).map(child => resolveAI(child, visiting)).some(Boolean); visiting.delete(id); item.meta.aiGenerated ||= inherited; return item.meta.aiGenerated; };
     for (const [id, item] of metadata) { resolveAI(id); writeFileSync(join(item.dir, 'asset.yml'), stringify(item.meta)); }
+    for (const [platform, post] of loadPosts(project)) {
+      let changed = false;
+      const indices = new Map<string, number>();
+      for (const media of post.media) {
+        const selected = selections.get(media.asset)?.get(platform);
+        if (!selected) continue;
+        let file: string | undefined;
+        if (media.kind === 'document') file = selected.document;
+        else if (media.kind === 'image') {
+          const index = indices.get(media.asset) ?? 0; indices.set(media.asset, index + 1);
+          const slide = basename(media.file).match(/slide-(\d+)/);
+          file = selected.slides?.[slide ? Number(slide[1]) - 1 : index] ?? (selected.slides ? undefined : selected.image);
+        }
+        if (file && media.file !== file) { media.file = file; changed = true; }
+      }
+      if (changed) writeFileSync(post.path, serializePost(post));
+    }
     io.out(`Rendered ${metadata.size} assets`); return 0;
   } finally { await closeBrowser(); }
 };

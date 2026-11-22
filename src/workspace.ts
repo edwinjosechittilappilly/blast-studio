@@ -13,8 +13,9 @@ import { parsePost } from './posts.ts';
 function safePath(path: string): boolean { return !!path && !isAbsolute(path) && normalize(path) === path && !path.split(/[\\/]/).some(p => p === '..' || p === '.'); }
 const deniedEnv = ['DEV_API_KEY', 'HASHNODE_TOKEN', 'GITHUB_TOKEN', 'BLUESKY_IDENTIFIER', 'BLUESKY_APP_PASSWORD', 'BLUESKY_HOST', 'MASTODON_TOKEN', 'MASTODON_HOST', 'LINKEDIN_ACCESS_TOKEN', 'LINKEDIN_CLIENT_ID', 'LINKEDIN_CLIENT_SECRET', 'LINKEDIN_TOKEN_ISSUED', 'X_API_KEY', 'X_API_SECRET', 'X_ACCESS_TOKEN', 'X_ACCESS_SECRET', 'NOSTR_PRIVATE_KEY', 'GEMINI_API_KEY', 'OPENAI_API_KEY'];
 
-export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs, passEnv = [] }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string>; allowOut: RegExp[]; prompt: string; timeoutMs: number; passEnv?: string[] }): Promise<{ copied: string[]; ignored: string[] }> {
+export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs, passEnv = [], validate }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string>; allowOut: RegExp[]; prompt: string; timeoutMs: number; passEnv?: string[]; validate?: (workspace: string) => { path: string; message: string }[] }): Promise<{ copied: string[]; ignored: string[] }> {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-agent-'));
+  const temp = mkdtempSync(join(tmpdir(), 'bstudio-agent-tmp-'));
   const copied: string[] = [], ignored: string[] = [];
   try {
     for (const [path, content] of Object.entries(files)) {
@@ -31,7 +32,7 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
     const env: Record<string, string | undefined> = {
       PATH: `${bin}${process.platform === 'win32' ? ';' : ':'}${io.env.PATH ?? '/usr/bin:/bin'}`,
       HOME: io.env.HOME ?? dir,
-      TMPDIR: dir,
+      TMPDIR: temp,
     };
     for (const key of ['LANG', 'LC_ALL', 'TERM', 'USER', 'SYSTEMROOT']) if (io.env[key]) env[key] = io.env[key];
     for (const [key, value] of Object.entries(io.env)) if (key.startsWith('XDG_') && value) env[key] = value;
@@ -39,28 +40,61 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || deniedEnv.includes(key.toUpperCase()) || ['PATH', 'HOME', 'TMPDIR'].includes(key.toUpperCase())) throw new UserError(`Disallowed agent environment variable: ${key}`);
       if (io.env[key] !== undefined) env[key] = io.env[key];
     }
-    const started = Date.now();
-    let report: string;
-    try {
-      report = await io.run(config.agent.command[0], [...config.agent.command.slice(1), prompt], { cwd: dir, env, timeoutMs });
-    } finally {
-      await recordAgentRun(config, { model: config.agent.command.join(' '), ms: Date.now() - started, usd: null, projectSlug: basename(projectDir) });
-    }
-    if (report.trim()) io.out(report.trim());
-    const visit = (base: string, relative = '') => {
-      for (const name of readdirSync(base)) {
-        const rel = relative ? `${relative}/${name}` : name, path = join(base, name);
-        if (rel === '.bin' || rel === 'templates') continue;
-        const st = lstatSync(path);
-        if (st.isSymbolicLink()) { ignored.push(rel); continue; }
-        if (st.isDirectory()) { visit(path, rel); continue; }
-        const permitted = allowOut.some(re => { re.lastIndex = 0; return re.test(rel); });
-        if (st.isFile() && Object.hasOwn(files, rel) && readFileSync(path, 'utf8') === files[rel]) continue;
-        if (!st.isFile() || !permitted) { ignored.push(rel); continue; }
-        const data = readFileSync(path);
-        try { if (/\.ya?ml$/i.test(rel)) { const parsed = parse(data.toString('utf8')); if (!parsed || typeof parsed !== 'object') throw new Error('expected object or array'); } } catch { throw new UserError(`Invalid YAML output: ${rel}`); }
-        if (/^posts\/[^/]+\.md$/.test(rel)) parsePost(rel, data.toString('utf8'));
-        if (/\.json$/i.test(rel)) { try { JSON.parse(data.toString('utf8')); } catch { throw new UserError(`Invalid JSON output: ${rel}`); } }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const started = Date.now();
+      let report: string;
+      try {
+        report = await io.run(config.agent.command[0], [...config.agent.command.slice(1), prompt], { cwd: dir, env, timeoutMs });
+      } finally {
+        await recordAgentRun(config, { model: config.agent.command.join(' '), ms: Date.now() - started, usd: null, projectSlug: basename(projectDir) });
+      }
+      if (report.trim()) io.out(report.trim());
+      const outputs: { rel: string; data: Buffer }[] = [];
+      const errors: { path: string; message: string }[] = [];
+      ignored.length = 0;
+      const visit = (base: string, relative = '') => {
+        for (const name of readdirSync(base)) {
+          const rel = relative ? `${relative}/${name}` : name, path = join(base, name);
+          if (rel === '.bin' || rel === 'templates') continue;
+          const st = lstatSync(path);
+          if (st.isSymbolicLink()) { ignored.push(rel); continue; }
+          if (st.isDirectory()) { visit(path, rel); continue; }
+          const permitted = allowOut.some(re => { re.lastIndex = 0; return re.test(rel); });
+          if (st.isFile() && Object.hasOwn(files, rel) && readFileSync(path, 'utf8') === files[rel]) continue;
+          if (!st.isFile() || !permitted) { ignored.push(rel); continue; }
+          const data = readFileSync(path);
+          try {
+            if (/\.ya?ml$/i.test(rel)) { const parsed = parse(data.toString('utf8')); if (!parsed || typeof parsed !== 'object') throw new Error('expected object or array'); }
+            if (/^posts\/[^/]+\.md$/.test(rel)) { const post = parsePost(rel, data.toString('utf8')); if (`posts/${post.platform}.md` !== rel) throw new Error(`platform ${JSON.stringify(post.platform)} does not match ${rel}`); }
+            if (/\.json$/i.test(rel)) JSON.parse(data.toString('utf8'));
+          } catch (error) { errors.push({ path: rel, message: `${rel}: ${error instanceof Error ? error.message : String(error)}` }); }
+          outputs.push({ rel, data });
+        }
+      };
+      visit(dir);
+      if (validate) errors.push(...validate(dir));
+      if (errors.length) {
+        const rejected: string[] = [];
+        for (const rel of new Set(errors.map(e => e.path))) {
+          if (!safePath(rel)) throw new UserError(`Unsafe rejected path: ${rel}`);
+          const source = join(dir, rel), dest = join(projectDir, '.rejected', rel);
+          if (existsSync(source) && lstatSync(source).isFile()) {
+            let parent = projectDir;
+            for (const part of ['.rejected', ...rel.split('/').slice(0, -1)]) {
+              parent = join(parent, part);
+              if (existsSync(parent) && lstatSync(parent).isSymbolicLink()) throw new UserError(`Unsafe rejected directory: ${parent}`);
+            }
+            if (existsSync(dest) && lstatSync(dest).isSymbolicLink()) throw new UserError(`Unsafe rejected file: ${dest}`);
+            mkdirSync(dirname(dest), { recursive: true }); writeFileSync(dest, readFileSync(source));
+          }
+          rejected.push(dest);
+        }
+        const detail = errors.map(e => e.message).join('\n');
+        if (attempt === 1) throw new UserError(`Agent output failed validation:\n${detail}\nRejected files: ${rejected.join(', ')}`);
+        prompt += `\n\nValidation failed. Fix exactly these problems in the same files:\n${detail}`;
+        continue;
+      }
+      for (const { rel, data } of outputs) {
         const target = resolve(projectDir, rel);
         if (!target.startsWith(resolve(projectDir) + sep)) throw new UserError(`Unsafe output path: ${rel}`);
         let parent = projectDir;
@@ -68,8 +102,9 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
         if (existsSync(target) && lstatSync(target).isSymbolicLink()) throw new UserError(`Unsafe output: ${rel}`);
         mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, data); copied.push(rel);
       }
-    };
-    visit(dir); for (const path of ignored) io.err(`Ignored agent output: ${path}`);
-    return { copied, ignored };
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+      if (ignored.length) io.err(`Ignored ${ignored.length} agent output(s): ${ignored.slice(0, 10).join(', ')}${ignored.length > 10 ? ', …' : ''}`);
+      return { copied, ignored };
+    }
+    throw new UserError('Agent output failed validation');
+  } finally { rmSync(dir, { recursive: true, force: true }); rmSync(temp, { recursive: true, force: true }); }
 }
