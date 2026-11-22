@@ -40,6 +40,14 @@ test('shared review hash vector', () => {
   assert.equal(reviewHash({ title: 'T', body: '  Hello\n', media: [{ path: 'a/img.png', alt: ' Alt ' }] }), '5d5491c0f7ae06bef68e9dabfd55f2e6c8152f8e6fdb96cd24d294cd203bc977');
 });
 
+test('local export ignores configured targets and rejects import options', async () => {
+  const f = fixture();
+  writeFileSync(join(f.root, 'projects/acme/project.yml'), 'marketBlaster:\n  project: /missing-market-blaster\n');
+  await exportCommand(['acme/demo', '--local'], f.io);
+  assert.equal(listExports(loadConfig(f.io), 'acme/demo')[0].kind, 'zip');
+  await assert.rejects(exportCommand(['acme/demo', '--local', '--mb', '/tmp'], f.io), /usage:/);
+  await assert.rejects(exportCommand(['acme/demo', '--local', '--force'], f.io), /usage:/);
+});
 test('refuses nonpassing, failed gates and stale reviews', async () => {
   const f = fixture();
   for (const verdict of ['revise', 'blocked']) { f.review.verdict = verdict; f.save(); await assert.rejects(exportCommand(['acme/demo'], f.io), /bluesky.*review/); }

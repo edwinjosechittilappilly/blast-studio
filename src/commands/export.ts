@@ -10,19 +10,19 @@ import { listExports } from '../library.ts';
 import type { Command } from '../io.ts';
 import { UserError } from '../types.ts';
 
-const usage = 'usage: bstudio export <project>/<campaign> [--mb <project>] [--force] [--dir] [--list]';
+const usage = 'usage: bstudio export <project>/<campaign> [--mb <project>] [--force] [--local] [--dir] [--list]';
 
 
 export const run: Command = async (args, io) => {
   const parsed = (() => {
-    try { return parseArgs({ args, allowPositionals: true, options: { mb: { type: 'string' }, force: { type: 'boolean' }, dir: { type: 'boolean' }, list: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } }); }
+    try { return parseArgs({ args, allowPositionals: true, options: { mb: { type: 'string' }, force: { type: 'boolean' }, local: { type: 'boolean' }, dir: { type: 'boolean' }, list: { type: 'boolean' }, help: { type: 'boolean', short: 'h' } } }); }
     catch { throw new UserError(usage); }
   })();
   if (parsed.values.help) { io.out(`${usage}\nExample: bstudio export acme/launch --mb ../market-blaster --force`); return 0; }
-  if (parsed.positionals.length !== 1 || (parsed.values.mb !== undefined && !parsed.values.mb.trim())) throw new UserError(usage);
+  if (parsed.positionals.length !== 1 || (parsed.values.mb !== undefined && !parsed.values.mb.trim()) || (parsed.values.local && (parsed.values.mb !== undefined || parsed.values.force))) throw new UserError(usage);
   const ref = parseCampaignRef(parsed.positionals[0]), slug = compositeSlug(ref), config = loadConfig(io);
   if (parsed.values.list) {
-    if (parsed.values.mb !== undefined || parsed.values.force || parsed.values.dir) throw new UserError(usage);
+    if (parsed.values.mb !== undefined || parsed.values.force || parsed.values.dir || parsed.values.local) throw new UserError(usage);
     const exports = listExports(config, ref);
     if (!exports.length) io.out('No campaign exports.');
     else for (const entry of exports) io.out(`${entry.time}\t${entry.size} bytes\t${entry.kind}\t${entry.name}`);
@@ -30,11 +30,11 @@ export const run: Command = async (args, io) => {
   }
   const projectDir = projectRoot(config, ref.project);
   const metadataPath = resolve(projectDir, 'project.yml');
-  const metadata: unknown = parsed.values.mb === undefined && existsSync(metadataPath) ? parse(readFileSync(metadataPath, 'utf8')) : undefined;
+  const metadata: unknown = !parsed.values.local && parsed.values.mb === undefined && existsSync(metadataPath) ? parse(readFileSync(metadataPath, 'utf8')) : undefined;
   const market = metadata && typeof metadata === 'object' && 'marketBlaster' in metadata ? metadata.marketBlaster : undefined;
   const projectTarget = market && typeof market === 'object' && 'project' in market ? market.project : undefined;
   if (projectTarget !== undefined && (typeof projectTarget !== 'string' || !projectTarget.trim())) throw new UserError('Invalid marketBlaster.project in project.yml');
-  const mb = parsed.values.mb ?? projectTarget ?? config.marketBlaster.project;
+  const mb = parsed.values.local ? undefined : parsed.values.mb ?? projectTarget ?? config.marketBlaster.project;
   const expanded = mb === '~' ? (io.env.HOME || homedir()) : mb?.startsWith('~/') ? resolve(io.env.HOME || homedir(), mb.slice(2)) : mb;
   const cwd = expanded ? resolve(projectTarget !== undefined && parsed.values.mb === undefined ? projectDir : io.cwd, expanded) : undefined;
   if (cwd && (!existsSync(cwd) || !statSync(cwd).isDirectory())) throw new UserError(`Market Blaster project directory not found: ${cwd}`);
