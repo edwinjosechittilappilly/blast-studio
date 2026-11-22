@@ -143,7 +143,7 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
           serveFile(req, res, file); return;
         }
         if (pathname === '/api/library') { send(res, 200, loadLibrary(config, url.searchParams.get('q') ?? '')); return; }
-        if (pathname === '/api/budget') { send(res, 200, { cap: config.budget.monthlyUsd, perProject: config.budget.perProjectUsd, mtd: monthToDate(config.root), providerTotals: providerTotals(config.root), projects: Object.fromEntries(loadLibrary(config).map(p => [p.slug, projectTotal(config.root, p.slug)])), providers: { images: config.images.provider, voice: config.voice.provider }, brand: config.brand }); return; }
+        if (pathname === '/api/budget') { send(res, 200, { cap: config.budget.monthlyUsd, perProject: config.budget.perProjectUsd, mtd: monthToDate(config.root), providerTotals: providerTotals(config.root), projects: Object.fromEntries(loadLibrary(config).map(p => [p.slug, projectTotal(config.root, p.slug)])), providers: { images: config.images.provider, voice: config.voice.provider, allowUpload: config.providers.allowUpload }, brand: config.brand }); return; }
         if (pathname === '/api/sources') { send(res, 200, latestSources(config)); return; }
         if (pathname.startsWith('/api/project/')) { const slug = decodeURIComponent(pathname.slice(13)); const dir = campaignDir(config, slug); if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; } send(res, 200, projectReview(config, slug)); return; }
         if (pathname.startsWith('/media/')) {
@@ -168,8 +168,9 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
           if (Object.keys(data).sort().join(',') !== 'monthlyUsd,perProjectUsd' || ![data.monthlyUsd, data.perProjectUsd].every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0)) { send(res, 400, { error: 'Budget values must be non-negative numbers' }); return; }
           writeConfigField(config, ['budget', 'monthlyUsd'], data.monthlyUsd); writeConfigField(config, ['budget', 'perProjectUsd'], data.perProjectUsd);
         } else {
-          if (Object.keys(data).sort().join(',') !== 'images,voice' || typeof data.images !== 'string' || !['none', 'gemini', 'openai', 'omp'].includes(data.images) || typeof data.voice !== 'string' || !['none', 'openai'].includes(data.voice)) { send(res, 400, { error: 'Invalid providers' }); return; }
+          if (Object.keys(data).some(key => !['images', 'voice', 'allowUpload'].includes(key)) || typeof data.images !== 'string' || !['none', 'gemini', 'openai', 'omp'].includes(data.images) || typeof data.voice !== 'string' || !['none', 'openai'].includes(data.voice) || (data.allowUpload !== undefined && typeof data.allowUpload !== 'boolean')) { send(res, 400, { error: 'Invalid providers' }); return; }
           writeConfigField(config, ['images', 'provider'], data.images); writeConfigField(config, ['voice', 'provider'], data.voice);
+          if (data.allowUpload !== undefined) writeConfigField(config, ['providers', 'allowUpload'], data.allowUpload);
         }
         send(res, 200, { ok: true }); return;
       }

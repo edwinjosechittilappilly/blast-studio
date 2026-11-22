@@ -139,6 +139,11 @@ test('dashboard authenticates, contains media and validates settings', async t =
   assert.match(readFileSync(join(root, 'studio.yml'), 'utf8'), /# keep this comment/); assert.equal(loadConfig(io).budget.monthlyUsd, 25);
   assert.equal((await fetch(base + '/api/providers', { method: 'PUT', headers, body: JSON.stringify({ images: 'bogus', voice: 'none' }) })).status, 400);
   assert.equal((await fetch(base + '/api/providers', { method: 'PUT', headers, body: JSON.stringify({ images: 'gemini', voice: 'openai' }) })).status, 200);
+  assert.equal((await fetch(base + '/api/providers', { method: 'PUT', headers, body: JSON.stringify({ images: 'gemini', voice: 'openai', allowUpload: 'yes' }) })).status, 400);
+  assert.equal((await fetch(base + '/api/providers', { method: 'PUT', headers, body: JSON.stringify({ images: 'gemini', voice: 'openai', allowUpload: true }) })).status, 200);
+  assert.equal((await (await fetch(base + '/api/budget', { headers })).json()).providers.allowUpload, true);
+  assert.equal(loadConfig(io).providers.allowUpload, true);
+  assert.match(readFileSync(join(root, 'studio.yml'), 'utf8'), /# keep this comment/);
   assert.equal((await fetch(base + '/api/project/acme%2Flaunch', { method: 'PUT', headers, body: '{}' })).status, 404);
   symlinkSync(join(root, 'studio.yml'), join(root, 'projects/acme/campaigns/launch/leak'));
   assert.equal((await fetch(base + '/media/acme/launch/leak', { headers })).status, 403);
