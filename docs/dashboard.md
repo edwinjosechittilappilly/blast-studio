@@ -6,8 +6,21 @@ The printed URL contains a one-use token. Opening it exchanges the token for an 
 
 The projects view searches the library and opens tabbed project details. The Overview summarizes review and publishing status; destination tabs show posts, media and review comparisons; Assets collects the project's files. Use View for full-size image or video previews, or open a PDF in a new tab; all media can be downloaded. Copy post text, individual thread posts, titles, hooks and alt text for manual posting. The settings view shows month-to-date and provider spend and lets you change budget caps and image and voice provider selections. The sources view shows the latest reported changes, failures, and unverified sources. These settings are saved to `studio.yml`; other configuration remains a file edit.
 
-Campaign details compare the independent review, weighted rubric, gates and hook checks with the maker's self-review. Add feedback to a post or asset with **Your feedback**; its pending, applied and rejected history stays in the campaign's `feedback.yml`. **Apply feedback** starts `bstudio revise <project>/<campaign> --feedback-only` and displays its status and recent log output. Only one revision can run per campaign at a time. The ten most recent revision logs are kept in the campaign's `logs` directory. Revision invokes the normal CLI workflow and may call configured agents and providers.
-If the dashboard reports a stale `.revise.lock`, confirm no revision is running before removing that file from the campaign directory.
+Campaign details compare the independent review, weighted rubric, gates and hook checks with the maker's self-review. Add feedback to a post or asset with **Your feedback**; its pending, applied and rejected history stays in the campaign's `feedback.yml`. **Apply feedback** starts a registered `bstudio revise <project>/<campaign> --feedback-only` job. Jobs for the same campaign share a lock with CLI operations. If a lock is stale, confirm that its owner and children have stopped before removing `.bstudio-job.lock` from the campaign directory.
+
+## Dashboard API
+
+Requests require the dashboard session cookie. Writes also require an `Origin` matching the dashboard's exact host and port and `X-Requested-With: bstudio`.
+
+- `GET /api/operations` returns an object keyed by operation name. Each entry has `fields` (argument schemas with `kind`, `required`, `positional`, `flag`, and `multiple` where applicable), `campaign`, `paid`, `step`, and `requiresTTY`.
+- `POST /api/jobs` accepts `{ "op": "revise", "campaign": "project/campaign", "args": { "feedbackOnly": true } }`; omit `campaign` for global operations. It returns the job record with status 202. Operations requiring a terminal return 422 with a `command` instead.
+- `GET /api/jobs?campaign=project%2Fcampaign` returns job records, optionally filtered by campaign. `GET /api/jobs/:id` returns one record.
+- `GET /api/jobs/:id/log?tail=100` returns `{ "log": "..." }`; `tail` optionally limits the number of lines.
+- `POST /api/jobs/:id/cancel` requests cancellation and returns the job record.
+
+Job records include `id`, `operation`, optional `campaign`, `state`, timestamps, `command`, and process or exit information when available. A campaign lock conflict returns 409; unknown jobs return 404.
+
+`GET /api/library` returns campaign entries including `updatedAt`, `pendingFeedback`, `exported`, and `published`. `GET /api/project/:campaign` returns campaign details; `platforms` is keyed by platform ID and contains `name`, `textLimit`, `titleLimit`, and `threadItemLimit`. Limits are sourced values or `unknown`.
  
 For dashboard development, run `npm run build:ui` to build the local Carbon assets, or run `npm run dev:ui` alongside the dashboard to rebuild them on changes.
 

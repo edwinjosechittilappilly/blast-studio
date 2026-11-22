@@ -15,7 +15,6 @@ import { authorFiles, SELF_REVIEW_INSTRUCTIONS } from './make.ts';
 import { snapshot } from '../history.ts';
 import { validBlockers } from '../blockers.ts';
 import type { FeedbackEntry } from '../types.ts';
-import { acquireRevisionLock } from '../revise-lock.ts';
 
 function validateAssets(workspace: string, assets: Set<string>, files: Record<string, string>) {
   const errors: { path: string; message: string }[] = [];
@@ -103,8 +102,6 @@ export const run: Command = async (args, io) => {
   const [slug] = parsed.positionals, { note, asset, platform } = parsed.values;
   if (parsed.positionals.length !== 1 || !slug || slug.startsWith('-') || (note === undefined && (asset !== undefined || platform !== undefined)) || note === '') throw new UserError(usage);
   const config = loadConfig(io), dir = campaignDir(config, slug), reviewDir = join(dir, 'reviews');
-  const releaseLock = acquireRevisionLock(dir, slug);
-  try {
   if (note !== undefined) addFeedback(dir, { ...(asset !== undefined ? { asset } : {}), ...(platform !== undefined ? { platform } : {}) }, note);
   const pending = loadFeedback(dir).filter(entry => entry.status === 'pending');
   const rejected = new Map<string, string>(), groups = new Map<string, FeedbackEntry[]>();
@@ -169,5 +166,4 @@ export const run: Command = async (args, io) => {
     await review([slug, `--platforms=${platforms}`], io);
   }
   return 0;
-  } finally { releaseLock(); }
 };

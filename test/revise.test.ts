@@ -9,6 +9,8 @@ import { run as review } from '../src/commands/review.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 import { loadFeedback, addFeedback } from '../src/feedback.ts';
 import { UserError } from '../src/types.ts';
+import { withCampaignLock } from '../src/cli.ts';
+import { acquireCampaignLock } from '../src/jobs/runner.ts';
 
 function fixture(maxRounds: number) {
   const root = tempStudio({
@@ -218,8 +220,11 @@ test('stale feedback is rejected without blocking other feedback', async () => {
 
 test('revision lock prevents concurrent runs', async () => {
   const f = fixture(0);
-  writeFileSync(join(f.project, '.revise.lock'), '');
-  await assert.rejects(revise(['demo/launch', '--feedback-only'], f.io), /already in progress/);
+  writeFileSync(join(f.root, 'projects/demo/project.yml'), 'name: Demo\n');
+  const release = acquireCampaignLock(f.root, 'demo/launch');
+  try {
+    await assert.rejects(withCampaignLock('revise', ['demo/launch', '--feedback-only'], f.io, io => revise(['demo/launch', '--feedback-only'], io)), /Campaign is locked/);
+  } finally { release(); }
 });
 
 test('different feedback targets get separate scoped agent runs', async () => {

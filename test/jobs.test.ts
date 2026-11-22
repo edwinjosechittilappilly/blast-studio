@@ -7,7 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildOperation, campaignRef } from '../src/jobs/registry.ts';
-import { acquireCampaignLock, campaignDirectory, cancelJob, jobLog, JobConflict, listJobs, processGroupRunning, startCliJob } from '../src/jobs/runner.ts';
+import { acquireCampaignLock, campaignDirectory, cancelJob, findJob, jobLog, JobConflict, JobNotFound, JobNotRunning, listJobs, processGroupRunning, startCliJob } from '../src/jobs/runner.ts';
 import { saveSecret } from '../src/jobs/secrets.ts';
 import { main, realIO } from '../src/cli.ts';
 import { run as jobsCommand } from '../src/commands/jobs.ts';
@@ -247,6 +247,20 @@ test('a finished global job is recovered without trusting a reused PID', () => {
     writeFileSync(join(dir, `${id}.json`), JSON.stringify({ id, operation: 'doctor', state: 'running', createdAt: '2026-01-01', updatedAt: '2026-01-01', pid: process.pid, processStarted: 'old process', completed: true, exitCode: 0, command: 'bstudio doctor' }));
     assert.equal(listJobs(root)[0].state, 'succeeded');
     assert.throws(() => cancelJob(root, id), /not running/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('job lookup and cancellation expose distinct not-found and not-running errors', () => {
+  const root = tempStudio({ 'projects/acme/project.yml': 'name: acme\ncreatedAt: now\n', 'projects/acme/campaigns/demo/brief.md': '# demo' });
+  try {
+    const missing = 'a0000000-0000-4000-8000-000000000000';
+    assert.throws(() => findJob(root, missing), JobNotFound);
+    assert.throws(() => jobLog(root, missing), JobNotFound);
+    assert.throws(() => cancelJob(root, missing), JobNotFound);
+    const job = startCliJob(root, 'acme/demo', 'plan');
+    job.finish(0);
+    assert.throws(() => cancelJob(root, job.id), JobNotRunning);
+    assert.equal(findJob(root, job.id).state, 'succeeded');
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
