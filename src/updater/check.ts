@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadPacks, loadSources } from '../packs.ts';
 import type { SourceRow } from '../packs.ts';
 import type { IO } from '../io.ts';
 import { UserError } from '../types.ts';
+import { loadConfig } from '../config.ts';
 
 export const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 export interface Result { id: string; status: 'changed' | 'unchanged' | 'new' | 'failed' | 'manual'; fields: string[]; error?: string; old?: string; text?: string }
@@ -66,7 +67,8 @@ async function detect(row: SourceRow, io: IO): Promise<string> {
   return text;
 }
 export async function check(io: IO, options: { root?: string; sources?: SourceRow[]; packs?: Map<string, unknown>; only?: string[]; write?: boolean; date?: string } = {}): Promise<{ results: Result[]; code: number; report: string }> {
-  const root = options.root ?? repoRoot, sources = options.sources ?? loadSources(), packs = options.packs ?? loadPacks(), date = options.date ?? new Date().toISOString().slice(0, 10);
+  const inCheckout = existsSync(join(repoRoot, '.git')) && !relative(repoRoot, resolve(io.cwd)).startsWith(`..${sep}`) && relative(repoRoot, resolve(io.cwd)) !== '..';
+  const root = options.root ?? (options.write && inCheckout ? repoRoot : loadConfig(io).root), sources = options.sources ?? loadSources(), packs = options.packs ?? loadPacks(), date = options.date ?? new Date().toISOString().slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new UserError('Invalid source report date');
   if (options.only) for (const id of options.only) if (!sources.some(s => s.id === id)) throw new UserError(`Unknown source: ${id}`);
   const results: Result[] = [];
@@ -76,14 +78,15 @@ export async function check(io: IO, options: { root?: string; sources?: SourceRo
     const fields = governedFields(packs, row.id), file = join(root, 'platforms/snapshots', `${row.id}.txt`);
     if (row.detector.kind === 'manual') { results.push({ id: row.id, status: 'manual', fields }); continue; }
     try {
-      const text = await detect(row, io), old = existsSync(file) ? readFileSync(file, 'utf8') : undefined;
+      const baseline = existsSync(file) ? file : join(repoRoot, 'platforms/snapshots', `${row.id}.txt`);
+      const text = await detect(row, io), old = existsSync(baseline) ? readFileSync(baseline, 'utf8') : undefined;
       const status = old === undefined ? 'new' : old === text ? 'unchanged' : 'changed';
       if (options.write) { mkdirSync(join(root, 'platforms/snapshots'), { recursive: true }); writeFileSync(file, text); writeFileSync(file.replace(/\.txt$/, '.sha256'), createHash('sha256').update(text).digest('hex') + '\n'); }
       results.push({ id: row.id, status, fields, old, text });
     } catch (error) { results.push({ id: row.id, status: 'failed', fields, error: error instanceof Error ? error.message : String(error) }); }
   }
   const relevant = results.filter(r => r.status !== 'unchanged');
-  const lines = [`# Platform sources ${date}`, '', ...relevant.flatMap(r => [`## ${r.id}: ${r.status}${r.status === 'manual' ? ' (human check needed)' : ''}`, r.error ? `Error: ${r.error}` : '', `Fields: ${r.fields.join(', ') || '(none)'}`, ''])];
+  const lines = [`# Platform sources ${date}`, '', ...relevant.flatMap(r => { const source = sources.find(s => s.id === r.id)!; return [`## ${r.id}: ${r.status}${r.status === 'manual' ? ' (human check needed)' : ''}`, `Title: ${source.scope}`, `URL: ${source.url}`, r.error ? `Error: ${r.error}` : '', `Fields: ${r.fields.join(', ') || '(none)'}`, ...(r.status === 'changed' ? [`Previous: ${JSON.stringify(r.old)}`, `Current: ${JSON.stringify(r.text)}`] : []), '']; })];
   const report = lines.join('\n'); mkdirSync(join(root, 'updates'), { recursive: true });
   writeFileSync(join(root, 'updates', `${date}.md`), report);
   writeFileSync(join(root, 'updates', `${date}.json`), JSON.stringify(results, null, 2));

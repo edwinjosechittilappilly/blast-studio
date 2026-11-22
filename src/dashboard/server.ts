@@ -12,6 +12,7 @@ import type { IO } from '../io.ts';
 import { handleJobsApi } from './jobs-api.ts';
 import { buildOperation } from '../jobs/registry.ts';
 import { campaignLockStatus, JobConflict, jobLogTail, listJobs, startJob } from '../jobs/runner.ts';
+import { loadEnvWithSources } from '../env.ts';
 
 const staticDir = join(dirname(fileURLToPath(import.meta.url)), 'static');
 const buildDir = join(dirname(fileURLToPath(import.meta.url)), 'build');
@@ -143,6 +144,12 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
           serveFile(req, res, file); return;
         }
         if (pathname === '/api/library') { send(res, 200, loadLibrary(config, url.searchParams.get('q') ?? '')); return; }
+        if (pathname === '/api/secrets/status') {
+          const keys = ['GEMINI_API_KEY', 'OPENAI_API_KEY'];
+          const { sources } = loadEnvWithSources(config.root, io.env, io.keychain, keys);
+          send(res, 200, Object.fromEntries(keys.map(key => [key, { set: sources[key] !== 'unset', source: sources[key] === 'shell' ? 'env' : sources[key] }])));
+          return;
+        }
         if (pathname === '/api/budget') { send(res, 200, { cap: config.budget.monthlyUsd, perProject: config.budget.perProjectUsd, mtd: monthToDate(config.root), providerTotals: providerTotals(config.root), projects: Object.fromEntries(loadLibrary(config).map(p => [p.slug, projectTotal(config.root, p.slug)])), providers: { images: config.images.provider, voice: config.voice.provider, allowUpload: config.providers.allowUpload }, brand: config.brand }); return; }
         if (pathname === '/api/sources') { send(res, 200, latestSources(config)); return; }
         if (pathname.startsWith('/api/project/')) { const slug = decodeURIComponent(pathname.slice(13)); const dir = campaignDir(config, slug); if (!existsSync(dir)) { send(res, 404, { error: 'Project not found' }); return; } send(res, 200, projectReview(config, slug)); return; }

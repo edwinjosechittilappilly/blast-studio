@@ -38,6 +38,15 @@ test('checks snapshots, selector, report, failures and git paths', async () => {
   assert.equal(extractText('<body><div data-id="yes">fine</div></body>', '[data-id=yes]'), 'fine');
 });
 
+test('source checks write reports in the studio rather than the installation', async () => {
+  const root = tempStudio();
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') }, fetch: async () => new Response('<main id="content">new text</main>') });
+  const result = await check(io, { sources: [source], packs, date: '2098-12-31' });
+  assert.equal(result.code, 1);
+  assert.match(readFileSync(join(root, 'updates/2098-12-31.md'), 'utf8'), /URL: https:\/\/example.org\/page/);
+  assert.equal(existsSync(join(root, 'platforms/snapshots/s.txt')), false);
+});
+
 test('propose ignores changes with no governed fields', async () => {
   const root = tempStudio(); mkdirSync(join(root, 'updates'));
   writeFileSync(join(root, 'updates/2026-01-03.json'), JSON.stringify([{ id: 's', status: 'changed', fields: [] }]));

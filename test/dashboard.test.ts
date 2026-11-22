@@ -32,6 +32,17 @@ function fixture() {
 async function raw(port: number, path: string, host: string, cookie = '') {
   return await new Promise<number>((resolve, reject) => { const req = request({ host: '127.0.0.1', port, path, headers: { Host: host, cookie } }, res => { res.resume(); resolve(res.statusCode ?? 0); }); req.on('error', reject); req.end(); });
 }
+test('credential status requires authentication and never exposes values', async t => {
+  const root = tempStudio({ '.env': 'OPENAI_API_KEY=dotenv-secret\n' });
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml'), GEMINI_API_KEY: 'shell-secret' }, keychain: () => 'keychain-secret' });
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  assert.equal((await fetch(`http://127.0.0.1:${started.port}/api/secrets/status`)).status, 401);
+  const login = await fetch(started.url, { redirect: 'manual' });
+  const response = await fetch(`http://127.0.0.1:${started.port}/api/secrets/status`, { headers: { cookie: login.headers.get('set-cookie')! } });
+  const text = await response.text();
+  assert.deepEqual(JSON.parse(text), { GEMINI_API_KEY: { set: true, source: 'env' }, OPENAI_API_KEY: { set: true, source: '.env' } });
+  assert.doesNotMatch(text, /secret/);
+});
 test('library and status derive live project data', async () => {
   const { root, io } = fixture(), config = loadConfig(io);
   assert.equal(loadLibrary(config, 'HELLO')[0].slug, 'acme/launch');

@@ -27,7 +27,10 @@ function changes(a: unknown, b: unknown, path = ''): string[] {
 }
 interface Evidence { path: string; source: string; quote: string }
 export async function propose(io: IO, options: { root?: string; branch?: boolean } = {}): Promise<void> {
-  const root = options.root ?? repoRoot, date = latest(root), rows = JSON.parse(readFileSync(join(root, 'updates', `${date}.json`), 'utf8')) as Result[];
+  const root = options.root ?? repoRoot, studioRoot = options.root ?? loadConfig(io).root;
+  const candidates = [studioRoot, ...(options.root || studioRoot === repoRoot ? [] : [repoRoot])].flatMap(dir => { try { return [{ dir, date: latest(dir) }]; } catch { return []; } }).sort((a, b) => b.date.localeCompare(a.date));
+  if (!candidates.length) throw new UserError('No source check report');
+  const { dir: reportRoot, date } = candidates[0], rows = JSON.parse(readFileSync(join(reportRoot, 'updates', `${date}.json`), 'utf8')) as Result[];
   const changed = rows.filter(r => r.status === 'changed'); if (!changed.length) throw new UserError('Latest report has no changed sources');
   const files: Record<string, string> = {};
   const ids = [...new Set(changed.flatMap(r => r.fields.map(f => f.split('.')[0])))];
@@ -70,8 +73,9 @@ export async function propose(io: IO, options: { root?: string; branch?: boolean
     }
     if (options.branch) await io.run('git', ['switch', '-c', `updates/${date}`], { cwd: root });
     for (const path of result.copied) writeFileSync(join(root, path), readFileSync(join(temp, path)));
-    writeFileSync(join(root, 'updates', `${date}-proposal.md`), sidecar.join('\n'));
-    writeFileSync(join(root, 'updates', `${date}-proposal-files.json`), JSON.stringify(result.copied));
+    mkdirSync(join(reportRoot, 'updates'), { recursive: true });
+    writeFileSync(join(reportRoot, 'updates', `${date}-proposal.md`), sidecar.join('\n'));
+    writeFileSync(join(reportRoot, 'updates', `${date}-proposal-files.json`), JSON.stringify(result.copied));
   } finally { rmSync(temp, { recursive: true, force: true }); }
 }
 export function verify(ids: string[], options: { root?: string; date?: string } = {}): void {
