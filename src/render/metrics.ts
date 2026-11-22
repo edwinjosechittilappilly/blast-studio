@@ -1,6 +1,6 @@
 import type { Page } from "playwright";
 
-export interface TextMetric { text: string; fontPx: number; contrast: number | null; overflow: boolean }
+export interface TextMetric { text: string; fontPx: number; bold: boolean; contrast: number | null; overflow: boolean }
 export interface RenderMetrics { minFontPx: number | null; minContrast: number | null; overflow: boolean; nodes: TextMetric[] }
 
 /** Measure actual rendered text, not bounding boxes of its containers. */
@@ -40,7 +40,7 @@ export async function measureText(page: Page, inset = 0.05): Promise<RenderMetri
       if (!unknown && fg) { const a = luminance(over(fg, bg)); const b = luminance(bg); contrast = (Math.max(a, b) + .05) / (Math.min(a, b) + .05); }
       const slide = el.closest('.slide'); const bounds = slide?.getBoundingClientRect() ?? { left: 0, top: 0, width: innerWidth, height: innerHeight };
       const overflow = rects.some(r => r.left < bounds.left + bounds.width * safeInset - .01 || r.right > bounds.left + bounds.width * (1 - safeInset) + .01 || r.top < bounds.top + bounds.height * safeInset - .01 || r.bottom > bounds.top + bounds.height * (1 - safeInset) + .01);
-      nodes.push({ text, fontPx: parseFloat(style.fontSize), contrast, overflow });
+      nodes.push({ text, fontPx: parseFloat(style.fontSize), bold: Number(style.fontWeight) >= 700 || style.fontWeight === 'bold', contrast, overflow });
     }
     return { minFontPx: nodes.length ? Math.min(...nodes.map(n => n.fontPx)) : null, minContrast: nodes.some(n => n.contrast === null) ? null : nodes.length ? Math.min(...nodes.map(n => n.contrast!)) : null, overflow: nodes.some(n => n.overflow), nodes };
   }, inset);
