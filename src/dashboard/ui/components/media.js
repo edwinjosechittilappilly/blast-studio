@@ -44,7 +44,7 @@ export function mediaViewer(slug, item, captions, trigger) {
   const body = el('cds-modal-body', null, 'viewer-body'), display = visual(slug, item, captions);
   if (kind === 'image') {
     const toolbar = el('div', null, 'viewer-toolbar'), zoom = el('cds-icon-button', null, 'viewer-zoom');
-    zoom.setAttribute('kind', 'ghost'); zoom.setAttribute('aria-pressed', 'false');
+    zoom.setAttribute('kind', 'ghost'); zoom.setAttribute('align', 'left'); zoom.setAttribute('aria-pressed', 'false');
     const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     for (const [key, value] of Object.entries(zoomIn.attrs)) icon.setAttribute(key, String(value));
     icon.setAttribute('slot', 'icon'); icon.setAttribute('aria-hidden', 'true');
