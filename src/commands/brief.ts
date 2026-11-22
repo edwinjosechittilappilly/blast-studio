@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { parse } from "yaml";
@@ -107,7 +108,8 @@ export const run: Command = async (args, io) => {
   }
   if (values.repo && !values.pr && !values.commit) await collectRepository(io, add, values.repo);
   if (values["mb-brief"]) {
-    const file = resolve(io.cwd, values["mb-brief"]);
+    const input = values["mb-brief"];
+    const file = resolve(io.cwd, input.startsWith("~/") ? join(homedir(), input.slice(2)) : input);
     const imported = parseBrief(readFileSync(file, "utf8"));
     if (!imported.length) throw new UserError("Market Blaster brief has no evidence sections");
     for (const section of imported) addImported(section, file, true);
