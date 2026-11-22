@@ -116,6 +116,7 @@ function runProgram(cmd: string, args: string[], opts: { cwd?: string; env?: Rec
     child.once("error", error => { clearTimeout(timer); reject(error); });
     child.once("close", (code, signal) => {
       if (child.pid && !interrupted) { subprocesses.delete(child.pid); recordProcesses?.([...subprocesses]); }
+      if (timedOut && child.pid) signalGroup(child.pid, "SIGKILL");
       clearTimeout(timer); clearTimeout(forceTimer);
       if (code === 0) { resolve(stdout); return; }
       const reason = timedOut ? `timed out after ${opts.timeoutMs! / 1000}s` : `exited with ${code ?? signal}`;
@@ -143,7 +144,7 @@ export function realIO(): IO {
 }
 /** Serialize campaign mutations across CLI and dashboard processes. */
 export async function withCampaignLock(name: string, args: string[], io: IO, run: (io: IO) => Promise<number>): Promise<number> {
-  const locked = ["new", "brief", "plan", "make", "render", "review", "revise", "accept", "confirm", "export", "mark", "feedback", "restore"].includes(name) && !(name === "feedback" && args.includes("list"));
+  const locked = ["new", "brief", "plan", "make", "render", "review", "revise", "accept", "confirm", "export", "mark", "feedback", "restore"].includes(name) && !(name === "feedback" && args[1] === "list");
   const valued = ["--idea", "--note", "--url", "--pr", "--commit", "--repo", "--mb-brief", "--from", "--assets", "--platforms", "--asset", "--platform", "--reason", "--license", "--mb"];
   let refArg: string | undefined;
   if (locked && !args.includes("--help") && !args.includes("-h")) {

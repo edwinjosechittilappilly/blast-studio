@@ -7,7 +7,7 @@ import { UserError } from '../types.ts';
 import { buildOperation, campaignRef } from './registry.ts';
 
 export type JobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
-export interface Job { id: string; operation: string; campaign?: string; state: JobState; createdAt: string; updatedAt: string; pid?: number; processStarted?: string; childStarted?: Record<string, string>; exitCode?: number | null; command: string; cancelRequested?: boolean; processGroup?: boolean; childPids?: number[] }
+export interface Job { id: string; operation: string; campaign?: string; state: JobState; createdAt: string; updatedAt: string; pid?: number; processStarted?: string; childStarted?: Record<string, string>; exitCode?: number | null; completed?: boolean; command: string; cancelRequested?: boolean; processGroup?: boolean; childPids?: number[] }
 export class JobConflict extends Error { owner: string; constructor(owner: string) { super(`Campaign is locked by ${owner}`); this.owner = owner; } }
 const idPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const bin = fileURLToPath(new URL('../../bin/bstudio.mjs', import.meta.url));
@@ -104,7 +104,7 @@ export function finishSpawnedJob(root: string, ref: string | undefined, id: stri
   const dir = logDir(root, ref), path = recordPath(dir, id);
   const job = JSON.parse(readFileSync(path, 'utf8')) as Job;
   if (job.id !== id || job.campaign !== ref) throw new UserError('Invalid job record');
-  job.exitCode = code; job.state = cancelled || job.cancelRequested ? 'cancelled' : code === 0 ? 'succeeded' : 'failed'; job.updatedAt = new Date().toISOString();
+  job.exitCode = code; job.completed = true; job.cancelRequested ||= cancelled; job.updatedAt = new Date().toISOString();
   writeJob(dir, job);
 }
 export function updateJobProcesses(root: string, ref: string | undefined, id: string, pids: number[]): void {
@@ -136,17 +136,19 @@ export function startJob(root: string, name: string, values: unknown, options: {
     job.pid = child.pid; job.processStarted = started; job.processGroup = process.platform !== 'win32'; job.state = 'running'; job.updatedAt = new Date().toISOString(); writeJob(dir, job);
     child.once('error', () => { job.state = 'failed'; job.updatedAt = new Date().toISOString(); writeJob(dir, job); release(); });
     child.once('exit', (code) => {
-      const current = JSON.parse(readFileSync(recordPath(dir, id), 'utf8')) as Job;
-      const childrenAlive = (current.childPids ?? []).some(pid => sameGroup(pid, current.childStarted?.[pid]));
-      current.state = childrenAlive ? 'running' : current.cancelRequested ? 'cancelled' : code === 0 ? 'succeeded' : 'failed';
-      current.exitCode = code; current.updatedAt = new Date().toISOString(); writeJob(dir, current);
-      if (!childrenAlive) release();
+      try {
+        const current = JSON.parse(readFileSync(recordPath(dir, id), 'utf8')) as Job;
+        const childrenAlive = (current.childPids ?? []).some(pid => sameGroup(pid, current.childStarted?.[pid]));
+        current.state = childrenAlive ? 'running' : current.cancelRequested ? 'cancelled' : code === 0 ? 'succeeded' : 'failed';
+        current.exitCode = code; current.updatedAt = new Date().toISOString(); writeJob(dir, current);
+        if (!childrenAlive) release();
+      } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     });
     return job;
   } catch (error) { release(); throw error; }
 }
 function dirs(root: string): string[] {
-  const result = [logDir(root)], projects = join(resolve(root), 'projects');
+  const result = [logDir(root)], projects = join(realpathSync(resolve(root)), 'projects');
   if (!existsSync(projects)) return result;
   for (const project of readdirSync(projects, { withFileTypes: true })) {
     if (!project.isDirectory() || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(project.name)) continue;
@@ -160,8 +162,8 @@ function dirs(root: string): string[] {
 export function listJobs(root: string): Job[] {
   const result: Job[] = [];
   for (const dir of dirs(root)) {
-    const rel = relative(resolve(root), dir);
-    let part = resolve(root), unsafe = false;
+    const base = realpathSync(resolve(root)), rel = relative(base, dir);
+    let part = base, unsafe = false;
     for (const segment of rel.split(sep)) { part = join(part, segment); if (lstatSync(part).isSymbolicLink()) { unsafe = true; break; } }
     if (unsafe) continue;
     for (const name of readdirSync(dir)) {
@@ -171,7 +173,7 @@ export function listJobs(root: string): Job[] {
         if (job.id !== name.slice(0, -5)) continue;
         if ((job.state === 'running' || job.state === 'queued') && job.pid && !sameProcess(job.pid, job.processStarted) && !(job.childPids ?? []).some(pid => sameGroup(pid, job.childStarted?.[pid]))) {
           const current = JSON.parse(readFileSync(join(dir, name), 'utf8')) as Job;
-          if (current.state === 'running' || current.state === 'queued') { current.state = current.cancelRequested ? 'cancelled' : 'failed'; current.updatedAt = new Date().toISOString(); writeJob(dir, current); }
+          if (current.state === 'running' || current.state === 'queued') { current.state = current.cancelRequested ? 'cancelled' : current.completed && current.exitCode === 0 ? 'succeeded' : 'failed'; current.updatedAt = new Date().toISOString(); writeJob(dir, current); }
           result.push(current); continue;
         }
         result.push(job);

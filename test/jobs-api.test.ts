@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createServer, request } from 'node:http';
 import { rmSync, watch, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -36,6 +37,9 @@ test('jobs API enforces host, session, origin, header and argument schemas', asy
     assert.equal((await call('POST', '/api/jobs', headers, JSON.stringify({ operation: 'sh', args: {} }))).status, 400);
     assert.equal((await call('POST', '/api/jobs', headers, JSON.stringify({ operation: 'render', args: { campaign: '../../escape' } }))).status, 400);
     assert.equal((await call('POST', '/api/jobs', headers, ' '.repeat(16385))).status, 413);
+    const secret = await call('POST', '/api/secrets', headers, JSON.stringify({ key: 'UNKNOWN', value: 'sensitive-value' }));
+    assert.equal(secret.status, 400); assert.doesNotMatch(secret.body, /sensitive-value/);
+    assert.equal((await call('GET', '/api/jobs/a0000000-0000-4000-8000-000000000000', headers)).status, 404);
     config.images.provider = 'omp';
     const tty = await call('POST', '/api/jobs', headers, JSON.stringify({ operation: 'render', args: { campaign: 'demo' } }));
     assert.equal(tty.status, 422); assert.equal(JSON.parse(tty.body).command, 'bstudio render demo');
@@ -47,6 +51,8 @@ test('jobs API enforces host, session, origin, header and argument schemas', asy
     assert.equal(started.status, 202);
     const id = JSON.parse(started.body).id as string;
     await ready.promise;
+    const cli = spawnSync(process.execPath, ['bin/bstudio.mjs', 'plan', 'demo'], { cwd: process.cwd(), env: { ...process.env, ...io.env, BSTUDIO_CONFIG: join(root, 'studio.yml') }, encoding: 'utf8' });
+    assert.equal(cli.status, 1); assert.match(cli.stderr, /locked by/);
     assert.equal((await call('POST', '/api/jobs', headers, payload)).status, 409);
     assert.match((await call('GET', `/api/jobs/${id}/log`, headers)).body, /READY/);
     const finished = Promise.withResolvers<void>();

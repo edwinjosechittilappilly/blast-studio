@@ -3,15 +3,17 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildOperation, campaignRef } from '../src/jobs/registry.ts';
 import { acquireCampaignLock, cancelJob, JobConflict, listJobs } from '../src/jobs/runner.ts';
 import { saveSecret } from '../src/jobs/secrets.ts';
-import { realIO } from '../src/cli.ts';
+import { main, realIO } from '../src/cli.ts';
+import { runBilledAgent } from '../src/agent-env.ts';
+import { loadConfig } from '../src/config.ts';
 import { usualStepMs } from '../src/budget/ledger.ts';
-import { tempStudio } from './helpers.ts';
+import { fakeIO, tempStudio } from './helpers.ts';
 
 test('registry validates campaign addresses and constructs an argument vector', () => {
   const job = buildOperation('render', { campaign: 'launch', assets: 'card-one,card-two', regen: true });
@@ -97,7 +99,7 @@ test('cancelling a foreground CLI job terminates its agent and grandchild', { ti
   }
 });
 
-test('interrupting a blocked fetch terminates the CLI and releases its campaign', { timeout: 10000 }, async () => {
+for (const [signal, expected] of [['SIGINT', 130], ['SIGHUP', 129]] as const) test(`${signal} during a blocked fetch releases its campaign`, { timeout: 10000 }, async () => {
   const root = tempStudio(), server = createServer(() => {});
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   const address = server.address(); assert.ok(address && typeof address !== 'string');
@@ -108,9 +110,9 @@ test('interrupting a blocked fetch terminates the CLI and releases its campaign'
   const exit = once(child, 'exit');
   try {
     await request;
-    child.kill('SIGINT');
+    child.kill(signal);
     const [code] = await exit;
-    assert.equal(code, 130);
+    assert.equal(code, expected);
     assert.equal(listJobs(root)[0].state, 'cancelled');
     const release = acquireCampaignLock(root, 'demo'); release();
   } finally {
@@ -143,4 +145,66 @@ test('ETA ignores failed and legacy runs', () => {
 test('leading-dash text stays a single valued option', () => {
   assert.deepEqual(buildOperation('brief', { campaign: 'demo', note: '- tighten hook' }).args, ['brief', 'demo', '--note=- tighten hook']);
   assert.throws(() => buildOperation('brief', { campaign: 'demo', pr: '1.5' }));
+});
+
+test('registered workflow arguments reach merged CLI parsers', async () => {
+  const root = tempStudio({
+    'projects/demo/brief.md': '# Brief',
+    'projects/demo/plan.yml': '- platform: bluesky\n  type: text\n  angle: Demo\n  hooks: [one, two, three]\n  assets: []\n',
+  });
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') } });
+  try {
+    for (const name of ['plan', 'make']) {
+      const args = buildOperation(name, { campaign: 'demo', platforms: 'unknown' }).args;
+      assert.equal(await main(args, io), 1);
+      assert.match(io.stderr.at(-1)!, /Unknown platform/);
+    }
+    assert.equal(await main(buildOperation('feedback add', { campaign: 'demo', note: '- improve' }).args, io), 0);
+    assert.equal(await main(buildOperation('feedback list', { campaign: 'demo' }).args, io), 0);
+    assert.ok(io.stdout.some(line => line.includes('- improve')));
+    assert.equal(await main(buildOperation('history', { campaign: 'demo' }).args, io), 0);
+    assert.equal(await main(buildOperation('restore', { campaign: 'demo', version: '999' }).args, io), 1);
+    assert.match(io.stderr.at(-1)!, /Unknown history snapshot/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('quiet suppresses live output but preserves job log and step timing', async () => {
+  const root = tempStudio(), lines: string[] = [];
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') }, step: 'plan', quiet: true, log: line => lines.push(line),
+    run: async (_command, _args, options) => { options?.onOutput?.('agent output'); return 'done'; } });
+  try {
+    await runBilledAgent(io, loadConfig(io), {}, 'demo', ['agent'], 'prompt', root, root, {}, 1000);
+    assert.deepEqual(io.stderr, []);
+    assert.ok(lines.some(line => line.includes('[plan] agent')));
+    assert.ok(lines.includes('agent output'));
+    assert.notEqual(usualStepMs(root, 'plan'), undefined);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a finished global job is recovered without trusting a reused PID', () => {
+  const root = tempStudio(), id = 'a0000000-0000-4000-8000-000000000000', dir = join(root, 'logs/jobs');
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, `${id}.json`), JSON.stringify({ id, operation: 'doctor', state: 'running', createdAt: '2026-01-01', updatedAt: '2026-01-01', pid: process.pid, processStarted: 'old process', completed: true, exitCode: 0, command: 'bstudio doctor' }));
+    assert.equal(listJobs(root)[0].state, 'succeeded');
+    assert.throws(() => cancelJob(root, id), /not running/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('an aged malformed campaign lock can be recovered', () => {
+  const root = tempStudio({ 'projects/demo/brief.md': '# demo' });
+  try {
+    const path = join(root, 'projects/demo/.bstudio-job.lock');
+    writeFileSync(path, '');
+    utimesSync(path, new Date(0), new Date(0));
+    const release = acquireCampaignLock(root, 'demo'); release();
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('program timeout terminates descendants holding output pipes', { timeout: 5000 }, async () => {
+  let grandchild = 0;
+  const script = `const {spawn}=require('node:child_process'); const c=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000)'],{stdio:'inherit'}); console.log('child:'+c.pid); setInterval(()=>{},1000);`;
+  await assert.rejects(realIO().run(process.execPath, ['-e', script], { timeoutMs: 500, onOutput: line => { if (line.startsWith('child:')) grandchild = Number(line.slice(6)); } }), /timed out/);
+  assert.ok(grandchild);
+  assert.throws(() => process.kill(grandchild, 0), { code: 'ESRCH' });
 });
