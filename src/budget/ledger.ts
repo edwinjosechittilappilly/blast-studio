@@ -1,4 +1,4 @@
-import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
@@ -10,7 +10,11 @@ export interface LedgerEntry { id: string; type: "reserved" | "settled" | "agent
 function entries(root: string): LedgerEntry[] {
   const file = join(root, "ledger.jsonl");
   if (!existsSync(file)) return [];
-  return readFileSync(file, "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as LedgerEntry);
+  const lines = readFileSync(file, "utf8").split("\n");
+  return lines.filter(Boolean).map((line, index) => {
+    try { return JSON.parse(line) as LedgerEntry; }
+    catch { throw new UserError(`Invalid ledger line ${index + 1}; repair ${file} before continuing`); }
+  });
 }
 function effective(root: string): LedgerEntry[] {
   const all = entries(root), settled = new Map(all.filter(e => e.type === "settled").map(e => [e.id, e]));
@@ -39,7 +43,25 @@ async function locked<T>(root: string, fn: () => T): Promise<T> {
     try { fd = openSync(path, "wx", 0o600); writeFileSync(fd, String(process.pid)); break; }
     catch (err) {
       if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-      try { const pid = Number(readFileSync(path, "utf8")); if (pid > 0) { try { process.kill(pid, 0); } catch (e) { if ((e as NodeJS.ErrnoException).code === "ESRCH") unlinkSync(path); } } } catch (e) { if ((e as NodeJS.ErrnoException).code !== "ENOENT") throw e; }
+      const recovery = `${path}.recovery`;
+      try {
+        mkdirSync(recovery);
+        try {
+          const pid = Number(readFileSync(path, "utf8"));
+          if (pid > 0) {
+            try { process.kill(pid, 0); }
+            catch (e) {
+              if ((e as NodeJS.ErrnoException).code === "ESRCH") {
+                const stale = `${path}.stale-${randomUUID()}`;
+                renameSync(path, stale);
+                unlinkSync(stale);
+              }
+            }
+          }
+        } finally { rmdirSync(recovery); }
+      } catch (e) {
+        if (!["ENOENT", "EEXIST"].includes((e as NodeJS.ErrnoException).code ?? "")) throw e;
+      }
       if (Date.now() >= deadline) throw new UserError("Timed out waiting for ledger lock");
       await delay(20);
     }
@@ -65,6 +87,13 @@ export async function settle(root: string, id: string, actualUsd: number | null,
     if (!original || all.some(e => e.id === id && e.type === "settled")) throw new UserError("Unknown or already settled reservation");
     append(root, { ...original, type: "settled", at: new Date().toISOString(), usd: actualUsd, usage });
   });
+}
+
+export async function reserveAgentRun(config: StudioConfig, run: { command: string; projectSlug: string; maxUsd: number }): Promise<string> {
+  return reserve(config, run.maxUsd, { projectSlug: run.projectSlug, provider: "agent", model: run.command });
+}
+export async function settleAgentRun(config: StudioConfig, id: string, run: { usd: number; usage?: unknown }): Promise<void> {
+  await settle(config.root, id, run.usd, run.usage);
 }
 export async function recordAgentRun(config: StudioConfig, run: { model: string; ms: number; usage?: unknown; usd: null; projectSlug?: string; provider?: string }): Promise<void> {
   await locked(config.root, () => append(config.root, { id: randomUUID(), type: "agent", at: new Date().toISOString(), projectSlug: run.projectSlug ?? "", provider: run.provider ?? "agent", model: run.model, ms: run.ms, usage: run.usage, usd: null }));

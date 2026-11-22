@@ -47,7 +47,7 @@ async function readSecret(piped: boolean): Promise<string> {
 export async function run(args: string[], io: IO, options: Options = {}): Promise<number> {
   const [action, ...rest] = args;
   const config = loadConfig(io);
-  const keys = [...new Set(["GEMINI_API_KEY", "OPENAI_API_KEY", ...(config.agent.passEnv ?? [])])];
+  const keys = ["GEMINI_API_KEY", "OPENAI_API_KEY"];
   if (action === "set") {
     const key = rest[0];
     if (!key || !keys.includes(key)) throw new UserError(`Unknown credential key; known: ${keys.join(", ")}`);

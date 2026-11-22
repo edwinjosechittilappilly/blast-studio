@@ -25,7 +25,7 @@ export function writeCampaignZip(project: string, slug: string, prepared: Prepar
   const text = (path: string, content: string) => { files[path] = strToU8(content); };
   const brief = readFileSync(join(project, 'brief.md'), 'utf8');
   const sections = parseBrief(brief);
-  const sources = sections.map(section => ({ anchor: section.anchor, title: section.title, status: section.status ?? 'claim', url: section.body.match(/^Source:\s*(https?:\/\/\S+)/m)?.[1] ?? null }));
+  const sources = sections.map(section => ({ anchor: section.anchor, title: section.title, status: section.status ?? null, url: section.body.match(/^Source:\s*(https?:\/\/\S+)/m)?.[1] ?? null }));
   if (new Set(sections.map(s => s.anchor)).size !== sections.length) throw new UserError('Brief contains duplicate source anchors');
   text('brief.md', brief);
   text('sources/sources.json', JSON.stringify(sources, null, 2) + '\n');
@@ -44,15 +44,11 @@ export function writeCampaignZip(project: string, slug: string, prepared: Prepar
     if (!pack.marketBlaster) {
       const folder = `handoff/${post.platform}/`;
       text(`${folder}post.md`, [post.title ? `# ${post.title}\n` : '', post.body, ...(post.thread ?? []).map(t => `\n---\n\n${t}`)].join('\n') + '\n');
-      for (const m of media) {
-        files[folder + m.path] = files[m.path];
-        if ('captions' in m && m.captions) files[folder + m.captions] = files[m.captions];
-      }
       const guide = readFileSync(join(root, 'platforms', post.platform, 'guide.md'), 'utf8');
       const checklist = guide.match(/## Checklist\s*\n([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() ?? '';
       const disclosures = Object.entries(post.disclosure ?? {}).map(([key, value]) => `- ${key}: ${value}`);
       const policy = Object.entries(pack.disclosure).map(([key, rule]) => `- ${key}: ${typeof rule === 'string' ? rule : rule.rule}`);
-      text(`${folder}README.md`, [`# ${pack.name} manual handoff`, '', '- [ ] Open the platform publishing interface and select the correct account.', '- [ ] Copy post.md and attach the listed media.', '- [ ] Enter alt text, captions and disclosures; review and publish manually.', '', '## Media', ...media.map(m => `- ${m.path} (${m.kind}; alt: ${m.alt})${'captions' in m && m.captions ? `; captions: ${m.captions}` : ''}`), '', '## Disclosure', ...(disclosures.length ? disclosures : ['- None specified.']), '', '## Platform disclosure rules', ...policy, '', '## Platform notes', ...(pack.notes ?? []).map(n => `- ${n}`), '', '## Platform checklist', checklist, ''].join('\n'));
+      text(`${folder}README.md`, [`# ${pack.name} manual handoff`, '', '- [ ] Open the platform publishing interface and select the correct account.', '- [ ] Copy post.md and attach the listed media.', '- [ ] Enter alt text, captions and disclosures; review and publish manually.', '', '## Media', ...media.map(m => `- ../../${m.path} (${m.kind}; alt: ${m.alt})${'captions' in m && m.captions ? `; captions: ../../${m.captions}` : ''}`), '', '## Disclosure', ...(disclosures.length ? disclosures : ['- None specified.']), '', '## Platform disclosure rules', ...policy, '', '## Platform notes', ...(pack.notes ?? []).map(n => `- ${n}`), '', '## Platform checklist', checklist, ''].join('\n'));
       manual.push({ platform: post.platform, folder, review: { verdict: review.verdict, total: review.total } });
       continue;
     }
@@ -68,7 +64,7 @@ export function writeCampaignZip(project: string, slug: string, prepared: Prepar
   text('review/review.md', existsSync(reviewPath) ? readFileSync(reviewPath, 'utf8') : ['# Editorial review', '', ...prepared.map(({ post, review }) => `- ${post.platform}: ${review.verdict}${review.total === null ? '' : ` (${review.total}%)`}`), ''].join('\n'));
   const timestamps = prepared.map(({ review }) => review.at).filter(at => typeof at === 'string' && Number.isFinite(Date.parse(at))).sort();
   const manifest = { version: 2, kind: 'blast-studio-campaign', slug, title: brief.match(/^#\s+(.+)$/m)?.[1]?.trim() || slug,
-    generatedAt: timestamps.length ? new Date(timestamps[timestamps.length - 1]).toISOString() : '1980-01-01T00:00:00.000Z', generator: { name: 'blast-studio', version }, canonicalHome: 'devto', sources, destinations, manual };
+    generatedAt: timestamps.length ? new Date(timestamps[timestamps.length - 1]).toISOString() : '1980-01-01T00:00:00.000Z', generator: { name: 'blast-studio', version }, canonicalHome: destinations.some(destination => destination.id === 'devto') ? 'devto' : null, sources, destinations, manual };
   if (!validate(manifest)) throw new UserError(`Invalid campaign manifest: ${ajv.errorsText(validate.errors)}`);
   text('campaign.json', JSON.stringify(manifest, null, 2) + '\n');
   const sorted = Object.fromEntries(Object.entries(files).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0));

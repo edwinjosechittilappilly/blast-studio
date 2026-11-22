@@ -4,23 +4,23 @@ import { run } from "../src/commands/auth.ts";
 import { UserError } from "../src/types.ts";
 import { fakeIO, tempStudio } from "./helpers.ts";
 
-test("unknown keys report the known built-in and configured keys", async () => {
+test("unknown keys report supported provider keys", async () => {
   const root = tempStudio({ "studio.yml": "agent:\n  passEnv: [CUSTOM_TOKEN]\n" });
   const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: "studio.yml", BSTUDIO_HOME: root } });
   await assert.rejects(run(["set", "UNKNOWN"], io), (err: Error) => {
     assert.ok(err instanceof UserError);
     assert.match(err.message, /GEMINI_API_KEY/);
     assert.match(err.message, /OPENAI_API_KEY/);
-    assert.match(err.message, /CUSTOM_TOKEN/);
+    assert.doesNotMatch(err.message, /CUSTOM_TOKEN/);
     return true;
   });
 });
 
-test("set accepts passEnv names and writes hex through security stdin", async () => {
+test("set writes provider keys through security stdin", async () => {
   const root = tempStudio({ "studio.yml": "agent:\n  passEnv: [CUSTOM_TOKEN]\n" });
   const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: "studio.yml", BSTUDIO_HOME: root } });
   let args: string[] = [], input = "";
-  await run(["set", "CUSTOM_TOKEN", "--stdin"], io, {
+  await run(["set", "OPENAI_API_KEY", "--stdin"], io, {
     platform: "darwin", input: async (piped) => { assert.equal(piped, true); return "very-secret"; },
     runner: (argv, data) => { args = argv; input = data ?? ""; return ""; },
   });
@@ -35,8 +35,7 @@ test("list reports precedence and never displays values", async () => {
   await run(["list"], io);
   assert.match(io.text(), /GEMINI_API_KEY: shell/);
   assert.match(io.text(), /OPENAI_API_KEY: \.env/);
-  assert.match(io.text(), /CUSTOM_TOKEN: keychain/);
-  assert.match(io.text(), /MISSING_TOKEN: unset/);
+  assert.doesNotMatch(io.text(), /CUSTOM_TOKEN|MISSING_TOKEN/);
   assert.doesNotMatch(io.text(), /shell-secret|file-secret|keychain-secret/);
 });
 

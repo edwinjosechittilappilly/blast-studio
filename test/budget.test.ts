@@ -45,7 +45,7 @@ test("image request shapes, cache and zero cap", async () => {
     await generateImage(opts); await generateImage(opts); assert.equal(network.calls.length, 1);
     const body = JSON.parse(network.calls[0].body);
     if (provider === "gemini") assert.deepEqual(body.generationConfig.responseModalities, ["IMAGE"]);
-    else assert.equal(body.model, "gpt-image-2.5-sunburst");
+    else assert.equal(body.model, "gpt-image-2");
     config.images.model = "unknown"; await assert.rejects(generateImage(opts), /No price/);
   }
 });
@@ -67,13 +67,39 @@ test("upload policy and interactive provider restrictions", async () => {
 test("voice uses WAV speech API and reserves its character cost", async () => {
   const { config, io, dir } = setup();
   config.voice.provider = "openai";
-  const network = mockFetch(() => [200, {}]); io.fetch = network.fetch;
+  let calls = 0;
+  io.fetch = (async (url, init) => { calls++; assert.equal(String(url), "https://api.openai.com/v1/audio/speech"); assert.equal(JSON.parse(String(init?.body)).response_format, "wav"); return new Response(Buffer.from("RIFF0000WAVE")); }) as typeof fetch;
   const result = await generateVoice({ config, io, projectSlug: "p", text: "hello", out: join(dir, "voice.wav") });
-  assert.equal(network.calls[0].url, "https://api.openai.com/v1/audio/speech");
-  assert.equal(JSON.parse(network.calls[0].body).response_format, "wav");
+  assert.equal(readFileSync(result.file).toString("ascii", 0, 4), "RIFF");
+  assert.equal(readFileSync(result.file).toString("ascii", 8, 12), "WAVE");
   assert.equal(monthToDate(config.root), result.costUsd);
   await generateVoice({ config, io, projectSlug: "p", text: "hello", out: join(dir, "cached.wav") });
-  assert.equal(network.calls.length, 1);
+  assert.equal(calls, 1);
   await generateVoice({ config, io, projectSlug: "p", text: "hello", out: join(dir, "regenerated.wav"), regen: true });
-  assert.equal(network.calls.length, 2);
+  assert.equal(calls, 2);
+});
+
+test("torn ledger is reported as a user error", () => {
+  const { config } = setup();
+  writeFileSync(join(config.root, "ledger.jsonl"), '{"id":');
+  assert.throws(() => monthToDate(config.root), /Invalid ledger line 1/);
+});
+
+test("stale lock is recovered before reserving", async () => {
+  const { config } = setup();
+  writeFileSync(join(config.root, "ledger.lock"), "2147483647");
+  const meta = { projectSlug: "one", provider: "openai", model: "test" };
+  await Promise.all([reserve(config, 0.2, meta), reserve(config, 0.3, meta)]);
+  assert.equal(monthToDate(config.root), 0.5);
+});
+
+test("failed provider calls release reservations", async () => {
+  const { config, io, dir } = setup();
+  io.fetch = mockFetch(() => [400, {}]).fetch;
+  await assert.rejects(generateImage({ config, io, projectSlug: "one", prompt: "test", size: "1024x1024", out: join(dir, "out.png"), regen: false }), /400/);
+  assert.equal(monthToDate(config.root), 0);
+  config.voice.provider = "openai";
+  io.fetch = mockFetch(() => [200, {}]).fetch;
+  await assert.rejects(generateVoice({ config, io, projectSlug: "one", text: "hello", out: join(dir, "voice.wav") }), /invalid WAV/);
+  assert.equal(monthToDate(config.root), 0);
 });

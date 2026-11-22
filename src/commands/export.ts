@@ -16,7 +16,9 @@ export const run: Command = async (args, io) => {
   const mb = parsed.values.mb as string | undefined ?? config.marketBlaster.project;
   if (mb) {
     const [cmd, ...prefix] = config.marketBlaster.command, cwd = resolve(io.cwd, mb);
-    const imported = await io.run(cmd, [...prefix, 'import', dir, '--slug', slug, ...(parsed.values.force ? ['--force'] : [])], { cwd });
+    let imported: string;
+    try { imported = await io.run(cmd, [...prefix, 'import', dir, '--slug', slug, ...(parsed.values.force ? ['--force'] : [])], { cwd }); }
+    catch (error) { throw new UserError(`Market Blaster import failed: ${String(error instanceof Error ? error.message : error).slice(-2000)}`); }
     if (imported) io.out(imported);
     const checked = await io.run(cmd, [...prefix, 'check', slug], { cwd });
     if (checked) io.out(checked);

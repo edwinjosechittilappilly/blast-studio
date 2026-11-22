@@ -1,5 +1,7 @@
 # List prices observed 2026-11-22; check provider pricing before use.
 # Image upper bounds include a conservative allowance for text input.
+# Model IDs: https://platform.openai.com/docs/models/gpt-image-2
+# https://ai.google.dev/gemini-api/docs/image-generation
 verified: 2026-11-22
 models:
   gemini-nano-banana-2.1:
@@ -12,12 +14,7 @@ models:
     kind: image
     upperUsd: 0.10
     source: https://ai.google.dev/gemini-api/docs/pricing
-  gpt-image-2.5-sunburst:
-    provider: openai
-    kind: image
-    upperUsd: 0.50
-    source: https://developers.openai.com/api/docs/pricing
-  gpt-image-2.5-flare:
+  gpt-image-2:
     provider: openai
     kind: image
     upperUsd: 0.50

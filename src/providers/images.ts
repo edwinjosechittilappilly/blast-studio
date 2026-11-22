@@ -31,7 +31,7 @@ export async function generateImage(opts: { config: StudioConfig; io: IO; projec
   const aspect = width === height ? "1:1" : width > height ? "3:2" : "2:3";
   const apiSize = aspect === "1:1" ? "1024x1024" : aspect === "3:2" ? "1536x1024" : "1024x1536";
   if (prompt.length > 4000) throw new UserError("Image prompt exceeds 4000 characters");
-  const model = config.images.model ?? (provider === "gemini" ? "gemini-nano-banana-2.1" : provider === "openai" ? "gpt-image-2.5-sunburst" : "omp");
+  const model = config.images.model ?? (provider === "gemini" ? "gemini-nano-banana-2.1" : provider === "openai" ? "gpt-image-2" : "omp");
   const promptHash = createHash("sha256").update(JSON.stringify({ prompt, size, provider, model })).digest("hex");
   const cacheDir = join(config.root, "cache", "images"), cache = join(cacheDir, `${promptHash}.png`), meta = `${cache}.json`;
   const license = provider === "gemini" ? "https://ai.google.dev/gemini-api/terms" : provider === "openai" ? "https://openai.com/policies/business-terms/" : "omp subscription terms";
@@ -54,11 +54,16 @@ export async function generateImage(opts: { config: StudioConfig; io: IO; projec
     if (!key) throw new UserError(`Missing ${provider === "gemini" ? "GEMINI_API_KEY" : "OPENAI_API_KEY"}`);
     const id = await reserve(config, amount, { projectSlug, provider, model });
     const gemini = provider === "gemini";
-    const response = await io.fetch(gemini ? `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent` : "https://api.openai.com/v1/images/generations", {
-      method: "POST", headers: { "content-type": "application/json", ...(gemini ? { "x-goog-api-key": key } : { authorization: `Bearer ${key}` }) },
-      body: JSON.stringify(gemini ? { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: aspect } } } : { model, prompt, size: apiSize, quality: "medium", output_format: "png", n: 1 }), signal: AbortSignal.timeout(120000),
-    });
-    if (!response.ok) throw new UserError(`${provider} image request failed (${response.status}); reservation retained`);
+    let response: Response;
+    try {
+      response = await io.fetch(gemini ? `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent` : "https://api.openai.com/v1/images/generations", {
+        method: "POST", headers: { "content-type": "application/json", ...(gemini ? { "x-goog-api-key": key } : { authorization: `Bearer ${key}` }) },
+        body: JSON.stringify(gemini ? { contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: aspect } } } : { model, prompt, size: apiSize, quality: "medium", output_format: "png", n: 1 }), signal: AbortSignal.timeout(120000),
+      });
+    } catch (error) { await settle(config.root, id, 0); throw error; }
+    if (!response.ok) { await settle(config.root, id, 0); throw new UserError(`${provider} image request failed (${response.status})`); }
+    let usage: unknown;
+    try {
     const json: unknown = await response.json();
     const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
     const root = object(json);
@@ -69,11 +74,14 @@ export async function generateImage(opts: { config: StudioConfig; io: IO; projec
       return Array.isArray(value) ? value : [];
     });
     const encoded = gemini ? parts.map((part: unknown) => object(object(part).inlineData).data).find((data: unknown) => typeof data === "string" && data.length > 0) : first.b64_json;
-    if (typeof encoded !== "string" || !encoded) throw new UserError("Provider returned no image; reservation retained");
+    if (typeof encoded !== "string" || !encoded) throw new UserError("Provider returned no image");
     bytes = Buffer.from(encoded, "base64");
+    if (!bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw new UserError("Provider returned a non-PNG image");
     // The API does not provide a reliable dollar total; retain the priced upper bound.
     costUsd = amount;
-    await settle(config.root, id, amount, root.usageMetadata ?? root.usage);
+    usage = root.usageMetadata ?? root.usage;
+    } catch (error) { await settle(config.root, id, 0); throw error; }
+    await settle(config.root, id, amount, usage);
   }
   if (!bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw new UserError("Provider returned a non-PNG image");
   mkdirSync(cacheDir, { recursive: true, mode: 0o700 });

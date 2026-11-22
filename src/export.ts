@@ -6,7 +6,7 @@ import { Ajv2020 } from 'ajv/dist/2020.js';
 import { writeCampaignZip } from './campaign-zip.ts';
 import { loadPacks } from './packs.ts';
 import { loadPosts } from './posts.ts';
-import { reviewHash } from './review-hash.ts';
+import { mediaContentHash, reviewHash } from './review-hash.ts';
 import { UserError } from './types.ts';
 import type { Post, Review } from './types.ts';
 
@@ -50,9 +50,11 @@ export function exportProject(project: string, slug: string, directory = false):
     let review: Review;
     try { review = JSON.parse(readFileSync(join(project, 'reviews', `${post.platform}.json`), 'utf8')) as Review; }
     catch { throw new UserError(`${post.platform}: review missing or invalid; re-run review`); }
-    if (!review || review.platform !== post.platform || !['pass', 'accepted'].includes(review.verdict) || !Array.isArray(review.gates) || !review.gates.length || review.gates.some(g => !g || g.pass !== true)) throw new UserError(`${post.platform}: review is not passing; re-run review`);
+    const requiredGates = ['policy', 'disclosure', 'specs', 'accessibility', 'fabricated-metrics', 'rights'];
+    if (!review || review.platform !== post.platform || !['pass', 'accepted'].includes(review.verdict) || !Array.isArray(review.gates) || review.gates.some(g => !g || g.pass !== true) || requiredGates.some(id => !review.gates.some(g => g.id === id))) throw new UserError(`${post.platform}: review is not passing; re-run review`);
     const hash = reviewHash({ ...post, media: post.media.map(m => ({ path: m.file, alt: m.alt })) });
     if (hash !== review.postHash) throw new UserError(`${post.platform}: review is stale; re-run review`);
+    if (review.mediaHash !== mediaContentHash(project, post.media)) throw new UserError(`${post.platform}: review media is stale; re-run review`);
     const pack = packs.get(post.platform);
     if (!pack) throw new UserError(`${post.platform}: pack missing`);
     for (const m of post.media as ExtraMedia[]) {
