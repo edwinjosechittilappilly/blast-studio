@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { UserError, type FeedbackEntry } from './types.ts';
@@ -20,6 +20,31 @@ function writeFeedback(projectDir: string, entries: FeedbackEntry[]): void {
   finally { if (existsSync(temp)) unlinkSync(temp); }
 }
 
+// Publish a fully written lock atomically so other processes never observe a partial owner.
+function updateFeedback<T>(projectDir: string, update: (entries: FeedbackEntry[]) => T): T {
+  const lock = join(projectDir, '.feedback.lock'), temp = join(projectDir, `.feedback-${randomUUID()}.lock`);
+  writeFileSync(temp, String(process.pid), { mode: 0o600, flag: 'wx' });
+  let acquired = false;
+  try {
+    const deadline = Date.now() + 30000, waiter = new Int32Array(new SharedArrayBuffer(4));
+    for (;;) {
+      try { linkSync(temp, lock); acquired = true; break; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+        if (Date.now() >= deadline) throw new UserError(`Feedback is locked at ${lock}; remove the lock only after confirming no feedback update is running`);
+        Atomics.wait(waiter, 0, 0, 10);
+      }
+    }
+    const entries = loadFeedback(projectDir);
+    const result = update(entries);
+    writeFeedback(projectDir, entries);
+    return result;
+  } finally {
+    try { if (acquired) unlinkSync(lock); }
+    finally { unlinkSync(temp); }
+  }
+}
+
 export function loadFeedback(projectDir: string): FeedbackEntry[] {
   const file = join(projectDir, 'feedback.yml');
   if (!existsSync(file)) return [];
@@ -30,11 +55,11 @@ export function loadFeedback(projectDir: string): FeedbackEntry[] {
 
 export function addFeedback(projectDir: string, target: FeedbackEntry['target'], note: string): FeedbackEntry {
   validateFeedbackTarget(projectDir, target);
-  const entries = loadFeedback(projectDir);
-  const entry: FeedbackEntry = { id: randomUUID(), target, note, at: new Date().toISOString(), status: 'pending' };
-  entries.push(entry);
-  writeFeedback(projectDir, entries);
-  return entry;
+  return updateFeedback(projectDir, entries => {
+    const entry: FeedbackEntry = { id: randomUUID(), target, note, at: new Date().toISOString(), status: 'pending' };
+    entries.push(entry);
+    return entry;
+  });
 }
 
 export function removeFeedback(projectDir: string, id: string): void {
@@ -45,16 +70,17 @@ export function removeFeedback(projectDir: string, id: string): void {
 }
 
 export function markApplied(projectDir: string, ids: string[]): void {
-  const entries = loadFeedback(projectDir), selected = new Set(ids), appliedAt = new Date().toISOString();
-  for (const entry of entries) if (selected.has(entry.id)) { entry.status = 'applied'; entry.appliedAt = appliedAt; }
-  writeFeedback(projectDir, entries);
+  updateFeedback(projectDir, entries => {
+    const selected = new Set(ids), appliedAt = new Date().toISOString();
+    for (const entry of entries) if (selected.has(entry.id)) { entry.status = 'applied'; entry.appliedAt = appliedAt; }
+  });
 }
 
 export function rejectFeedback(projectDir: string, reasons: Map<string, string>): void {
-  const entries = loadFeedback(projectDir);
-  for (const entry of entries) {
-    const reason = reasons.get(entry.id);
-    if (reason !== undefined && entry.status === 'pending') { entry.status = 'rejected'; entry.rejectedReason = reason; }
-  }
-  writeFeedback(projectDir, entries);
+  updateFeedback(projectDir, entries => {
+    for (const entry of entries) {
+      const reason = reasons.get(entry.id);
+      if (reason !== undefined && entry.status === 'pending') { entry.status = 'rejected'; entry.rejectedReason = reason; }
+    }
+  });
 }

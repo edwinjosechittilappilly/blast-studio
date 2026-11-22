@@ -27,13 +27,14 @@ function tailLog(path: string) {
   } finally { closeSync(fd); }
 }
 const types: Record<string, string> = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.svg': 'image/svg+xml', '.mp4': 'video/mp4', '.webm': 'video/webm', '.pdf': 'application/pdf', '.vtt': 'text/vtt; charset=utf-8' };
+const errorPageCsp = "default-src 'none'; base-uri 'none'";
 function send(res: ServerResponse, status: number, value: unknown) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(value));
 }
 function unauthenticated(req: IncomingMessage, res: ServerResponse, error: string) {
   if (req.method === 'GET' && (req.headers.accept ?? '').includes('text/html')) {
-    res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+    res.writeHead(401, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': errorPageCsp });
     res.end('<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Session expired — Blast Studio</title><main><h1>Session expired</h1><p>Run <code>bstudio dashboard</code> again and open the new URL.</p></main></html>');
   } else send(res, 401, { error });
 }
@@ -47,7 +48,7 @@ async function body(req: IncomingMessage): Promise<Record<string, unknown>> {
 }
 function serveFile(req: IncomingMessage, res: ServerResponse, path: string, media = false) {
   const size = statSync(path).size, type = types[extname(path).toLowerCase()] ?? 'application/octet-stream';
-  const headers: Record<string, string | number> = { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store', ...(media ? { 'Content-Security-Policy': "sandbox; default-src 'none'" } : type.startsWith('text/html') ? { 'Content-Security-Policy': "default-src 'self'; font-src 'self' data:; img-src 'self' data:; media-src 'self'; frame-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'" } : {}) };
+  const headers: Record<string, string | number> = { 'Content-Type': type, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store', ...(media ? { 'Content-Security-Policy': type === 'application/pdf' ? "default-src 'none'" : "sandbox; default-src 'none'" } : type.startsWith('text/html') ? { 'Content-Security-Policy': "default-src 'self'; font-src 'self' data:; img-src 'self' data:; media-src 'self'; frame-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'" } : {}) };
   const range = req.headers.range;
   if (range && type.startsWith('video/')) {
     const m = /^bytes=(\d*)-(\d*)$/.exec(range);
@@ -74,7 +75,8 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
     } finally { if (existsSync(temp)) unlinkSync(temp); }
   }
   const metadata = lstatSync(keyFile), key = readFileSync(keyFile, 'utf8');
-  if (!metadata.isFile() || (metadata.mode & 0o077) !== 0 || !/^[a-f0-9]{64}$/.test(key)) throw new Error(`Invalid dashboard signing key or permissions: ${keyFile}`);
+  if (!metadata.isFile() || !/^[a-f0-9]{64}$/.test(key)) throw new Error(`Invalid dashboard signing key: ${keyFile}`);
+  if (process.platform !== 'win32' && (metadata.mode & 0o077) !== 0) throw new Error(`Invalid dashboard signing key permissions: ${keyFile}; run chmod 600 "${keyFile}"`);
   const signature = (payload: string) => createHmac('sha256', key).update(payload).digest('hex');
   const sessionCookie = () => { const payload = `${Date.now() + 12 * 60 * 60 * 1000}.${randomBytes(16).toString('hex')}`; return `bs=${payload}.${signature(payload)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=43200`; };
   const validSession = (value: string) => { const parts = value.split('.'); if (parts.length !== 3 || !/^\d+$/.test(parts[0]) || !/^[a-f0-9]{32}$/.test(parts[1])) return false; const expiry = Number(parts[0]); return Number.isSafeInteger(expiry) && expiry > Date.now() && equal(parts[2], signature(`${parts[0]}.${parts[1]}`)); };
@@ -148,7 +150,7 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
         const staticFile = pathname === '/' ? 'index.html' : pathname === '/app.js' ? 'app.js' : pathname === '/app.css' ? 'app.css' : '';
         if (staticFile) {
           const built = join(buildDir, staticFile), file = staticFile !== 'index.html' && existsSync(built) ? built : join(staticDir, staticFile);
-          if (staticFile === 'index.html' && !existsSync(join(buildDir, 'app.js')) && !existsSync(join(staticDir, 'app.js'))) { res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' }); res.end('<!doctype html><html lang="en"><meta charset="utf-8"><title>Dashboard assets missing</title><h1>Dashboard assets missing</h1><p>Run <code>npm run build:ui</code> in the source checkout, then reload.</p></html>'); return; }
+          if (staticFile === 'index.html' && !existsSync(join(buildDir, 'app.js')) && !existsSync(join(staticDir, 'app.js'))) { res.writeHead(503, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': errorPageCsp }); res.end('<!doctype html><html lang="en"><meta charset="utf-8"><title>Dashboard assets missing</title><h1>Dashboard assets missing</h1><p>Run <code>npm run build:ui</code> in the source checkout, then reload.</p></html>'); return; }
           serveFile(req, res, file); return;
         }
       }

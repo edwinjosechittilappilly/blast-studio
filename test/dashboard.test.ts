@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, readFileSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, mkdirSync, readFileSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { request } from 'node:http';
 import { EventEmitter } from 'node:events';
 import type { spawn } from 'node:child_process';
@@ -56,6 +57,9 @@ test('dashboard authenticates, contains media and validates settings', async t =
   const base = `http://127.0.0.1:${started.port}`;
   assert.equal(await raw(started.port, '/', 'evil.example'), 421);
   assert.equal((await fetch(base + '/api/library')).status, 401);
+  const expired = await fetch(base + '/', { headers: { Accept: 'text/html' } });
+  assert.equal(expired.status, 401);
+  assert.equal(expired.headers.get('content-security-policy'), "default-src 'none'; base-uri 'none'");
   const exchange = await fetch(started.url, { redirect: 'manual' }); assert.equal(exchange.status, 302);
   const cookie = exchange.headers.get('set-cookie')!; assert.match(cookie, /HttpOnly/); assert.match(cookie, /SameSite=Strict/);
   assert.equal((await fetch(started.url, { redirect: 'manual' })).status, 401);
@@ -73,6 +77,32 @@ test('dashboard authenticates, contains media and validates settings', async t =
   assert.ok([403, 404].includes(await raw(started.port, '/media/launch/%2e%2e/studio.yml', `127.0.0.1:${started.port}`, cookie)));
   mkdirSync(join(root, 'projects/launch/assets/movie'), { recursive: true }); writeFileSync(join(root, 'projects/launch/assets/movie/test.mp4'), 'abcdef');
   const range = await fetch(base + '/media/launch/assets/movie/test.mp4', { headers: { ...headers, Range: 'bytes=1-3' } }); assert.equal(range.status, 206); assert.equal(await range.text(), 'bcd');
+  assert.match(range.headers.get('content-security-policy') ?? '', /sandbox/);
+  writeFileSync(join(root, 'projects/launch/assets/movie/test.pdf'), '%PDF-1.4\n');
+  const pdf = await fetch(base + '/media/launch/assets/movie/test.pdf', { headers });
+  assert.equal(pdf.status, 200);
+  assert.equal(pdf.headers.get('content-type'), 'application/pdf');
+  assert.equal(pdf.headers.get('content-security-policy'), "default-src 'none'");
+  assert.equal(await pdf.text(), '%PDF-1.4\n');
+});
+
+test('missing dashboard assets produce a protected HTML error', async t => {
+  const root = tempStudio(), source = fileURLToPath(new URL('../src/', import.meta.url));
+  cpSync(source, join(root, 'src'), {
+    recursive: true,
+    filter: path => path !== join(source, 'dashboard/build') && path !== join(source, 'dashboard/static/app.js'),
+  });
+  symlinkSync(fileURLToPath(new URL('../node_modules/', import.meta.url)), join(root, 'node_modules'), process.platform === 'win32' ? 'junction' : 'dir');
+  // The copied module resolves asset paths relative to its own location, unlike a static import.
+  const { startDashboard: startWithoutAssets } = await import(pathToFileURL(join(root, 'src/dashboard/server.ts')).href);
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') } });
+  const started = await startWithoutAssets(io, { port: 0 }); t.after(() => started.server.close());
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const response = await fetch(`http://127.0.0.1:${started.port}/`, { headers: { cookie } });
+  assert.equal(response.status, 503);
+  assert.match(response.headers.get('content-type') ?? '', /^text\/html/);
+  assert.equal(response.headers.get('content-security-policy'), "default-src 'none'; base-uri 'none'");
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
 });
 
 test('feedback and revision endpoints validate targets and serialize runs', async t => {
@@ -125,7 +155,7 @@ test('dashboard sessions survive restarts and reject tampering and expiration', 
   assert.equal((await fetch(url, { headers: { cookie: cookie.replace(/bs=./, 'bs=x') } })).status, 401);
   const payload = `1.${'a'.repeat(32)}`, key = readFileSync(join(root, '.dashboard-key'), 'utf8'), signature = createHmac('sha256', key).update(payload).digest('hex');
   assert.equal((await fetch(url, { headers: { cookie: `bs=${payload}.${signature}` } })).status, 401);
-  assert.equal(statSync(join(root, '.dashboard-key')).mode & 0o777, 0o600);
+  if (process.platform !== 'win32') assert.equal(statSync(join(root, '.dashboard-key')).mode & 0o777, 0o600);
   const future = `${Date.now() + 60000}.${'b'.repeat(32)}`;
   assert.equal((await fetch(url, { headers: { cookie: `bs=${future}.${'0'.repeat(64)}` } })).status, 401);
   const goodSignature = createHmac('sha256', key).update(future).digest('hex'), altered = `${Date.now() + 120000}.${'b'.repeat(32)}`;
@@ -146,9 +176,12 @@ test('project review selects outline rubric and finds asset captions', async t =
 test('dashboard rejects weak or malformed persistent keys', async () => {
   const { root, io } = fixture(), path = join(root, '.dashboard-key');
   writeFileSync(path, 'a'.repeat(64), { mode: 0o600 });
-  chmodSync(path, 0o644);
-  await assert.rejects(startDashboard(io, { port: 0 }), /Invalid dashboard signing key/);
-  chmodSync(path, 0o600); writeFileSync(path, '');
+  if (process.platform !== 'win32') {
+    chmodSync(path, 0o644);
+    await assert.rejects(startDashboard(io, { port: 0 }), /chmod 600/);
+  }
+  if (process.platform !== 'win32') chmodSync(path, 0o600);
+  writeFileSync(path, '');
   await assert.rejects(startDashboard(io, { port: 0 }), /Invalid dashboard signing key/);
 });
 

@@ -14,6 +14,7 @@ import { el, button, verdictTag, copyButton, scoreMeter, selfReview, rubricTable
 import { mediaGallery } from './components/media.js';
 const $ = s => document.querySelector(s), headers = { 'Content-Type': 'application/json', 'X-Requested-With': 'bstudio' };
 let timer, searchTimer, activeProject = null, activeTab = 'overview';
+const feedbackDrafts = new Map();
 async function api(path, options) { const response = await fetch(path, options), data = await response.json(); if (!response.ok) throw new Error(data.error || 'Request failed'); return data; }
 function message(text) { $('#message').textContent = text; }
 function toast(text, failed = false) { const notice = el('cds-toast-notification', null, 'job-toast'); notice.setAttribute('kind', failed ? 'error' : 'success'); const title = el('span', text); title.slot = 'title'; notice.append(title); notice.addEventListener('cds-notification-closed', () => notice.remove()); document.body.append(notice); }
@@ -40,17 +41,28 @@ function feedbackHistory(project, target) {
 }
 function feedbackForm(project, target) {
   const section = el('section', null, 'feedback-form'), field = el('cds-textarea'), name = target.platform || target.asset || 'project'; const label = el('span', `Your feedback for ${name}`); label.slot = 'label-text'; field.append(label); field.setAttribute('rows', '4'); field.setAttribute('maxlength', '4000'); field.setAttribute('enable-counter', ''); field.setAttribute('max-count', '4000');
+  const key = JSON.stringify([project.slug, target.platform || null, target.asset || null]); field.value = feedbackDrafts.get(key) || '';
+  field.addEventListener('input', () => { feedbackDrafts.set(key, field.value); });
   const actions = el('div', null, 'form-actions'), submit = button('Submit feedback', 'primary'); actions.append(submit); section.append(field, actions, feedbackHistory(project, target));
-  submit.addEventListener('click', async () => { const note = field.value?.trim(); if (!note) { message('Enter feedback before submitting.'); field.focus(); return; } submit.disabled = true; try { await api(`/api/projects/${encodeURIComponent(project.slug)}/feedback`, { method: 'POST', headers, body: JSON.stringify({ target, note }) }); await openProject(project.slug, activeTab); message('Feedback saved.'); $('#message').setAttribute('tabindex', '-1'); $('#message').focus(); } catch (error) { message(error.message); submit.disabled = false; } }); return section;
+  submit.addEventListener('click', async () => { const draft = field.value, note = draft?.trim(); if (!note) { message('Enter feedback before submitting.'); field.focus(); return; } submit.disabled = true; try { await api(`/api/projects/${encodeURIComponent(project.slug)}/feedback`, { method: 'POST', headers, body: JSON.stringify({ target, note }) }); if (feedbackDrafts.get(key) === draft) feedbackDrafts.delete(key); if (activeProject !== project.slug || $('#project').hidden || !section.isConnected) return; await openProject(project.slug, activeTab); if (activeProject !== project.slug || $('#project').hidden) return; message('Feedback saved.'); $('#message').setAttribute('tabindex', '-1'); $('#message').focus(); } catch (error) { message(error.message); submit.disabled = false; } }); return section;
 }
 async function jobStatus(project, region, apply) {
-  const status = await api(`/api/projects/${encodeURIComponent(project.slug)}/status`); if (activeProject !== project.slug || $('#project').hidden) return;
+  const status = await api(`/api/projects/${encodeURIComponent(project.slug)}/status`); if (activeProject !== project.slug || $('#project').hidden || !region.isConnected) return;
   const state = status.staleLock ? 'stale' : status.running ? 'running' : status.exitCode == null ? 'idle' : status.exitCode === 0 ? 'success' : 'failure';
   if (region.dataset.state !== state) { const announcement = region.querySelector('.job-announcement'); announcement.replaceChildren(); const notification = el('cds-inline-notification'); notification.setAttribute('kind', state === 'stale' || state === 'failure' ? 'error' : state === 'running' ? 'info' : 'success'); notification.setAttribute('hide-close-button', ''); notification.setAttribute('title', state === 'stale' ? 'Stale revision lock: confirm no revision is running, then remove .revise.lock from the project.' : state === 'running' ? 'Revision running' : state === 'idle' ? 'No revision running' : state === 'success' ? 'Revision completed' : `Revision failed (${status.exitCode})`); announcement.append(notification); region.dataset.state = state; }
   const log = region.querySelector('.job-log'); if (log.textContent !== status.lines.join('\n')) log.textContent = status.lines.join('\n'); log.parentElement.hidden = !status.lines.length;
   apply.disabled = status.running || status.staleLock || !project.feedback.some(entry => entry.status === 'pending');
-  if (status.running) { region.dataset.running = 'yes'; timer = setTimeout(() => jobStatus(project, region, apply).catch(error => message(error.message)), 3000); }
+  if (status.running) { region.dataset.running = 'yes'; scheduleStatus(project, region, apply); }
   else if (region.dataset.running === 'yes') { region.dataset.running = ''; const text = status.exitCode == null ? 'Revision finished; exit code unavailable after restart.' : status.exitCode === 0 ? 'Revision completed.' : 'Revision failed. Review the log.'; message(text); toast(text, status.exitCode != null && status.exitCode !== 0); await openProject(project.slug, activeTab); }
+}
+function scheduleStatus(project, region, apply) {
+  timer = setTimeout(() => {
+    if (activeProject !== project.slug || $('#project').hidden || !region.isConnected) return;
+    return jobStatus(project, region, apply).catch(error => {
+      if (activeProject !== project.slug || $('#project').hidden || !region.isConnected) return;
+      message(error.message); scheduleStatus(project, region, apply);
+    });
+  }, 3000);
 }
 function platformPanel(project, post) {
   const review = project.reviews.find(r => r.platform === post.platform), panel = el('div', null, 'platform-grid'), left = el('section', null, 'surface post-panel'), right = el('section', null, 'surface reviewer-panel');

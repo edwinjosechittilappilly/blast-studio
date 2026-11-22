@@ -24,6 +24,7 @@
     "node": ">=22.18"
   },
   "scripts": {
+    "pretest": "npm run build:ui",
     "test": "node --test --test-reporter=spec \"test/**/*.test.ts\" \"test/**/*.test.js\"",
     "typecheck": "tsc --noEmit",
     "build:ui": "node src/dashboard/ui/build.mjs",
