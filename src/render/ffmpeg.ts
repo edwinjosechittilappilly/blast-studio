@@ -38,6 +38,9 @@ export async function runTool(io: IO, name: keyof typeof guidance, command: stri
       }
     }
     const wrapped = sandbox ? sandboxCommand(io, sandbox.config, sandbox.workspace, temp, command, args, { render: true, loopback: name === "vhs" || name === "hyperframes", pty: name === "vhs", readDirs, writeDirs }) : { command, args };
+    // Bubblewrap hides the real home except for the explicitly mounted cache paths. HyperFrames
+    // also falls back to homedir() when it checks cache ownership, and refuses /tmp on Linux.
+    if (name === "hyperframes" && process.platform === "linux" && wrapped.command !== command) env.HOME = io.env.HOME ?? homedir();
     if (name === "hyperframes" && wrapped.command !== command) env.HYPERFRAMES_CHROME_SANDBOX = "0";
     if (name === "vhs" && wrapped.command !== command) env.VHS_NO_SANDBOX = "1";
     return await io.run(wrapped.command, wrapped.args, { cwd, env, timeoutMs });
