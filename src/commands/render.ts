@@ -16,6 +16,7 @@ import { UserError } from '../types.ts';
 import type { AssetMeta } from '../types.ts';
 import type { Command, IO } from '../io.ts';
 import { snapshot } from '../history.ts';
+import { loadFeedback, markRendered } from '../feedback.ts';
 
 async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<number> {
   const usage = 'usage: bstudio render <project>/<campaign> [--regen] [--assets ids] [--platforms ids]';
@@ -28,6 +29,7 @@ async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<nu
   let selected = parsed.values.assets === undefined ? undefined : new Set(parsed.values.assets.split(',').filter(Boolean));
   const selectedPlatforms = parsed.values.platforms === undefined ? undefined : new Set(parsed.values.platforms.split(',').filter(Boolean));
   const config = loadConfig(io), project = campaignDir(config, pos[0]), plan = readPlan(project), packs = loadPacks();
+  const feedback = loadFeedback(project);
   const validAssets = [...new Set(plan.flatMap(entry => entry.assets.map(asset => asset.id)))], validPlatforms = plan.map(entry => entry.platform);
   for (const id of selected ?? []) if (!validAssets.includes(id)) throw new UserError(`Unknown asset: ${id}. Valid assets: ${validAssets.join(', ') || '(none)'}`);
   for (const id of selectedPlatforms ?? []) if (!validPlatforms.some(platform => platform === id)) throw new UserError(`Unknown platform: ${id}. Valid platforms: ${validPlatforms.join(', ') || '(none)'}`);
@@ -39,6 +41,7 @@ async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<nu
   const metadata = new Map<string, { dir: string; meta: AssetMeta }>();
   const selections = new Map<string, Map<string, { image?: string; document?: string; slides?: string[] }>>();
   const rendered = new Set<string>();
+  const processedPlatforms = new Set<string>();
   try {
     const assets = plan.flatMap(entry => entry.assets).sort((a, b) => Number(b.kind === 'voiceover') - Number(a.kind === 'voiceover'));
     if (selected) for (const asset of assets) {
@@ -145,6 +148,7 @@ async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<nu
     for (const id of rendered) { const item = metadata.get(id)!; resolveAI(id); writeFileSync(join(item.dir, 'asset.yml'), stringify(item.meta)); }
     for (const [platform, post] of loadPosts(project)) {
       if (selectedPlatforms && !selectedPlatforms.has(platform)) continue;
+      processedPlatforms.add(platform);
       let changed = false;
       const indices = new Map<string, number>();
       for (const media of post.media) {
@@ -162,8 +166,10 @@ async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<nu
       if (changed) writeFileSync(post.path, serializePost(post));
     }
     for (const line of skipped) io.out(`skipped ${line}`);
-    io.out(`Rendered ${rendered.size - skipped.length} assets${skipped.length ? `, skipped ${skipped.length}` : ''}`); return 0;
+    io.out(`Rendered ${rendered.size - skipped.length} assets${skipped.length ? `, skipped ${skipped.length}` : ''}`);
   } finally { await closeBrowser(); }
+  markRendered(project, feedback, new Set([...rendered].filter(id => !metadata.get(id)?.meta.skipped)), processedPlatforms);
+  return 0;
 }
 
 export const run: Command = (args, io) => render(args, io, true);

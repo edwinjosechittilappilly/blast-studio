@@ -49,7 +49,7 @@ export function loadFeedback(projectDir: string): FeedbackEntry[] {
   const file = join(projectDir, 'feedback.yml');
   if (!existsSync(file)) return [];
   const entries: unknown = parse(readFileSync(file, 'utf8'));
-  if (!Array.isArray(entries) || !entries.every(entry => entry && typeof entry.id === 'string' && entry.target && typeof entry.target === 'object' && !Array.isArray(entry.target) && (entry.target.asset === undefined || typeof entry.target.asset === 'string') && (entry.target.platform === undefined || typeof entry.target.platform === 'string') && typeof entry.note === 'string' && typeof entry.at === 'string' && (entry.status === 'pending' || entry.status === 'applied' || entry.status === 'rejected') && (entry.rejectedReason === undefined || typeof entry.rejectedReason === 'string'))) throw new UserError('feedback.yml: expected a list of feedback entries');
+  if (!Array.isArray(entries) || !entries.every(entry => entry && typeof entry.id === 'string' && entry.target && typeof entry.target === 'object' && !Array.isArray(entry.target) && (entry.target.asset === undefined || typeof entry.target.asset === 'string') && (entry.target.platform === undefined || typeof entry.target.platform === 'string') && typeof entry.note === 'string' && typeof entry.at === 'string' && (entry.status === 'pending' || entry.status === 'applied' || entry.status === 'rejected') && (entry.rejectedReason === undefined || typeof entry.rejectedReason === 'string') && (entry.sourcesWritten === undefined || typeof entry.sourcesWritten === 'string') && (entry.renderedAt === undefined || typeof entry.renderedAt === 'string') && (entry.sourceTargets === undefined || entry.sourceTargets && Array.isArray(entry.sourceTargets.assets) && entry.sourceTargets.assets.every((id: unknown) => typeof id === 'string') && Array.isArray(entry.sourceTargets.platforms) && entry.sourceTargets.platforms.every((id: unknown) => typeof id === 'string')))) throw new UserError('feedback.yml: expected a list of feedback entries');
   return entries as FeedbackEntry[];
 }
 
@@ -67,6 +67,53 @@ export function removeFeedback(projectDir: string, id: string): void {
   if (!entry) throw new UserError(`Unknown feedback: ${id}`);
   if (entry.status === 'applied') throw new UserError(`Cannot remove applied feedback: ${id}`);
   writeFeedback(projectDir, entries.filter(item => item.id !== id));
+}
+
+export function markSourcesWritten(projectDir: string, ids: string[], targets?: { assets: string[]; platforms: string[] }): void {
+  if (!ids.length) return;
+  updateFeedback(projectDir, entries => {
+    const selected = new Set(ids), at = new Date().toISOString();
+    for (const entry of entries) if (selected.has(entry.id) && entry.status === 'pending') {
+      entry.sourcesWritten = at;
+      if (targets) entry.sourceTargets = { assets: [...targets.assets], platforms: [...targets.platforms] };
+      else delete entry.sourceTargets;
+      delete entry.renderedAt;
+    }
+  });
+}
+
+function feedbackTargets(projectDir: string, entry: FeedbackEntry): { assets: string[]; platforms: string[] } {
+  if (entry.sourceTargets) return entry.sourceTargets;
+  const posts = loadPosts(projectDir), plan = readPlan(projectDir);
+  if (entry.target.asset) return {
+    assets: [entry.target.asset],
+    platforms: [...posts.values()].filter(post => post.media.some(media => media.asset === entry.target.asset)).map(post => post.platform),
+  };
+  if (entry.target.platform) return { assets: [], platforms: [entry.target.platform] };
+  return { assets: [...new Set(plan.flatMap(item => item.assets.map(asset => asset.id)))], platforms: [...posts.keys()] };
+}
+
+export function markRendered(projectDir: string, snapshot: FeedbackEntry[], assets: Set<string>, platforms?: Set<string>): void {
+  const eligible = snapshot.filter(entry => entry.status === 'pending' && entry.sourcesWritten && (() => {
+    const targets = feedbackTargets(projectDir, entry);
+    return targets.assets.every(id => assets.has(id)) && (!platforms || targets.platforms.every(id => platforms.has(id)));
+  })());
+  if (!eligible.length) return;
+  updateFeedback(projectDir, entries => {
+    const at = new Date().toISOString();
+    for (const entry of entries) if (entry.status === 'pending' && eligible.some(item => item.id === entry.id && item.sourcesWritten === entry.sourcesWritten)) entry.renderedAt = at;
+  });
+}
+
+export function markReviewed(projectDir: string, snapshot: FeedbackEntry[], platforms?: Set<string>): void {
+  const eligible = snapshot.filter(entry => entry.status === 'pending' && entry.sourcesWritten && entry.renderedAt && (!platforms || feedbackTargets(projectDir, entry).platforms.every(id => platforms.has(id))));
+  if (!eligible.length) return;
+  updateFeedback(projectDir, entries => {
+    const at = new Date().toISOString();
+    for (const entry of entries) if (entry.status === 'pending' && eligible.some(item => item.id === entry.id && item.sourcesWritten === entry.sourcesWritten && item.renderedAt === entry.renderedAt)) {
+      entry.status = 'applied'; entry.appliedAt = at;
+    }
+  });
 }
 
 export function markApplied(projectDir: string, ids: string[]): void {

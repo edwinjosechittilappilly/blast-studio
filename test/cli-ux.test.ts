@@ -16,7 +16,7 @@ import { run as status } from '../src/commands/status.ts';
 import { run as revise } from '../src/commands/revise.ts';
 import { run as review } from '../src/commands/review.ts';
 import { run as render } from '../src/commands/render.ts';
-import { loadFeedback, markApplied } from '../src/feedback.ts';
+import { loadFeedback, markApplied, markSourcesWritten } from '../src/feedback.ts';
 import { historyEntries, snapshot } from '../src/history.ts';
 import { UserError } from '../src/types.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
@@ -321,4 +321,61 @@ test('platform-scoped rendering leaves other and shared assets untouched', async
   await render(['demo/launch', '--platforms', 'bluesky'], io);
   assert.match(readFileSync(join(dir, 'assets/selected/asset.yml'), 'utf8'), /skipped/);
   for (const id of ['other', 'shared']) assert.equal(readFileSync(join(dir, 'assets', id, 'asset.yml'), 'utf8'), `id: ${id}\nkind: voiceover\n`);
+});
+
+function writtenFeedbackFixture() {
+  const { dir, io } = fixture();
+  writeFileSync(join(io.cwd, 'studio.yml'), 'brand: {name: Demo}\nplatforms: [bluesky, linkedin]\nreviewer: {command: null}\n');
+  const assets = ['first', 'second'].map(id => ({ id, kind: 'logo', brief: id }));
+  writeFileSync(join(dir, 'plan.yml'), stringify(['bluesky', 'linkedin'].map(platform => ({
+    platform, type: 'text', angle: 'Test', hooks: ['one', 'two', 'three'], assets,
+  }))));
+  writeFileSync(join(dir, 'posts/linkedin.md'), '---\nplatform: linkedin\nevidence: []\nmedia: []\n---\nOriginal\n');
+  for (const { id } of assets) {
+    mkdirSync(join(dir, 'assets', id), { recursive: true });
+    writeFileSync(join(dir, 'assets', id, 'asset.yml'), stringify({ id, kind: 'logo', provider: 'template', outputs: [], license: 'OFL', aiGenerated: false }));
+    writeFileSync(join(dir, 'assets', id, 'source.svg'), '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" fill="black"/></svg>');
+  }
+  return { dir, io };
+}
+
+test('separate render and review apply feedback after both succeed', async () => {
+  const { dir, io } = writtenFeedbackFixture();
+  await feedback(['demo/launch', 'add', '--note', 'Revise both logos'], io);
+  const id = loadFeedback(dir)[0].id;
+  markSourcesWritten(dir, [id], { assets: ['first', 'second'], platforms: ['bluesky', 'linkedin'] });
+  assert.ok(loadFeedback(dir)[0].sourcesWritten);
+  await render(['demo/launch', '--assets', 'first,second'], io);
+  assert.equal(loadFeedback(dir)[0].status, 'pending');
+  await review(['demo/launch'], io);
+  assert.equal(loadFeedback(dir)[0].status, 'applied');
+  assert.ok(loadFeedback(dir)[0].appliedAt);
+});
+
+test('partial render or review does not apply feedback for all targets', async () => {
+  const { dir, io } = writtenFeedbackFixture();
+  await feedback(['demo/launch', 'add', '--note', 'Revise both logos'], io);
+  const id = loadFeedback(dir)[0].id;
+  markSourcesWritten(dir, [id], { assets: ['first', 'second'], platforms: ['bluesky', 'linkedin'] });
+  await render(['demo/launch', '--assets', 'first'], io);
+  await review(['demo/launch'], io);
+  assert.equal(loadFeedback(dir)[0].status, 'pending');
+  await render(['demo/launch', '--assets', 'first,second'], io);
+  await review(['demo/launch', '--platforms', 'bluesky'], io);
+  assert.equal(loadFeedback(dir)[0].status, 'pending');
+  await review(['demo/launch'], io);
+  assert.equal(loadFeedback(dir)[0].status, 'applied');
+});
+
+test('review before render does not apply feedback', async () => {
+  const { dir, io } = writtenFeedbackFixture();
+  await feedback(['demo/launch', 'add', '--note', 'Revise both logos'], io);
+  const id = loadFeedback(dir)[0].id;
+  markSourcesWritten(dir, [id], { assets: ['first', 'second'], platforms: ['bluesky', 'linkedin'] });
+  await review(['demo/launch'], io);
+  assert.equal(loadFeedback(dir)[0].status, 'pending');
+  await render(['demo/launch'], io);
+  assert.equal(loadFeedback(dir)[0].status, 'pending');
+  await review(['demo/launch'], io);
+  assert.equal(loadFeedback(dir)[0].status, 'applied');
 });
