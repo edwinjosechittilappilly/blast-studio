@@ -35,6 +35,12 @@ test('lists and resolves individual post and asset blockers with audit and snaps
   assert.deepEqual(readResolutions(dir).map(item => item.text), ['First', 'Asset issue']);
 });
 
+test('resolves blockers with options before the campaign address', async () => {
+  const { dir, io } = fixture();
+  assert.equal(await main(['blockers', '--text', 'First', 'p/c', 'resolve', 'post:x', '0', '--reason', 'Done'], io), 0);
+  assert.deepEqual(listBlockers(dir).filter(blocker => blocker.target === 'post:x').map(blocker => blocker.text), ['Second']);
+});
+
 test('rejects invalid targets, indexes and reasons without changing artifacts', async () => {
   const { dir, io } = fixture();
   const before = readFileSync(join(dir, 'posts/x.md'), 'utf8');
@@ -100,6 +106,17 @@ for (const eol of ['\n', '\r\n']) {
     assert.equal(readFileSync(file, 'utf8'), before.replace(`  - First${eol}`, ''));
     assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'Second', '--reason', 'Done'], io), 0);
     assert.equal(readFileSync(file, 'utf8'), before.replace(`blockers:${eol}  - First${eol}  - Second`, 'blockers: []'));
+  });
+}
+
+for (const eol of ['\n', '\r\n']) {
+  test(`resolves a singleton below an owner comment (${eol === '\n' ? 'LF' : 'CRLF'})`, async () => {
+    const { dir, io } = fixture();
+    const file = join(dir, 'assets/a/asset.yml');
+    const before = ['id: a', 'kind: card', 'blockers: # owner note', '  - Asset issue', 'title: Keep me', ''].join(eol);
+    writeFileSync(file, before);
+    assert.equal(await main(['blockers', 'p/c', 'resolve', 'asset:a', '0', '--text', 'Asset issue', '--reason', 'Done'], io), 0);
+    assert.equal(readFileSync(file, 'utf8'), before.replace('  - Asset issue', '  []'));
   });
 }
 

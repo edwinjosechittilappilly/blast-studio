@@ -10,7 +10,8 @@ import { runGates } from './review/gates.ts';
 import { reserveExportHistory, writeCampaignZip } from './campaign-zip.ts';
 import { loadPacks } from './packs.ts';
 import { loadPosts } from './posts.ts';
-import { mediaContentHash, reviewHash } from './review-hash.ts';
+import { mediaContentHash, resolutionMakesReviewStale, reviewHash } from './review-hash.ts';
+import { readResolutions } from './blockers.ts';
 import { UserError } from './types.ts';
 import type { AssetMeta, Post, Review, StudioConfig } from './types.ts';
 
@@ -56,6 +57,7 @@ export function exportProject(project: string, identity: CampaignRef, config: St
     return existsSync(file) ? [parse(readFileSync(file, 'utf8')) as AssetMeta] : [];
   }) : [];
   if (!posts.size) throw new UserError('No posts to export');
+  const resolutions = readResolutions(project);
   const prepared = [...posts.values()].map(post => {
     let review: Review;
     try { review = JSON.parse(readFileSync(join(project, 'reviews', `${post.platform}.json`), 'utf8')) as Review; }
@@ -64,6 +66,7 @@ export function exportProject(project: string, identity: CampaignRef, config: St
     if (!review || review.platform !== post.platform || !['pass', 'accepted'].includes(review.verdict) || !Array.isArray(review.gates) || review.gates.some(g => !g || g.pass !== true) || requiredGates.some(id => !review.gates.some(g => g.id === id))) throw new UserError(`${post.platform}: review is not passing; re-run review`);
     const hash = reviewHash({ ...post, media: post.media.map(m => ({ path: m.file, alt: m.alt })) });
     if (hash !== review.postHash) throw new UserError(`${post.platform}: review is stale; re-run review`);
+    if (resolutionMakesReviewStale(post, review, assets, resolutions)) throw new UserError(`${post.platform}: review is stale; re-run review`);
     if (review.mediaHash !== mediaContentHash(project, post.media)) throw new UserError(`${post.platform}: review media is stale; re-run review`);
     const pack = packs.get(post.platform);
     if (!pack) throw new UserError(`${post.platform}: pack missing`);

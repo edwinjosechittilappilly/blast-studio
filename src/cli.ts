@@ -151,7 +151,7 @@ export function realIO(): IO {
 /** Serialize campaign mutations across CLI and dashboard processes. */
 export async function withCampaignLock(name: string, args: string[], io: IO, run: (io: IO) => Promise<number>): Promise<number> {
   const locked = (["new", "brief", "plan", "make", "render", "review", "revise", "accept", "confirm", "export", "mark", "feedback", "restore"].includes(name) && !(name === "feedback" && args[1] === "list")) || (name === "blockers" && args.includes("resolve"));
-  const valued = ["--idea", "--note", "--url", "--pr", "--commit", "--repo", "--mb-brief", "--from", "--assets", "--platforms", "--asset", "--platform", "--reason", "--license", "--mb"];
+  const valued = ["--idea", "--note", "--url", "--pr", "--commit", "--repo", "--mb-brief", "--from", "--assets", "--platforms", "--asset", "--platform", "--reason", "--text", "--license", "--mb"];
   let refArg: string | undefined;
   if (locked && !args.includes("--help") && !args.includes("-h")) {
     for (let i = 0; i < args.length; i++) {
@@ -196,7 +196,7 @@ function targetedProjects(name: string, args: string[]): string[] {
   if (args.includes("--help") || args.includes("-h")) return [];
   if ((name === "project" || name === "campaign") && args[0] === "rename") return args.slice(1, 3).map(value => value.split("/")[0]);
   if (!["new", "brief", "plan", "make", "render", "review", "revise", "accept", "confirm", "export", "mark", "feedback", "blockers", "history", "restore", "status"].includes(name)) return [];
-  const valued = ["--idea", "--note", "--url", "--pr", "--commit", "--repo", "--mb-brief", "--from", "--assets", "--platforms", "--asset", "--platform", "--reason", "--license", "--mb"];
+  const valued = ["--idea", "--note", "--url", "--pr", "--commit", "--repo", "--mb-brief", "--from", "--assets", "--platforms", "--asset", "--platform", "--reason", "--text", "--license", "--mb"];
   for (let i = 0; i < args.length; i++) {
     if (valued.includes(args[i])) { i++; continue; }
     if (!args[i].startsWith("-")) return [args[i].split("/")[0]];

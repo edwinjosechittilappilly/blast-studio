@@ -466,6 +466,51 @@ test('blocker gate summaries link to the list and assets show only asset blocker
   assert.equal(await page.getByText('First', { exact: true }).count(), 0);
 });
 
+test('destination blocker links reach both post and counted asset blockers', async t => {
+  const { page, url } = await dashboard(t);
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.reviews = [{ platform: 'linkedin', verdict: 'blocked', gates: [{ id: 'specs', pass: false, message: 'Blocker in posts/linkedin.md: Post issue; Blocker in asset card: Asset issue' }], scores: [] }];
+    await route.fulfill({ json: project });
+  });
+  await page.route('**/api/campaigns/acme/launch/blockers', route => route.fulfill({ json: { blockers: [
+    { target: 'post:linkedin', index: 0, text: 'Post issue' },
+    { target: 'asset:card', index: 0, text: 'Asset issue' },
+    { target: 'asset:other', index: 0, text: 'Unrelated asset issue' },
+  ], resolutions: [] } }));
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  await page.getByRole('link', { name: 'see Blockers' }).first().click();
+  await page.getByRole('button', { name: 'Resolve assets/card/asset.yml blocker 1' }).waitFor();
+  await page.getByRole('button', { name: 'Resolve posts/linkedin.md blocker 1' }).waitFor();
+  assert.equal(await page.getByText('Unrelated asset issue').count(), 0);
+});
+
+test('returning to Assets refreshes campaign data after an off-tab resolution', async t => {
+  const { page, url } = await dashboard(t);
+  let resolved = false;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.assets = [{ id: 'card', kind: 'image', outputs: [], blockers: resolved ? [] : ['Missing source'] }];
+    await route.fulfill({ json: project });
+  });
+  await page.route('**/api/campaigns/acme/launch/blockers', route => route.fulfill({ json: {
+    blockers: resolved ? [] : [{ target: 'asset:card', index: 0, text: 'Missing source' }], resolutions: [],
+  } }));
+  await page.route('**/api/jobs?*', route => route.fulfill({ json: resolved ? [{ id: 'resolve-1', operation: 'blockers resolve', target: 'asset:card', state: 'succeeded' }] : [] }));
+  await page.goto(`${url}#/p/acme/launch/assets`);
+  await page.getByText('Missing source', { exact: true }).waitFor();
+  const row = page.getByRole('row').filter({ hasText: 'card' });
+  assert.equal(await row.getByRole('cell').nth(6).textContent(), '1');
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  resolved = true;
+  await page.getByRole('tab', { name: 'Assets' }).click();
+  await page.getByText('No open blockers.').waitFor();
+  await page.waitForFunction(() => {
+    const row = [...document.querySelectorAll('cds-table-row')].find(item => item.textContent?.includes('card'));
+    return row?.querySelectorAll('cds-table-cell')[6]?.textContent === '0';
+  });
+});
+
 test('another target’s resolution job is not shown in the destination blocker section', async t => {
   const { page, url } = await dashboard(t);
   await page.route('**/api/jobs?*', route => route.fulfill({ json: [{ id: 'other', operation: 'blockers resolve', target: 'post:x', state: 'running', createdAt: '2026-01-01T00:00:00Z' }] }));

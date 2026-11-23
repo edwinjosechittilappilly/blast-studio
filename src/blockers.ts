@@ -105,7 +105,9 @@ export function resolveBlocker(dir: string, target: string, index: number, text:
           if (end === item.range[2] && source.slice(0, end).endsWith('\r\n')) replacement += '\r\n';
           else if (end === item.range[2] && source[end - 1] === '\n') replacement += '\n';
         } else {
-          replacement = '[]';
+          replacement = source.slice(start, indicator.offset) + '[]';
+          if (end === item.range[2] && source.slice(0, end).endsWith('\r\n')) replacement += '\r\n';
+          else if (end === item.range[2] && source[end - 1] === '\n') replacement += '\n';
         }
       }
     } else throw new UserError(`${target}: invalid blockers sequence`);

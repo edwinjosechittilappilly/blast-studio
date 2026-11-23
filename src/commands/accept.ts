@@ -10,7 +10,8 @@ import { parseCampaignRef } from '../campaigns.ts';
 import { loadPosts } from '../posts.ts';
 import type { Command } from '../io.ts';
 import { PLATFORM_IDS, UserError, type AssetMeta, type PlatformId, type Review } from '../types.ts';
-import { mediaContentHash, reviewHash } from '../review-hash.ts';
+import { mediaContentHash, resolutionMakesReviewStale, reviewHash } from '../review-hash.ts';
+import { readResolutions } from '../blockers.ts';
 
 const acceptUsage = 'usage: bstudio accept <project>/<campaign> <platform> --reason <reason>';
 const confirmUsage = 'usage: bstudio confirm <project>/<campaign> <asset-id> [--trademark-checked] [--license <license>]';
@@ -36,6 +37,7 @@ export const run: Command = async (args, io) => {
     const path = join(assetsDir, id, 'asset.yml');
     return existsSync(path) ? [parse(readFileSync(path, 'utf8')) as AssetMeta] : [];
   }) : [];
+  if (resolutionMakesReviewStale(post, review, assets, readResolutions(dir))) throw new UserError('Review is stale; run review again');
   const currentGates = runGates(post, loadPack(post.platform), assets, readBrief(dir), config, dir, address);
   if (currentGates.some(g => !g.pass)) throw new UserError('Cannot accept a failed gate; run review again');
   review.verdict = 'accepted'; review.acceptedReason = reason; review.at = new Date().toISOString();
