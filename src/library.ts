@@ -86,7 +86,8 @@ export function projectReview(config: StudioConfig, slug: string, environment: {
     const assets = new Set(post.media.map(media => media.asset));
     const pendingAssets = [...assets];
     while (pendingAssets.length) {
-      const asset = project.assets.find(item => item.id === pendingAssets.pop());
+      const id = pendingAssets.pop();
+      const asset = project.assets.find(item => item.id === id);
       for (const embedded of asset?.embeds ?? []) if (!assets.has(embedded)) {
         assets.add(embedded);
         pendingAssets.push(embedded);

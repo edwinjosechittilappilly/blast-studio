@@ -280,8 +280,11 @@ test('project review payload includes rubric, threshold and maker review', async
 test('project reviews remain stale after reload only for destinations affected by later resolutions', async t => {
   const { root, io } = fixture(), dir = join(root, 'projects/acme/campaigns/launch');
   writeFileSync(join(dir, 'assets/card/image.png'), 'image');
+  mkdirSync(join(dir, 'assets/a'));
+  writeFileSync(join(dir, 'assets/a/asset.yml'), 'id: a\nkind: card\noutputs: []\n');
+  writeFileSync(join(dir, 'assets/a/image.png'), 'other image');
   writeFileSync(join(dir, 'assets/card/asset.yml'), 'id: card\nkind: card\noutputs: []\nembeds: [logo]\n');
-  writeFileSync(join(dir, 'posts/linkedin.md'), '---\nplatform: linkedin\nevidence: []\nmedia: [{asset: card, file: assets/card/image.png, alt: Card, kind: image}]\n---\nHello');
+  writeFileSync(join(dir, 'posts/linkedin.md'), '---\nplatform: linkedin\nevidence: []\nmedia: [{asset: a, file: assets/a/image.png, alt: Other, kind: image}, {asset: card, file: assets/card/image.png, alt: Card, kind: image}]\n---\nHello');
   writeFileSync(join(dir, 'posts/x.md'), '---\nplatform: x\nevidence: []\nmedia: []\n---\nHello');
   const posts = loadPosts(dir);
   const saveReview = (platform: 'linkedin' | 'x', at: string) => {
@@ -298,16 +301,30 @@ test('project reviews remain stale after reload only for destinations affected b
   const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
   const project = async () => (await (await fetch(`http://127.0.0.1:${started.port}/api/project/acme%2Flaunch`, { headers: { cookie } })).json()).reviews as { platform: string; stale: boolean }[];
   const stale = async () => Object.fromEntries((await project()).map(review => [review.platform, review.stale]));
+  const next = async () => {
+    const statusIO = fakeIO({ cwd: root, env: io.env });
+    await status(['acme/launch'], statusIO);
+    return statusIO.text();
+  };
   assert.deepEqual(await stale(), { linkedin: false, x: false });
+  writeFileSync(join(dir, 'resolutions.yml'), '- target: asset:unrelated\n  text: Confirm rights\n  reason: Verified\n  resolvedAt: "2025-01-02T00:00:00.000Z"\n  by: owner\n');
+  assert.deepEqual(await stale(), { linkedin: false, x: false });
+  assert.doesNotMatch(await next(), /next: run bstudio review/);
   writeFileSync(join(dir, 'resolutions.yml'), '- target: asset:logo\n  text: Confirm rights\n  reason: Verified\n  resolvedAt: "2025-01-02T00:00:00.000Z"\n  by: owner\n');
   assert.deepEqual(await stale(), { linkedin: true, x: false });
+  assert.match(await next(), /next: run bstudio review acme\/launch/);
   assert.deepEqual(await stale(), { linkedin: true, x: false });
   saveReview('linkedin', '2025-01-03T00:00:00.000Z');
   assert.deepEqual(await stale(), { linkedin: false, x: false });
+  assert.doesNotMatch(await next(), /next: run bstudio review/);
   writeFileSync(join(dir, 'resolutions.yml'), '- target: post:x\n  text: Confirm claim\n  reason: Verified\n  resolvedAt: "2025-01-04T00:00:00.000Z"\n  by: owner\n');
   assert.deepEqual(await stale(), { linkedin: false, x: true });
   saveReview('x', '2025-01-04T00:00:00.000Z');
   assert.deepEqual(await stale(), { linkedin: false, x: false });
+  assert.doesNotMatch(await next(), /next: run bstudio review/);
+  writeFileSync(join(dir, 'posts/x.md'), '---\nplatform: x\nevidence: []\nmedia: []\n---\nChanged');
+  assert.deepEqual(await stale(), { linkedin: false, x: true });
+  assert.match(await next(), /next: run bstudio review acme\/launch/);
 });
 
 test('blocker endpoint exposes active blockers and resolution history to authenticated sessions', async t => {
