@@ -6,6 +6,7 @@ import { main } from '../src/cli.ts';
 import { acquireCampaignLock } from '../src/jobs/runner.ts';
 import { listBlockers, readResolutions } from '../src/blockers.ts';
 import { historyEntries, snapshot } from '../src/history.ts';
+import { stringify } from 'yaml';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 function fixture() {
@@ -88,6 +89,64 @@ test('preserves unrelated YAML and post body including CRLF', async () => {
   assert.equal(readFileSync(file, 'utf8'), before.replace('[First, Second]', '[Second]'));
 });
 
+for (const eol of ['\n', '\r\n']) {
+  test(`resolution preserves serialized wrapped YAML byte-for-byte (${eol === '\n' ? 'LF' : 'CRLF'})`, async () => {
+    const { dir, io } = fixture();
+    const file = join(dir, 'posts/x.md');
+    const yaml = stringify({ platform: 'x', evidence: [], media: [], title: 'A long wrapped title '.repeat(10), blockers: ['First', 'Second'], description: 'Another wrapped value '.repeat(10) }).replace(/\n/g, eol);
+    const before = `---${eol}# keep this comment${eol}${yaml}---${eol}${eol}Body stays.${eol}`;
+    writeFileSync(file, before);
+    assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'First', '--reason', 'Done'], io), 0);
+    assert.equal(readFileSync(file, 'utf8'), before.replace(`  - First${eol}`, ''));
+    assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'Second', '--reason', 'Done'], io), 0);
+    assert.equal(readFileSync(file, 'utf8'), before.replace(`blockers:${eol}  - First${eol}  - Second`, 'blockers: []'));
+  });
+}
+
+test('removes middle and last inline flow entries without reserializing neighbors', async () => {
+  const { dir, io } = fixture();
+  const file = join(dir, 'assets/a/asset.yml');
+  const before = 'id: a\nother: { x: [1, 2] } # keep\nblockers: [First, "Second", Third] # keep\n';
+  writeFileSync(file, before);
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'asset:a', '1', '--text', 'Second', '--reason', 'Done'], io), 0);
+  assert.equal(readFileSync(file, 'utf8'), before.replace('"Second", ', ''));
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'asset:a', '1', '--text', 'Third', '--reason', 'Done'], io), 0);
+  assert.equal(readFileSync(file, 'utf8'), before.replace(', "Second", Third', ''));
+});
+
+test('resolves aliased sequences and scalar items without modifying their anchors', async () => {
+  const { dir, io } = fixture();
+  const file = join(dir, 'assets/a/asset.yml');
+  const sequence = 'id: a\nshared: &issues ["First", "Second"] # anchor\nblockers: *issues # alias\n';
+  writeFileSync(file, sequence);
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'asset:a', '0', '--text', 'First', '--reason', 'Done'], io), 0);
+  assert.equal(readFileSync(file, 'utf8'), sequence.replace('*issues', '["Second"]'));
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'asset:a', '0', '--text', 'Second', '--reason', 'Done'], io), 0);
+  assert.equal(readFileSync(file, 'utf8'), sequence.replace('*issues', '[]'));
+
+  const scalar = 'id: a\nshared: &issue First # anchor\nblockers:\n  - *issue\n  - Second\n';
+  writeFileSync(file, scalar);
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'asset:a', '0', '--text', 'First', '--reason', 'Done'], io), 0);
+  assert.equal(readFileSync(file, 'utf8'), scalar.replace('  - *issue\n', ''));
+});
+
+test('rejects removing an anchored blocker referenced elsewhere without changing artifacts', async () => {
+  const { dir, io } = fixture();
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'First', '--reason', 'Done'], io), 0);
+  const file = join(dir, 'assets/a/asset.yml');
+  const before = 'id: a\nblockers:\n  - &issue First\n  - Second\nshared: *issue\n';
+  writeFileSync(file, before);
+  const log = readFileSync(join(dir, 'resolutions.yml'), 'utf8');
+  const history = historyEntries(dir);
+  const files = readdirSync(join(dir, 'assets/a'));
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'asset:a', '0', '--text', 'First', '--reason', 'Done'], io), 1);
+  assert.match(io.text(), /cannot safely update blockers/);
+  assert.equal(readFileSync(file, 'utf8'), before);
+  assert.equal(readFileSync(join(dir, 'resolutions.yml'), 'utf8'), log);
+  assert.deepEqual(historyEntries(dir), history);
+  assert.deepEqual(readdirSync(join(dir, 'assets/a')), files);
+});
+
 test('blocker text beginning with a dash is passed as text', async () => {
   const { dir, io } = fixture();
   const file = join(dir, 'assets/a/asset.yml');
@@ -115,6 +174,25 @@ test('blocker snapshots do not evict workflow snapshots', async () => {
   assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'First', '--reason', 'Done'], io), 0);
   assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'Second', '--reason', 'Done'], io), 0);
   assert.equal(historyEntries(dir).filter(name => name.includes('-make-')).length, 20);
+});
+
+test('blocker snapshot retention is independent and preserves a requested older entry', () => {
+  const { dir } = fixture();
+  const plan = join(dir, 'plan.yml');
+  writeFileSync(plan, 'version: workflow\n');
+  const workflow = snapshot(dir, 'make')!;
+  let preserved = '';
+  for (let n = 0; n < 52; n++) {
+    writeFileSync(plan, `version: blocker-${n}\n`);
+    const entry = snapshot(dir, 'blockers', preserved || undefined)!;
+    if (n === 0) preserved = entry;
+  }
+  const entries = historyEntries(dir);
+  assert.equal(entries.filter(name => name.includes('-blockers-')).length, 50);
+  assert.ok(entries.includes(preserved));
+  assert.ok(entries.includes(workflow));
+  assert.ok(!entries.some(name => name.startsWith('3-blockers-')));
+  assert.ok(!entries.some(name => name.startsWith('4-blockers-')));
 });
 
 test('snapshots distinguish equal-sized files with identical modification times', () => {

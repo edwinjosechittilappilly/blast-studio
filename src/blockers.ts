@@ -1,7 +1,8 @@
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { parse, parseDocument, stringify } from 'yaml';
+import { isDeepStrictEqual } from 'node:util';
+import { isAlias, isMap, isScalar, isSeq, parse, parseDocument, stringify } from 'yaml';
 import { loadPosts } from './posts.ts';
 import { snapshot } from './history.ts';
 import { containedPath } from './campaigns.ts';
@@ -46,7 +47,8 @@ export function resolveBlocker(dir: string, target: string, index: number, text:
   const original = readFileSync(file, 'utf8');
   const frontmatter = match[1] === 'post' ? original.match(/^(---\s*\r?\n)([\s\S]*?)(\r?\n---\s*(?:\r?\n|$))([\s\S]*)$/) : null;
   if (match[1] === 'post' && !frontmatter) throw new UserError(`${target}: expected YAML frontmatter`);
-  const doc = parseDocument(frontmatter ? frontmatter[2] : original);
+  const source = frontmatter ? frontmatter[2] : original;
+  const doc = parseDocument(source, { keepSourceTokens: true });
   if (doc.errors.length) throw new UserError(`${target}: invalid YAML`);
   const data = doc.toJS() as { blockers?: unknown } | null;
   if (!data || typeof data !== 'object' || !validBlockers(data.blockers)) throw new UserError(`${target}: invalid blockers`);
@@ -54,10 +56,73 @@ export function resolveBlocker(dir: string, target: string, index: number, text:
   if (!blockers || blockers[index] !== text) throw new UserError('This blocker list changed — refresh');
   const resolutions = readResolutions(dir);
   const resolution: BlockerResolution = { target, text, reason: reason.trim(), resolvedAt: new Date().toISOString(), by: 'owner' };
-  doc.deleteIn(['blockers', index]);
-  const eol = original.includes('\r\n') ? '\r\n' : '\n';
-  const yaml = doc.toString({ lineWidth: 0, flowCollectionPadding: false }).replace(/\n/g, eol);
-  const updated = frontmatter ? `${frontmatter[1]}${yaml.endsWith(eol) ? yaml.slice(0, -eol.length) : yaml}${frontmatter[3]}${frontmatter[4]}` : original.endsWith('\n') ? yaml : yaml.replace(/\r?\n$/, '');
+  const sequence = doc.get('blockers', true);
+  let start: number, end: number, replacement = '';
+  if (isAlias(sequence) && sequence.range) {
+    [start, end] = sequence.range;
+    replacement = JSON.stringify(blockers.filter((_, i) => i !== index));
+  } else {
+    if (!isSeq(sequence) || !sequence.srcToken || !isMap(doc.contents)) throw new UserError(`${target}: invalid blockers sequence`);
+    const item = sequence.items[index];
+    if ((!isScalar(item) && !isAlias(item)) || !item.range) throw new UserError(`${target}: invalid blocker`);
+    const token = sequence.srcToken;
+    if (token.type === 'flow-collection') {
+      start = item.range[0];
+      end = item.range[1];
+      if (sequence.items.length > 1) {
+        if (index < sequence.items.length - 1) {
+          const comma = token.items[index + 1].start.find(part => part.type === 'comma');
+          if (!comma) throw new UserError(`${target}: invalid blockers sequence`);
+          const between = source.slice(end, comma.offset);
+          if (between.includes('#')) replacement = between;
+          end = comma.offset + comma.source.length;
+          if (!replacement) while (source[end] === ' ' || source[end] === '\t') end++;
+        } else {
+          const comma = token.items[index].start.find(part => part.type === 'comma');
+          if (!comma) throw new UserError(`${target}: invalid blockers sequence`);
+          const between = source.slice(comma.offset + comma.source.length, start);
+          if (between.includes('#')) replacement = between;
+          start = comma.offset;
+        }
+      }
+    } else if (token.type === 'block-seq') {
+      const indicator = token.items[index].start.find(part => part.type === 'seq-item-ind');
+      if (!indicator) throw new UserError(`${target}: invalid blockers sequence`);
+      start = source.lastIndexOf('\n', indicator.offset - 1) + 1;
+      end = item.range[2];
+      const trailing = source.slice(item.range[1], item.range[2]);
+      if (trailing.includes('#')) {
+        start = indicator.offset;
+        end = item.range[1];
+      }
+      if (sequence.items.length === 1) {
+        const pair = doc.contents.items.find(entry => isScalar(entry.key) && entry.key.value === 'blockers');
+        if (!pair || !isScalar(pair.key) || !pair.key.range) throw new UserError(`${target}: invalid blockers sequence`);
+        const colon = source.indexOf(':', pair.key.range[1]);
+        if (colon >= 0 && /^\s*$/.test(source.slice(colon + 1, start))) {
+          start = colon + 1;
+          replacement = ' []';
+          if (end === item.range[2] && source.slice(0, end).endsWith('\r\n')) replacement += '\r\n';
+          else if (end === item.range[2] && source[end - 1] === '\n') replacement += '\n';
+        } else {
+          replacement = '[]';
+        }
+      }
+    } else throw new UserError(`${target}: invalid blockers sequence`);
+  }
+  const yaml = source.slice(0, start) + replacement + source.slice(end);
+  let parsed: unknown;
+  try {
+    const updatedDoc = parseDocument(yaml);
+    if (updatedDoc.errors.length) throw new Error('Invalid YAML');
+    parsed = updatedDoc.toJS();
+  } catch {
+    throw new UserError(`${target}: cannot safely update blockers`);
+  }
+  if (!isDeepStrictEqual(parsed, { ...data, blockers: blockers.filter((_, i) => i !== index) })) {
+    throw new UserError(`${target}: cannot safely update blockers`);
+  }
+  const updated = frontmatter ? `${frontmatter[1]}${yaml}${frontmatter[3]}${frontmatter[4]}` : yaml;
   const log = containedPath(dir, 'resolutions.yml'), temp = `${log}.${randomUUID()}.tmp`;
   const targetTemp = `${file}.${randomUUID()}.tmp`, rollback = `${file}.${randomUUID()}.tmp`;
   snapshot(dir, 'blockers');
