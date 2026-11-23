@@ -504,6 +504,8 @@ test('stale destination review survives reload and opens review for that platfor
   assert.equal(await modal.locator('cds-select').evaluate(node => (node as HTMLElement & { value: string }).value), 'linkedin');
   await modal.getByRole('button', { name: 'Cancel' }).click();
   stale = false;
+  await page.goto(url);
+  await page.reload();
   await page.goto(`${url}#/p/acme/launch/linkedin`);
   await page.getByRole('heading', { name: 'Independent review' }).waitFor();
   assert.equal(await page.getByRole('link', { name: 'Run review' }).count(), 0);
@@ -526,7 +528,7 @@ test('assets refresh blocker counts after resolution and keep long self-reviews 
   const row = page.locator('cds-table-row').filter({ hasText: 'card' });
   await row.getByRole('button', { name: 'View' }).click();
   await page.locator('cds-modal').getByText(summary, { exact: true }).waitFor();
-  await page.locator('cds-modal').getByRole('button', { name: 'Close' }).click();
+  await page.locator('cds-modal-footer').getByRole('button', { name: 'Close', exact: true }).click();
   assert.equal(await row.locator('.asset-review-summary').evaluate(node => node.scrollWidth > node.clientWidth), true);
   assert.equal(await row.locator('cds-table-cell').nth(6).innerText(), '1');
   await page.getByRole('button', { name: 'Resolve assets/card/asset.yml blocker 1' }).click();
