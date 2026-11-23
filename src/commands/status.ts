@@ -7,6 +7,7 @@ import { listExports, loadLibrary, latestSources } from '../library.ts';
 import { monthToDate } from '../budget/ledger.ts';
 import type { Command } from '../io.ts';
 import { UserError } from '../types.ts';
+import { listBlockers, readResolutions } from '../blockers.ts';
 
 export const run: Command = async (args, io) => {
   const usage = 'usage: bstudio status [<project>/<campaign>] [--verbose]';
@@ -37,7 +38,13 @@ export const run: Command = async (args, io) => {
       io.out(`  ${platform}: ${review?.verdict ?? 'unreviewed'}${review?.total == null ? '' : ` (${review.total}/100)`}`);
     }
     const gates = project.reviews.flatMap(review => (review.gates ?? []).filter(gate => !gate.pass));
-    const blocker = gates.find(gate => gate.id === 'specs' && gate.message.includes('Blocker in '));
+    const dir = campaignDir(config, project.slug);
+    const blocker = listBlockers(dir).length > 0;
+    const lastResolution = Math.max(0, ...readResolutions(dir).map(item => Date.parse(item.resolvedAt) || 0));
+    const staleReview = lastResolution > 0 && project.posts.some(post => {
+      const review = project.reviews.find(item => item.platform === post.platform);
+      return review && (Date.parse(review.at ?? '') || 0) <= lastResolution;
+    });
     const rights = gates.filter(gate => gate.id === 'rights');
     const commands = rights.flatMap(gate => [...gate.message.matchAll(/bstudio confirm \S+ (\S+) (--trademark-checked|--license <license>)/g)]);
     const unresolved = commands.find(match => {
@@ -45,7 +52,6 @@ export const run: Command = async (args, io) => {
       return !asset || (match[2] === '--trademark-checked' ? !asset.trademarkChecked : !asset.license?.trim());
     });
     const unreviewed = project.posts.some(post => !project.reviews.some(review => review.platform === post.platform));
-    const dir = campaignDir(config, project.slug);
     const inputFiles = [...project.posts.map(post => join(dir, 'posts', `${post.platform}.md`)), ...project.reviews.map(review => join(dir, 'reviews', `${review.platform}.json`)), ...project.assets.map(asset => join(dir, 'assets', asset.id, 'asset.yml'))];
     const latestInput = Math.max(0, ...inputFiles.filter(existsSync).map(file => statSync(file).mtimeMs), ...project.reviews.map(review => Date.parse(review.at ?? '') || 0));
     const staleExport = !exportedAt || latestInput > Date.parse(exportedAt);
@@ -53,7 +59,7 @@ export const run: Command = async (args, io) => {
     const needsRevision = project.reviews.some(review => review.verdict !== 'pass' && review.verdict !== 'accepted');
     const hasMarketBlasterPosts = project.posts.some(post => !['instagram', 'youtube-shorts', 'tiktok', 'dailydev'].includes(post.platform));
     const imported = latestExport && existsSync(join(exportDir, latestExport.name.split('/')[0], 'imported.json'));
-    const next = blocker ? 'resolve blockers: edit the brief or artifact metadata, then remove resolved blockers' : unresolved ? `confirm rights: ${unresolved[0]}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(dir, 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : staleExport ? `export: bstudio export ${project.slug}` : unmarked ? `record publication: bstudio mark ${project.slug} ${unmarked.platform} --url <url>` : hasMarketBlasterPosts && !imported ? `import: bstudio export ${project.slug} --mb <path>` : 'done';
+    const next = blocker ? `resolve blockers: bstudio blockers ${project.slug}` : staleReview ? `run bstudio review ${project.slug}` : unresolved ? `confirm rights: ${unresolved[0]}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(dir, 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : staleExport ? `export: bstudio export ${project.slug}` : unmarked ? `record publication: bstudio mark ${project.slug} ${unmarked.platform} --url <url>` : hasMarketBlasterPosts && !imported ? `import: bstudio export ${project.slug} --mb <path>` : 'done';
     io.out(`  next: ${next}`);
   }
   io.out(`Month to date: $${monthToDate(config.root).toFixed(2)} / $${config.budget.monthlyUsd.toFixed(2)}`);
