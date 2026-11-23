@@ -22,6 +22,54 @@ function stripAgentDelivery(text: string): string {
   delete data.delivery;
   return `${match[1]}${stringify(data).trimEnd()}${match[3]}${match[4]}`;
 }
+function validateAssetMetadata(rel: string, value: unknown, workspace: string, projectDir: string): { path: string; message: string }[] {
+  const errors: { path: string; message: string }[] = [];
+  const problem = (field: string, actual: unknown, expectation: string) =>
+    errors.push({ path: rel, message: `${rel}: ${field} ${JSON.stringify(actual) ?? 'undefined'} ${expectation}` });
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    problem('metadata', value, 'must be an object');
+    return errors;
+  }
+  const meta = value as Record<string, unknown>;
+  const id = rel.split('/')[1];
+  const kinds = ['card', 'poster', 'carousel', 'logo', 'diagram', 'video', 'terminal-demo', 'illustration', 'voiceover'];
+  if (meta.id !== id) problem('id', meta.id, `must be ${JSON.stringify(id)}`);
+  if (typeof meta.kind !== 'string' || !kinds.includes(meta.kind)) problem('kind', meta.kind, `must be one of ${kinds.join(', ')}`);
+  const tape = [workspace, projectDir].some(dir => existsSync(join(dir, 'assets', id, 'source', 'demo.tape')) || existsSync(join(dir, 'assets', id, 'demo.tape')));
+  if (meta.aspects !== undefined || (meta.kind === 'video' && !tape)) {
+    if (!Array.isArray(meta.aspects) || !meta.aspects.length) problem('aspects', meta.aspects, 'must be a nonempty array of distinct quoted aspect ratios: 9:16, 1:1, 16:9');
+    else {
+      const seen = new Set<unknown>();
+      for (const [index, aspect] of meta.aspects.entries()) {
+        if (typeof aspect !== 'string' || !['9:16', '1:1', '16:9'].includes(aspect)) problem(`aspects[${index}]`, aspect, 'must be a quoted aspect ratio: 9:16, 1:1, or 16:9');
+        else if (seen.has(aspect)) problem(`aspects[${index}]`, aspect, 'must not be duplicated');
+        seen.add(aspect);
+      }
+    }
+  }
+  if (meta.captions !== undefined) {
+    if (!meta.captions || typeof meta.captions !== 'object' || Array.isArray(meta.captions)) problem('captions', meta.captions, 'must be an object');
+    else {
+      const burn = (meta.captions as Record<string, unknown>).burn;
+      if (burn !== undefined && typeof burn !== 'boolean') problem('captions.burn', burn, 'must be a boolean');
+    }
+  }
+  if (meta.embeds !== undefined && (!Array.isArray(meta.embeds) || meta.embeds.some(id => typeof id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)))) problem('embeds', meta.embeds, 'must be an array of asset ID slugs');
+  if (meta.voiceover !== undefined && (typeof meta.voiceover !== 'string' || !meta.voiceover.trim())) problem('voiceover', meta.voiceover, 'must be a nonempty asset ID');
+  const dimension = (field: string, value: unknown) => {
+    if (value !== undefined && (!Number.isSafeInteger(value) || (value as number) <= 0)) problem(field, value, 'must be a positive integer');
+  };
+  dimension('width', meta.width); dimension('height', meta.height);
+  if (meta.size !== undefined) {
+    if (!meta.size || typeof meta.size !== 'object' || Array.isArray(meta.size)) problem('size', meta.size, 'must be an object');
+    else {
+      const size = meta.size as Record<string, unknown>;
+      dimension('size.width', size.width); dimension('size.height', size.height);
+    }
+  }
+  return errors;
+}
+
 
 export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs, passEnv = [], validate, preserveBlockers = false, workspaceOnly = [] }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string | Buffer>; allowOut: RegExp[]; prompt: string; timeoutMs: number; passEnv?: string[]; validate?: (workspace: string) => { path: string; message: string }[]; preserveBlockers?: boolean; workspaceOnly?: string[] }): Promise<{ copied: string[]; ignored: string[] }> {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-agent-'));
@@ -61,7 +109,11 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
               const cleaned = stripAgentDelivery(data.toString('utf8'));
               if (cleaned !== data.toString('utf8')) { data = Buffer.from(cleaned); writeFileSync(path, data); }
             }
-            if (/\.ya?ml$/i.test(rel)) { const parsed = parse(data.toString('utf8')); if (!parsed || typeof parsed !== 'object') throw new Error('expected object or array'); }
+            if (/\.ya?ml$/i.test(rel)) {
+              const parsed = parse(data.toString('utf8'));
+              if (/^assets\/[^/]+\/asset\.yml$/.test(rel)) errors.push(...validateAssetMetadata(rel, parsed, dir, projectDir));
+              else if (!parsed || typeof parsed !== 'object') throw new Error('expected object or array');
+            }
             if (/^posts\/[^/]+\.md$/.test(rel)) { const post = parsePost(rel, data.toString('utf8')); if (`posts/${post.platform}.md` !== rel) throw new Error(`platform ${JSON.stringify(post.platform)} does not match ${rel}`); }
             if (/\.json$/i.test(rel)) JSON.parse(data.toString('utf8'));
           } catch (error) { errors.push({ path: rel, message: `${rel}: ${error instanceof Error ? error.message : String(error)}` }); }

@@ -10,6 +10,7 @@ import { loadPosts, serializePost } from '../posts.ts';
 import { closeBrowser, renderDiagram, renderHtml, renderSvg } from '../render/stills.ts';
 import { renderVideo } from '../render/video.ts';
 import { combinedZone } from '../render/metrics.ts';
+import { sourceHash } from '../render/source-hash.ts';
 import { generateImage } from '../providers/images.ts';
 import { generateVoice } from '../providers/voice.ts';
 import { UserError } from '../types.ts';
@@ -146,6 +147,12 @@ async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<nu
     }
     const resolveAI = (id: string, visiting = new Set<string>()): boolean => { const item = metadata.get(id); if (!item) throw new UserError(`Unknown embedded asset: ${id}`); if (visiting.has(id)) throw new UserError(`Cyclic asset embeds: ${id}`); visiting.add(id); const inherited = (item.meta.embeds ?? []).map(child => resolveAI(child, visiting)).some(Boolean); visiting.delete(id); item.meta.aiGenerated ||= inherited; return item.meta.aiGenerated; };
     for (const id of rendered) { const item = metadata.get(id)!; resolveAI(id); writeFileSync(join(item.dir, 'asset.yml'), stringify(item.meta)); }
+    for (const id of rendered) {
+      const item = metadata.get(id)!;
+      const hash = sourceHash(item.dir);
+      for (const output of item.meta.outputs) output.sourceHash = hash;
+      writeFileSync(join(item.dir, 'asset.yml'), stringify(item.meta));
+    }
     for (const [platform, post] of loadPosts(project)) {
       if (selectedPlatforms && !selectedPlatforms.has(platform)) continue;
       processedPlatforms.add(platform);

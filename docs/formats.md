@@ -17,7 +17,11 @@ Cards and posters use Playwright. The renderer records text size, contrast and o
 
 Video assets use a HyperFrames composition at `source/<aspect>/index.html` for every aspect in `asset.yml`. Supported aspects are `9:16`, `1:1`, and `16:9`; each composition must render at the corresponding expected dimensions. HyperFrames and FFmpeg produce MP4 outputs, and three frames per output are extracted for review.
 
+Quote aspect ratios in YAML, for example `aspects: ["9:16", "1:1", "16:9"]`, and list each at most once. Agent-written asset metadata is validated before write-back; invalid fields are returned to the agent for correction.
+
 Put WebVTT captions at `source/captions.vtt`. They are copied to the output; `captions.burn: true` requests burned-in captions and requires the source file. A `source/voiceover.wav`, when present, is mixed into the video. Video review requires an existing regular VTT output inside the campaign when the video has audio, or when its audio status cannot be determined. Review probes videos with `ffprobe` when available; if it is missing, hash-matched render metadata may establish audio status. Agents cannot change `asset.yml` outputs: render writes them. Each aspect needs its own composition, so adjust the layout for its dimensions.
+
+Render records a source hash on each output. It covers render-relevant `asset.yml` fields (excluding outputs, metrics, self-review, blockers and notes), `source.*`, the root `demo.tape`, all files under `source/` and `slides/` (including binary resources), and embedded assets and their rendered outputs. Carousel slides are read from `source/`; the legacy `slides/` directory is fingerprinted but not rendered. Re-render after changing inputs or embedded assets before review. Output metadata, including the hash, is owner-controlled and agent edits to it are discarded.
 
 Terminal demos use VHS and a `source/demo.tape` with MP4 or GIF `Output` directives. Review tapes before rendering: they execute terminal commands and may access the network. GIF output cannot carry voiceover. FFmpeg is used for media processing and frame extraction.
 
