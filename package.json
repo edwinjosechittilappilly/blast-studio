@@ -1,6 +1,6 @@
 {
   "name": "blast-studio",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Create, review and score platform-ready content (text, images, carousels, diagrams, posters, logos, short video) and hand it to Market Blaster.",
   "type": "module",
   "license": "Apache-2.0",
