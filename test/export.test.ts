@@ -203,6 +203,60 @@ test('manual export and mark host validation', async () => {
   assert.equal(JSON.parse(readFileSync(join(f.project, 'published.json'), 'utf8')).instagram.url, 'https://www.instagram.com/p/1');
 });
 
+test('mark validates hosts for fixed-domain manual overrides', async () => {
+  const destinations: [string, string][] = [
+    ['devto', 'dev.to'], ['gist', 'gist.github.com'],
+    ['github-discussion', 'github.com'], ['linkedin', 'linkedin.com'], ['linkedin', 'www.linkedin.com'],
+    ['linkedin', 'lnkd.in'], ['x', 'x.com'], ['bluesky', 'bsky.app'],
+    ['threads', 'threads.net'], ['reddit', 'reddit.com'], ['hn', 'news.ycombinator.com'],
+    ['producthunt', 'producthunt.com'], ['youtube-shorts', 'youtube.com'], ['youtube-shorts', 'youtu.be'],
+    ['instagram', 'instagram.com'], ['tiktok', 'tiktok.com'], ['dailydev', 'app.daily.dev'],
+  ];
+  for (const [platform, host] of destinations) {
+    const f = fixture(platform), post = join(f.project, `posts/${platform}.md`);
+    writeFileSync(post, readFileSync(post, 'utf8').replace(`platform: ${platform}\n`, `platform: ${platform}\ndelivery: manual\n`));
+    await assert.rejects(mark(['acme/demo', platform, '--url', 'https://example.com/posts/1'], f.io), /host/);
+    await mark(['acme/demo', platform, '--url', `https://${host}/posts/1`], f.io);
+    assert.equal(JSON.parse(readFileSync(join(f.project, 'published.json'), 'utf8'))[platform].url, `https://${host}/posts/1`);
+  }
+});
+
+test('mark accepts federated and custom-domain publication URLs over HTTPS', async () => {
+  const destinations: [string, string][] = [
+    ['mastodon', 'hachyderm.io'], ['lemmy', 'programming.dev'],
+    ['newsletter', 'buttondown.com'], ['hashnode', 'blog.example.com'],
+    ['medium', 'writing.example.com'], ['substack', 'news.example.com'],
+  ];
+  for (const [platform, host] of destinations) {
+    const f = fixture(platform), post = join(f.project, `posts/${platform}.md`);
+    writeFileSync(post, readFileSync(post, 'utf8').replace(`platform: ${platform}\n`, `platform: ${platform}\ndelivery: manual\n`));
+    await assert.rejects(mark(['acme/demo', platform, '--url', `http://${host}/posts/1`], f.io), /host/);
+    await assert.rejects(mark(['acme/demo', platform, '--url', `https://user:pass@${host}/posts/1`], f.io), /host/);
+    await mark(['acme/demo', platform, '--url', `https://${host}/posts/1`], f.io);
+    assert.equal(JSON.parse(readFileSync(join(f.project, 'published.json'), 'utf8'))[platform].url, `https://${host}/posts/1`);
+  }
+});
+
+test('mark records a manually delivered newsletter publication', async () => {
+  const f = fixture('newsletter'), post = join(f.project, 'posts/newsletter.md');
+  writeFileSync(post, readFileSync(post, 'utf8').replace('platform: newsletter\n', 'platform: newsletter\ndelivery: manual\n'));
+  await mark(['acme/demo', 'newsletter', '--url', 'https://newsletter.example.org/issues/1'], f.io);
+  const published = JSON.parse(readFileSync(join(f.project, 'published.json'), 'utf8'));
+  assert.equal(published.newsletter.url, 'https://newsletter.example.org/issues/1');
+  assert.ok(!Number.isNaN(Date.parse(published.newsletter.at)));
+});
+
+test('mark leaves recorded publications unchanged when URL validation fails', async () => {
+  const f = fixture('mastodon'), post = join(f.project, 'posts/mastodon.md');
+  writeFileSync(post, readFileSync(post, 'utf8').replace('platform: mastodon\n', 'platform: mastodon\ndelivery: manual\n'));
+  await mark(['acme/demo', 'mastodon', '--url', 'https://social.example.org/@author/1'], f.io);
+  const file = join(f.project, 'published.json'), before = readFileSync(file, 'utf8');
+  for (const url of ['https://user@social.example.org/@author/2', 'https://:pass@social.example.org/@author/2', 'http://social.example.org/@author/2', 'not a url']) {
+    await assert.rejects(mark(['acme/demo', 'mastodon', '--url', url], f.io), /invalid publication URL/);
+    assert.equal(readFileSync(file, 'utf8'), before);
+  }
+});
+
 test('handoff invokes configured import and check and propagates failure', async () => {
   const f = fixture(), calls: string[][] = [];
   f.io.run = async (cmd, args, opts) => { calls.push([cmd, ...args]); assert.equal(opts?.cwd, f.root); return 'ok'; };
@@ -220,6 +274,16 @@ test('export enforces current gates and reports Market Blaster check failures', 
   writeFileSync(join(f.project, 'assets/a/asset.yml'), 'id: a\nkind: card\nprovider: template\naiGenerated: false\noutputs:\n  - { file: out/image.png, bytes: 5 }\n');
   f.io.run = async (_cmd, args) => { if (args.includes('check')) throw new Error('invalid destination'); return ''; };
   await assert.rejects(exportCommand(['acme/demo', '--mb', f.root], f.io), { name: 'UserError', message: /Market Blaster check failed: invalid destination/ });
+});
+
+test('export rejects Market Blaster media after delivery changes from manual', async () => {
+  const f = fixture('hashnode'), post = join(f.project, 'posts/hashnode.md');
+  const original = readFileSync(post, 'utf8');
+  writeFileSync(post, original.replace('platform: hashnode\n', 'platform: hashnode\ndelivery: manual\n'));
+  await exportCommand(['acme/demo'], f.io);
+
+  writeFileSync(post, original);
+  await assert.rejects(exportCommand(['acme/demo'], f.io), /hashnode: current gates failed/);
 });
 
 test('campaign commands support help, option forms and early address validation', async () => {
@@ -329,6 +393,37 @@ test('status reports export time, publication marks and the next export action',
   assert.match(f.io.text(), /published: instagram/);
 });
 
+test('directory handoff labels video covers and explains how to record publication', async () => {
+  const f = fixture('instagram'), post = join(f.project, 'posts/instagram.md');
+  const original = readFileSync(post, 'utf8');
+  for (const cover of [false, true]) {
+    writeFileSync(post, original.replace('    kind: image\n', `    kind: image\n    cover: ${cover}\n`));
+    await exportCommand(['acme/demo', '--dir'], f.io);
+    const readme = readFileSync(join(f.project, 'exports/instagram/README.md'), 'utf8');
+    assert.match(readme, cover ? /\(image, video cover; alt: Alt\)/ : /\(image; alt: Alt\)/);
+    assert.ok(readme.includes('Record the live URL: `bstudio mark <address> <platform> --url <url>` (or Mark published in the dashboard).'));
+  }
+});
+
+test('directory thread handoffs give publication instructions for the selected delivery', async () => {
+  for (const delivery of [undefined, 'marketBlaster', 'manual']) {
+    const f = fixture(), post = join(f.project, 'posts/bluesky.md');
+    writeFileSync(post, readFileSync(post, 'utf8').replace('platform: bluesky\n', `platform: bluesky\n${delivery ? `delivery: ${delivery}\n` : ''}thread: [Second post]\n`));
+    await exportCommand(['acme/demo', '--dir'], f.io);
+    const readme = readFileSync(join(f.project, 'exports/bluesky/README.md'), 'utf8');
+    const manifest = JSON.parse(readFileSync(join(f.project, 'export/manifest.json'), 'utf8'));
+    if (delivery === 'manual') {
+      assert.match(readme, /bstudio mark <address> <platform> --url <url>/);
+      assert.match(readme, /Review and publish manually/);
+      assert.equal(manifest.posts.length, 0);
+    } else {
+      assert.match(readme, /Publish using Market Blaster/);
+      assert.doesNotMatch(readme, /bstudio mark|Mark published in the dashboard/);
+      assert.equal(manifest.posts.length, 1);
+    }
+  }
+});
+
 test('directory exports retain snapshots including handoffs and report exported', async () => {
   const f = fixture('instagram'), config = loadConfig(f.io);
   await exportCommand(['acme/demo', '--dir'], f.io);
@@ -358,6 +453,26 @@ test('status suggests re-export for newer posts and marking unpublished manual d
   const before = f.io.stdout.length;
   await status(['acme/demo'], f.io);
   assert.match(f.io.stdout.slice(before).join('\n'), /next: export: bstudio export acme\/demo/);
+});
+
+test('manual override controls directory export, library, status and marking', async () => {
+  const f = fixture(), post = join(f.project, 'posts/bluesky.md');
+  writeFileSync(post, readFileSync(post, 'utf8').replace('platform: bluesky\n', 'platform: bluesky\ndelivery: manual\n'));
+  writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+  assert.equal(projectReview(loadConfig(f.io), 'acme/demo').platforms.bluesky.delivery, 'manual');
+  await exportCommand(['acme/demo', '--dir'], f.io);
+  const manifest = JSON.parse(readFileSync(join(f.project, 'export/manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.posts, []);
+  assert.ok(existsSync(join(f.project, 'exports/bluesky/post.md')));
+  const future = new Date('2030-01-01T00:00:00Z');
+  utimesSync(join(f.project, 'export/manifest.json'), future, future);
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.text(), /bluesky: pass \(90\/100\) \[manual\]/);
+  assert.match(f.io.text(), /record publication: bstudio mark acme\/demo bluesky --url <url>/);
+  await mark(['acme/demo', 'bluesky', '--url', 'https://bsky.app/profile/example/post/1'], f.io);
+  const before = f.io.stdout.length;
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.stdout.slice(before).join('\n'), /next: done/);
 });
 
 test('library updatedAt includes post, review and asset metadata edits', () => {
@@ -443,6 +558,29 @@ test('a manual-only campaign is complete once its publications are marked', asyn
   await mark(['acme/demo', 'instagram', '--url', 'https://instagram.com/p/1'], f.io);
   await status(['acme/demo'], f.io);
   assert.match(f.io.text(), /next: done/);
+});
+
+test('status requires re-import after previously imported destinations become manual', async () => {
+  for (const format of [[], ['--dir']]) {
+    const f = fixture(), post = join(f.project, 'posts/bluesky.md');
+    writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+    f.io.run = async () => '';
+    const next = async () => {
+      const start = f.io.stdout.length;
+      await status(['acme/demo'], f.io);
+      return f.io.stdout.slice(start).find(line => line.includes('next:'))!;
+    };
+    await exportCommand(['acme/demo', '--mb', f.root, ...format], f.io);
+    writeFileSync(post, readFileSync(post, 'utf8').replace('platform: bluesky\n', 'platform: bluesky\ndelivery: manual\n'));
+    await exportCommand(['acme/demo', '--local', ...format], f.io);
+    assert.match(await next(), /record publication: bstudio mark acme\/demo bluesky/);
+    await mark(['acme/demo', 'bluesky', '--url', 'https://bsky.app/profile/example/post/1'], f.io);
+    assert.match(await next(), /next: import: bstudio export acme\/demo --mb <path>/);
+    await exportCommand(['acme/demo', '--mb', f.root, ...format], f.io);
+    assert.match(await next(), /next: done/);
+    await exportCommand(['acme/demo', '--local', ...format], f.io);
+    assert.match(await next(), /next: done/);
+  }
 });
 
 test('mixed campaigns require both a manual publication mark and an import', async () => {

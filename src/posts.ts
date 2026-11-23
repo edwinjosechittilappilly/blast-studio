@@ -25,6 +25,7 @@ export function parsePost(path: string, text: string): Post {
   if (data.sponsored !== undefined && typeof data.sponsored !== 'boolean') throw new UserError(`${path}: sponsored must be boolean`);
   if (data.tags !== undefined && (!Array.isArray(data.tags) || !data.tags.every(v => typeof v === 'string'))) throw new UserError(`${path}: tags must be an array of strings`);
   if (data.selfReview !== undefined && !validSelfReview(data.selfReview)) throw new UserError(`${path}: invalid selfReview`);
+  if (data.delivery !== undefined && data.delivery !== 'manual' && data.delivery !== 'marketBlaster') throw new UserError(`${path}: invalid delivery`);
   return { ...data, platform, body: match[2].trim(), path } as Post;
 }
 export function loadPosts(projectDir: string): Map<PlatformId, Post> {

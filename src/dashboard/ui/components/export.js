@@ -9,7 +9,7 @@ export function renderExport(container, ctx) {
   for (const post of project.posts) {
     const review = project.reviews.find(item => item.platform === post.platform), gates = review?.gates, passing = review && ['pass', 'accepted'].includes(review.verdict), gatesPassing = Array.isArray(gates) && gates.every(gate => gate?.pass === true) && ['policy', 'disclosure', 'specs', 'accessibility', 'fabricated-metrics', 'rights'].every(id => gates.some(gate => gate.id === id)), ready = passing && gatesPassing && !review.stale;
     if (!ready) missing.push(project.platforms?.[post.platform]?.name || post.platform);
-    const row = el('li'), link = el('a', project.platforms?.[post.platform]?.name || post.platform); link.href = `#/p/${project.slug.split('/').map(encodeURIComponent).join('/')}/${encodeURIComponent(post.platform)}`; row.append(link, document.createTextNode(` — ${review?.verdict || 'not reviewed'}`));
+    const row = el('li'), link = el('a', project.platforms?.[post.platform]?.name || post.platform), route = project.platforms?.[post.platform]?.delivery === 'manual' ? 'Manual handoff' : 'Market Blaster'; link.href = `#/p/${project.slug.split('/').map(encodeURIComponent).join('/')}/${encodeURIComponent(post.platform)}`; row.append(link, document.createTextNode(` — ${route} — ${review?.verdict || 'not reviewed'}`));
     if (review?.stale) { const reviewLink = el('a', 're-run review'); reviewLink.href = `#/p/${project.slug.split('/').map(encodeURIComponent).join('/')}/actions`; row.append(document.createTextNode('; stale — '), reviewLink); }
     else if (passing && !gatesPassing) row.append(document.createTextNode('; passing gates required'));
     else if (!passing) row.append(document.createTextNode('; pass or acceptance needed'));
@@ -30,11 +30,24 @@ export function renderExport(container, ctx) {
       for (const entry of entries) { const row = el('tr'), action = el('td'); row.append(el('td', new Date(entry.time).toLocaleString()), el('td', entry.kind), el('td', entry.size < 1024 ? `${entry.size} bytes` : `${(entry.size / 1024).toFixed(1)} KB`), el('td', entry.target || 'Local')); if (entry.kind === 'zip') { const link = el('a', 'Download'); link.href = `${path}/${encodeURIComponent(entry.name)}`; link.setAttribute('download', ''); action.append(link); } else action.textContent = 'Directory'; row.append(action); body.append(row); } table.append(head, body); scroll.append(table); content.append(scroll);
     } catch (error) { content.replaceChildren(el('p', `Could not load export history: ${error.message}`, 'form-error')); }
   }
-  const run = jobRegion(container, ctx, { operation: 'export', onComplete: load }); container.append(history);
+  const summary = el('section', null, 'surface export-summary'); summary.hidden = true; container.append(summary);
+  const run = jobRegion(container, ctx, { operation: 'export', onComplete: job => {
+    summary.hidden = true;
+    if (job.state === 'succeeded') {
+      const manual = project.posts.filter(post => project.platforms?.[post.platform]?.delivery === 'manual');
+      summary.replaceChildren(el('h2', 'Handoff folders written'));
+      if (manual.length) {
+        const folders = el('ul'); for (const post of manual) folders.append(el('li', `handoff/${post.platform}/`)); summary.append(el('p', 'In the campaign ZIP:'), folders);
+        const mark = el('a', 'Mark published'); mark.href = `#/p/${parts.join('/')}/actions?start=mark`; summary.append(el('p', 'After publishing manually, record the published URL:'), mark);
+      } else summary.append(el('p', 'No manual handoff folders were written.'));
+      summary.hidden = false;
+    }
+    return load();
+  } }); container.append(history);
   function args() { const value = target.value?.trim(); if (value && !value.startsWith('/') && !value.startsWith('~/')) { target.setAttribute('invalid', ''); target.setAttribute('invalid-text', 'Use an absolute path or a path beginning with ~/.'); target.focus(); return null; } target.removeAttribute('invalid'); return value ? { mb: value } : {}; }
   target.addEventListener('input', () => target.removeAttribute('invalid'));
-  submit.addEventListener('click', () => { const options = args(); if (options) run('export', options); });
-  local.addEventListener('click', () => run('export', { local: true }));
-  force.addEventListener('click', () => { const options = args(); if (options) openForm('Force re-import', 'This replaces approved drafts in Market Blaster. Only continue if you intend to overwrite those drafts.', [], 'Force re-import', () => run('export', { ...options, force: true }), 'danger'); });
+  submit.addEventListener('click', () => { const options = args(); if (options) { summary.hidden = true; run('export', options); } });
+  local.addEventListener('click', () => { summary.hidden = true; run('export', { local: true }); });
+  force.addEventListener('click', () => { const options = args(); if (options) openForm('Force re-import', 'This replaces approved drafts in Market Blaster. Only continue if you intend to overwrite those drafts.', [], 'Force re-import', () => { summary.hidden = true; return run('export', { ...options, force: true }); }, 'danger'); });
   const refresh = button('Refresh history', 'ghost'); refresh.addEventListener('click', load); history.append(refresh); content.append(el('p', 'Loading export history…', 'muted')); load();
 }

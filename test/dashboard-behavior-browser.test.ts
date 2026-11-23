@@ -1,5 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Page } from 'playwright';
 import { startDashboard } from '../src/dashboard/server.ts';
@@ -19,7 +20,7 @@ async function dashboard(t: TestContext, viewport = { width: 1440, height: 900 }
   const browser = await chromium.launch({ headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport });
-  return { page, url: started.url };
+  return { page, url: started.url, root };
 }
 
 function gate() {
@@ -197,6 +198,117 @@ test('accept offers only revised destinations with passing gates', async t => {
   assert.deepEqual(await options.allTextContents(), ['linkedin']);
 });
 
+test('platform delivery control submits the chosen route and refreshes the effective route', async t => {
+  const { page, url } = await dashboard(t);
+  let delivery = 'marketBlaster', submitted: unknown, attempts = 0;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.platforms.linkedin.delivery = delivery;
+    await route.fulfill({ json: project });
+  });
+  await page.route('**/api/jobs', async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    submitted = route.request().postDataJSON();
+    if (++attempts === 1) return route.fulfill({ status: 400, json: { error: 'Cannot save delivery' } });
+    delivery = 'manual';
+    return route.fulfill({ json: { ...job('queued'), operation: 'delivery' } });
+  });
+  await page.route('**/api/jobs?campaign=*', route => route.fulfill({ json: attempts > 1 ? [{ ...job('succeeded'), operation: 'delivery' }] : [] }));
+  await page.route('**/api/jobs/revision-1/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  const route = page.getByRole('combobox', { name: 'Delivery route' }), save = page.getByRole('button', { name: 'Save delivery' });
+  await page.getByText('Manual delivery is handed off for publishing yourself. Market Blaster delivery is included in the import for supported destinations only.').waitFor();
+  assert.equal(await route.inputValue(), 'marketBlaster');
+  assert.equal(await save.isDisabled(), true);
+  await route.selectOption('manual');
+  assert.equal(await save.isEnabled(), true);
+  await save.click();
+  await page.getByRole('alert').filter({ hasText: 'Cannot save delivery' }).waitFor();
+  assert.equal(await route.inputValue(), 'manual');
+  await save.click();
+  await page.getByText('Delivery set to Manual —').waitFor();
+  assert.equal(await page.getByRole('link', { name: 'Run review' }).first().getAttribute('href'), '#/p/acme/launch/actions?start=review&platform=linkedin');
+  assert.deepEqual(submitted, { op: 'delivery', campaign: 'acme/launch', args: { platform: 'linkedin', delivery: 'manual' } });
+  assert.equal(await route.inputValue(), 'manual');
+  assert.equal(await save.isDisabled(), true);
+});
+
+test('returning to a destination refreshes delivery after its job finishes on another tab', async t => {
+  const { page, url } = await dashboard(t);
+  let delivery = 'marketBlaster', state = 'running', submitted: unknown;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.platforms.linkedin.delivery = delivery;
+    await route.fulfill({ json: project });
+  });
+  await page.route('**/api/jobs', async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ json: { ...job('queued'), operation: 'delivery' } });
+  });
+  await page.route('**/api/jobs?campaign=*', route => route.fulfill({ json: submitted ? [{ ...job(state), operation: 'delivery' }] : [] }));
+  await page.route('**/api/jobs/revision-1/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  const picker = page.getByRole('combobox', { name: 'Delivery route' });
+  await picker.selectOption('manual');
+  await page.getByRole('button', { name: 'Save delivery' }).click();
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.getByRole('heading', { name: 'Campaign summary' }).waitFor();
+  delivery = 'manual'; state = 'succeeded';
+  await page.getByRole('tab', { name: /LinkedIn/ }).click();
+  await picker.waitFor();
+  assert.equal(await picker.inputValue(), 'manual');
+  assert.equal(await page.getByRole('button', { name: 'Save delivery' }).isDisabled(), true);
+  await picker.selectOption('marketBlaster');
+  assert.equal(await page.getByRole('button', { name: 'Save delivery' }).isEnabled(), true);
+});
+
+test('a tab refresh failure does not display stale campaign data and can be retried', async t => {
+  const { page, url } = await dashboard(t);
+  let fail = false;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    if (fail) return route.fulfill({ status: 503, json: { error: 'Refresh unavailable' } });
+    await route.continue();
+  });
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  await page.getByRole('combobox', { name: 'Delivery route' }).waitFor();
+  fail = true;
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.getByText('Could not refresh campaign: Refresh unavailable').waitFor();
+  fail = false;
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await page.getByRole('heading', { name: 'Campaign summary' }).waitFor();
+});
+
+test('delivery picker offers Market Blaster only for supported packs, including manual overrides', async t => {
+  const { page, url, root } = await dashboard(t);
+  writeFileSync(join(root, 'projects/acme/campaigns/launch/posts/linkedin.md'), '---\nplatform: linkedin\ndelivery: manual\nevidence: []\nmedia: []\n---\nLaunch post');
+  writeFileSync(join(root, 'projects/acme/campaigns/launch/posts/dailydev.md'), '---\nplatform: dailydev\nevidence: []\nmedia: []\n---\nDaily post');
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  const route = page.getByRole('combobox', { name: 'Delivery route' });
+  await route.waitFor();
+  assert.equal(await route.inputValue(), 'manual');
+  assert.deepEqual(await page.locator('.delivery-control cds-select-item').allTextContents(), ['Manual', 'Market Blaster']);
+  await route.selectOption('marketBlaster');
+  assert.equal(await route.inputValue(), 'marketBlaster');
+  await page.getByRole('tab', { name: /dailydev/i }).click();
+  await route.waitFor();
+  assert.equal(await route.inputValue(), 'manual');
+  assert.deepEqual(await page.locator('.delivery-control cds-select-item').allTextContents(), ['Manual']);
+});
+
+test('mark published offers manually routed posts regardless of platform', async t => {
+  const { page, url } = await dashboard(t);
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.platforms.linkedin.delivery = 'manual';
+    await route.fulfill({ json: project });
+  });
+  await page.goto(`${url}#/p/acme/launch/actions`);
+  await page.getByRole('button', { name: 'Mark published' }).click();
+  assert.deepEqual(await page.locator('cds-modal cds-select-item').allTextContents(), ['linkedin']);
+});
+
 test('campaign lock error clears when the conflicting job finishes', async t => {
   const { page, url } = await dashboard(t); let running = true;
   await page.route('**/api/jobs?*', route => route.fulfill({ json: [job(running ? 'running' : 'succeeded')] }));
@@ -354,6 +466,33 @@ test('export readiness identifies stale reviews and formats small exports', asyn
   assert.match(await page.getByText('Export is unavailable for:', { exact: false }).innerText(), /LinkedIn/);
   await page.getByRole('link', { name: 're-run review' }).click();
   await page.getByRole('button', { name: 'Review', exact: true }).waitFor();
+  await page.unrouteAll({ behavior: 'wait' });
+});
+
+test('export shows delivery routes and summarizes manual handoffs after success', async t => {
+  const { page, url } = await dashboard(t);
+  let submitted = false;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.posts = [{ platform: 'linkedin' }, { platform: 'x' }];
+    project.platforms.linkedin.delivery = 'manual';
+    project.platforms.x = { name: 'X', delivery: 'marketBlaster' };
+    project.reviews = project.posts.map((post: { platform: string }) => ({ platform: post.platform, verdict: 'pass', gates: ['policy', 'disclosure', 'specs', 'accessibility', 'fabricated-metrics', 'rights'].map(id => ({ id, pass: true })) }));
+    await route.fulfill({ json: project });
+  });
+  await page.route('**/api/jobs', route => { submitted = true; return route.fulfill({ json: { ...job('queued'), operation: 'export' } }); });
+  await page.route('**/api/jobs?campaign=*', route => route.fulfill({ json: submitted ? [{ ...job('succeeded'), operation: 'export' }] : [] }));
+  await page.route('**/api/jobs/revision-1/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.goto(`${url}#/p/acme/launch/export`);
+  const readiness = page.locator('.export-readiness');
+  await readiness.getByText('LinkedIn — Manual handoff — pass').waitFor();
+  await readiness.getByText('X — Market Blaster — pass').waitFor();
+  await page.getByRole('button', { name: 'Export locally' }).click();
+  const summary = page.locator('.export-summary');
+  await summary.getByText('handoff/linkedin/').waitFor();
+  assert.equal(await summary.getByText('handoff/x/').count(), 0);
+  await summary.getByRole('link', { name: 'Mark published' }).click();
+  await page.locator('cds-modal').getByText('Mark published', { exact: true }).first().waitFor();
 });
 
 test('project page has one campaign action and jobs tooltip stays within the viewport', async t => {

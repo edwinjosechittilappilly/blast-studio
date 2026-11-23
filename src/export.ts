@@ -39,13 +39,13 @@ function copyMedia(project: string, target: string, path: string): string {
   return name.split(sep).join('/');
 }
 
-function handoff(project: string, post: Post, name: string, notes: string[], guide: string): void {
+function handoff(project: string, post: Post, name: string, notes: string[], guide: string, manual: boolean): void {
   const dir = join(project, 'exports', post.platform); mkdirSync(dir, { recursive: true });
   const media = post.media.map(item => ({ ...item, file: copyMedia(project, dir, item.file), ...((item as ExtraMedia).captions ? { captions: copyMedia(project, dir, (item as ExtraMedia).captions!) } : {}) }));
   writeFileSync(join(dir, 'post.md'), [post.title ? `# ${post.title}\n` : '', post.body, ...(post.thread ?? []).map(t => `\n---\n\n${t}`)].join('\n') + '\n');
   const checklist = guide.match(/## Checklist\s*\n([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() ?? '';
   const disclosures = Object.entries(post.disclosure ?? {}).map(([key, value]) => `- ${key}: ${value}`);
-  writeFileSync(join(dir, 'README.md'), [`# ${name} manual handoff`, '', '- [ ] Open the platform publishing interface and select the correct account.', '- [ ] Copy the text from post.md and attach the listed media.', '- [ ] Enter the provided alt text, captions and disclosure where applicable.', '- [ ] Review and publish manually, then record the URL with bstudio mark when supported.', '', '## Media', ...media.map(m => `- ${m.file} (${m.kind}; alt: ${m.alt})${'captions' in m && m.captions ? `; captions: ${m.captions}` : ''}`), '', '## Disclosure', ...(disclosures.length ? disclosures : ['- None specified.']), '', '## Platform notes', ...notes.map(n => `- ${n}`), '', '## Platform checklist', checklist, ''].join('\n'));
+  writeFileSync(join(dir, 'README.md'), [`# ${name} ${manual ? 'manual handoff' : 'handoff'}`, '', ...(manual ? ['- [ ] Open the platform publishing interface and select the correct account.', '- [ ] Copy the text from post.md and attach the listed media.', '- [ ] Enter the provided alt text, captions and disclosure where applicable.', '- [ ] Review and publish manually.', '- [ ] Record the live URL: `bstudio mark <address> <platform> --url <url>` (or Mark published in the dashboard).'] : ['- [ ] Publish using Market Blaster, using this handoff for any content requiring manual steps.']), '', '## Media', ...media.map(m => `- ${m.file} (${m.kind}${(m as ExtraMedia).cover ? ', video cover' : ''}; alt: ${m.alt})${'captions' in m && m.captions ? `; captions: ${m.captions}` : ''}`), '', '## Disclosure', ...(disclosures.length ? disclosures : ['- None specified.']), '', '## Platform notes', ...notes.map(n => `- ${n}`), '', '## Platform checklist', checklist, ''].join('\n'));
 }
 
 export function exportProject(project: string, identity: CampaignRef, config: StudioConfig, directory = false): { path: string; history: string } {
@@ -82,9 +82,10 @@ export function exportProject(project: string, identity: CampaignRef, config: St
   const dir = join(project, 'export'); mkdirSync(dir, { recursive: true });
   const brief = readFileSync(join(project, 'brief.md'), 'utf8');
   const entries = prepared.flatMap(({ post, review, hash, pack }) => {
-    const needsHandoff = !pack.marketBlaster || !!post.thread?.length || (post.platform === 'linkedin' && post.media.some(m => m.kind === 'document' && m.file.toLowerCase().endsWith('.pdf')));
-    if (needsHandoff) handoff(project, post, pack.name, pack.notes ?? [], readFileSync(join(root, 'platforms', post.platform, 'guide.md'), 'utf8'));
-    if (!pack.marketBlaster) return [];
+    const manual = post.delivery === 'manual' || !pack.marketBlaster;
+    const needsHandoff = manual || !!post.thread?.length || (post.platform === 'linkedin' && post.media.some(m => m.kind === 'document' && m.file.toLowerCase().endsWith('.pdf')));
+    if (needsHandoff) handoff(project, post, pack.name, pack.notes ?? [], readFileSync(join(root, 'platforms', post.platform, 'guide.md'), 'utf8'), manual);
+    if (manual) return [];
     const media = (post.media as ExtraMedia[]).map(m => ({ path: copyMedia(project, dir, m.file), alt: m.alt, kind: m.kind,
       ...(m.cover === undefined ? {} : { cover: m.cover }), ...(m.lang === undefined ? {} : { lang: m.lang }), ...(m.captions === undefined ? {} : { captions: copyMedia(project, dir, m.captions) }) }));
     return [{ platform: post.platform, destination: pack.marketBlaster, ...(post.title === undefined ? {} : { title: post.title }), ...(post.tags === undefined ? {} : { tags: post.tags }), body: post.body, evidence: post.evidence,

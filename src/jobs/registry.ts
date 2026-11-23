@@ -3,7 +3,7 @@ import { containedPath, parseCampaignRef } from '../campaigns.ts';
 import { readPlan } from '../plan.ts';
 import { UserError } from '../types.ts';
 
-type Kind = 'id' | 'campaign' | 'ids' | 'text' | 'url' | 'path' | 'number' | 'bool' | 'repo' | 'sha' | 'blockerTarget' | 'index';
+type Kind = 'id' | 'campaign' | 'ids' | 'text' | 'url' | 'path' | 'number' | 'bool' | 'repo' | 'sha' | 'blockerTarget' | 'index' | 'delivery';
 type Field = { kind: Kind; required?: boolean; positional?: boolean; flag?: string; multiple?: boolean };
 export type Operation = { fields: Record<string, Field>; campaign: boolean; paid: boolean; step: string; requiresTTY: boolean };
 const campaign: Field = { kind: 'campaign', required: true, positional: true };
@@ -29,6 +29,7 @@ export const operations: Readonly<Record<string, Operation>> = {
   accept: operation('accept', { campaign, platform: id(true), reason: { ...option('text', '--reason'), required: true } }),
   confirm: operation('confirm', { campaign, asset: id(true), trademarkChecked: option('bool', '--trademark-checked'), license: option('text', '--license') }),
   export: operation('export', { campaign, mb: option('path', '--mb'), force: inputs.force, local: option('bool', '--local'), dir: option('bool', '--dir') }),
+  delivery: operation('delivery', { campaign, platform: id(true), delivery: { kind: 'delivery', required: true, positional: true } }),
   mark: operation('mark', { campaign, platform: id(true), url: { ...inputs.url, required: true } }),
   status: operation('status', { campaign: { ...campaign, required: false }, verbose: option('bool', '--verbose') }, false, false),
   library: operation('library', {}, false, false),
@@ -66,6 +67,7 @@ function validate(value: unknown, kind: Kind, key: string): string | boolean {
   if (kind === 'campaign') return campaignRef(value);
   if (kind === 'id' && !slug.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'ids' && !value.split(',').every(s => slug.test(s))) throw new UserError(`Invalid ${key}`);
+  if (kind === 'delivery' && value !== 'manual' && value !== 'marketBlaster') throw new UserError(`Invalid ${key}`);
   if (kind === 'blockerTarget' && !/^(?:post|asset):[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'index' && (!/^(?:0|[1-9]\d*)$/.test(value) || !Number.isSafeInteger(Number(value)))) throw new UserError(`Invalid ${key}`);
   if ((key === 'reason' || key === 'text') && !value.trim()) throw new UserError(`Invalid ${key}`);

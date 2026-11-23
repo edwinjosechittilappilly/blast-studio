@@ -13,6 +13,16 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 import { parsePost, serializePost } from './posts.ts';
 function safePath(path: string): boolean { return !!path && !isAbsolute(path) && normalize(path) === path && !path.split(/[\\/]/).some(p => p === '..' || p === '.'); }
 
+// Delivery is owner-controlled, so discard agent input before any output validation.
+function stripAgentDelivery(text: string): string {
+  const match = text.match(/^(---\s*\r?\n)([\s\S]*?)(\r?\n---\s*(?:\r?\n|$))([\s\S]*)$/);
+  if (!match) return text;
+  const data = parse(match[2]);
+  if (!data || typeof data !== 'object' || Array.isArray(data) || !Object.hasOwn(data, 'delivery')) return text;
+  delete data.delivery;
+  return `${match[1]}${stringify(data).trimEnd()}${match[3]}${match[4]}`;
+}
+
 export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs, passEnv = [], validate, preserveBlockers = false, workspaceOnly = [] }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string>; allowOut: RegExp[]; prompt: string; timeoutMs: number; passEnv?: string[]; validate?: (workspace: string) => { path: string; message: string }[]; preserveBlockers?: boolean; workspaceOnly?: string[] }): Promise<{ copied: string[]; ignored: string[] }> {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-agent-'));
   const temp = mkdtempSync(join(tmpdir(), 'bstudio-agent-tmp-'));
@@ -45,8 +55,12 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
           const permitted = allowOut.some(re => { re.lastIndex = 0; return re.test(rel); });
           if (st.isFile() && Object.hasOwn(files, rel) && readFileSync(path, 'utf8') === files[rel]) continue;
           if (!st.isFile() || !permitted) { ignored.push(rel); continue; }
-          const data = readFileSync(path);
+          let data = readFileSync(path);
           try {
+            if (/^posts\/[^/]+\.md$/.test(rel)) {
+              const cleaned = stripAgentDelivery(data.toString('utf8'));
+              if (cleaned !== data.toString('utf8')) { data = Buffer.from(cleaned); writeFileSync(path, data); }
+            }
             if (/\.ya?ml$/i.test(rel)) { const parsed = parse(data.toString('utf8')); if (!parsed || typeof parsed !== 'object') throw new Error('expected object or array'); }
             if (/^posts\/[^/]+\.md$/.test(rel)) { const post = parsePost(rel, data.toString('utf8')); if (`posts/${post.platform}.md` !== rel) throw new Error(`platform ${JSON.stringify(post.platform)} does not match ${rel}`); }
             if (/\.json$/i.test(rel)) JSON.parse(data.toString('utf8'));
@@ -99,10 +113,21 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
           }
           content = stringify(asset);
         }
-        else if (preserveBlockers && /^posts\/[^/]+\.md$/.test(rel) && existsSync(target)) {
+        else if (/^posts\/[^/]+\.md$/.test(rel)) {
           const post = parsePost(rel, data.toString('utf8')) as Post & { blockers?: unknown };
-          const previous = parsePost(rel, readFileSync(target, 'utf8')) as typeof post;
-          if (Object.hasOwn(previous, 'blockers')) post.blockers = previous.blockers;
+          delete post.delivery;
+          if (existsSync(target)) {
+            const match = readFileSync(target, 'utf8').match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/);
+            if (!match) throw new UserError(`${rel}: expected YAML frontmatter`);
+            let previous: Record<string, unknown>;
+            try { previous = parse(match[1]); } catch { throw new UserError(`${rel}: invalid frontmatter`); }
+            if (!previous || typeof previous !== 'object' || Array.isArray(previous)) throw new UserError(`${rel}: invalid frontmatter`);
+            if (Object.hasOwn(previous, 'delivery')) {
+              if (previous.delivery !== 'manual' && previous.delivery !== 'marketBlaster') throw new UserError(`${rel}: invalid delivery`);
+              post.delivery = previous.delivery;
+            }
+            if (preserveBlockers && Object.hasOwn(previous, 'blockers')) post.blockers = previous.blockers;
+          }
           content = serializePost(post);
         }
         mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, content); copied.push(rel);

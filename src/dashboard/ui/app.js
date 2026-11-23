@@ -6,6 +6,7 @@ import '@carbon/web-components/es/components/modal/index.js';
 import '@carbon/web-components/es/components/textarea/index.js';
 import '@carbon/web-components/es/components/data-table/index.js';
 import '@carbon/web-components/es/components/notification/index.js';
+import '@carbon/web-components/es/components/select/index.js';
 import '@carbon/web-components/es/components/overflow-menu/index.js';
 import CheckmarkFilled16 from '@carbon/icons/es/checkmark--filled/16.js';
 import WarningFilled16 from '@carbon/icons/es/warning--filled/16.js';
@@ -16,7 +17,7 @@ import { mediaGallery } from './components/media.js';
 import { api, headers, campaignPath, startFeedbackJob, cancelFeedbackJob, feedbackJobStatus } from './components/api.js';
 import { setupShell } from './components/shell.js';
 import { renderNewProject, renderNewCampaign } from './components/create.js';
-import { renderActions, renderAssetsTable, openForm, terminalCommand } from './components/actions.js';
+import { jobRegion, renderActions, renderAssetsTable, openForm, terminalCommand } from './components/actions.js';
 import { renderExport } from './components/export.js';
 import { renderBlockers } from './components/blockers.js';
 import { renderFeedbackHistory } from './components/feedback.js';
@@ -155,13 +156,42 @@ function campaignRelativeMessage(message, slug) {
     return index < 0 ? path : path.slice(index + marker.length);
   });
 }
+function deliveryControl(project, post) {
+  const section = el('section', null, 'delivery-control'), select = el('cds-select'), save = button('Save delivery', 'secondary'), error = el('p', null, 'form-error'), confirmation = el('p', null, 'delivery-confirmation');
+  select.setAttribute('label-text', 'Delivery route'); error.setAttribute('role', 'alert'); confirmation.setAttribute('role', 'status');
+  const routes = [['manual', 'Manual']]; if (project.platforms?.[post.platform]?.supportsMarketBlaster) routes.push(['marketBlaster', 'Market Blaster']);
+  for (const [value, text] of routes) { const option = el('cds-select-item', text); option.setAttribute('value', value); select.append(option); }
+  let saved = project.platforms?.[post.platform]?.delivery === 'manual' ? 'manual' : 'marketBlaster';
+  select.value = saved; save.disabled = true; select.addEventListener('cds-select-selected', () => { save.disabled = select.value === saved; confirmation.replaceChildren(); });
+  section.append(el('h3', 'Delivery'), select, save, el('p', 'Manual delivery is handed off for publishing yourself. Market Blaster delivery is included in the import for supported destinations only.', 'muted delivery-help'), confirmation, error);
+  const run = jobRegion(section, { project }, { operation: 'delivery', ownOnly: true, onComplete: async job => {
+    try {
+      if (job.state === 'succeeded') {
+        const updated = await api(`/api/project/${encodeURIComponent(project.slug)}`);
+        if (!section.isConnected) return;
+        Object.assign(project, updated);
+        saved = project.platforms?.[post.platform]?.delivery === 'manual' ? 'manual' : 'marketBlaster';
+        select.value = saved;
+        const link = el('a', 'Run review'); link.href = `${campaignRoute(project.slug)}/actions?start=review&platform=${encodeURIComponent(post.platform)}`;
+        confirmation.replaceChildren(document.createTextNode(`Delivery set to ${saved === 'manual' ? 'Manual' : 'Market Blaster'} — `), link);
+        section.querySelector('.actions-job').hidden = true;
+      }
+    } catch (failure) { error.textContent = `Delivery saved, but the current route could not be refreshed: ${failure.message}. Reload the campaign.`; }
+    finally { save.disabled = select.value === saved; select.disabled = false; }
+  } });
+  save.addEventListener('click', async () => {
+    error.textContent = ''; save.disabled = true; select.disabled = true;
+    if (!await run('delivery', { platform: post.platform, delivery: select.value }, message => { error.textContent = message; })) { save.disabled = false; select.disabled = false; }
+  });
+  return section;
+}
 function platformPanel(project, post) {
   const savedReview = project.reviews.find(r => r.platform === post.platform), review = savedReview && { ...savedReview, gates: (savedReview.gates || []).map(gate => {
     const parts = gate.message ? campaignRelativeMessage(gate.message, project.slug).split('; ') : [];
     const blockers = gate.id === 'specs' ? parts.filter(part => part.startsWith('Blocker in ')) : [];
     return { ...gate, blockerCount: blockers.length, message: blockers.length ? [...parts.filter(part => !part.startsWith('Blocker in ')), `${blockers.length} blocker${blockers.length === 1 ? '' : 's'}`].join('; ') : parts.join('; ') };
   }) }, panel = el('div', null, 'platform-grid'), left = el('section', null, 'surface post-panel'), right = el('section', null, 'surface reviewer-panel');
-  const titleRow = el('div', null, 'section-title'); titleRow.append(el('h2', post.title || `${project.platforms?.[post.platform]?.name || displayName(post.platform)} post`)); left.append(titleRow); const limit = project.platforms?.[post.platform]?.textLimit; left.append(el('p', `${[...post.body].length} characters${typeof limit?.value === 'number' ? ` / ${limit.value}` : ''}`, 'muted'));
+  const titleRow = el('div', null, 'section-title'); titleRow.append(el('h2', post.title || `${project.platforms?.[post.platform]?.name || displayName(post.platform)} post`)); left.append(titleRow); const limit = project.platforms?.[post.platform]?.textLimit; left.append(el('p', `${[...post.body].length} characters${typeof limit?.value === 'number' ? ` / ${limit.value}` : ''}`, 'muted'), deliveryControl(project, post));
   const markdownPlatforms = new Set(['devto', 'hashnode', 'gist', 'github-discussion', 'medium', 'substack', 'newsletter']), body = el('div', null, markdownPlatforms.has(post.platform) ? 'markdown' : 'plain-post');
   if (markdownPlatforms.has(post.platform)) body.append(renderMarkdown(post.body, document)); else body.textContent = post.body;
   const thread = Array.isArray(post.thread) ? post.thread : [];
@@ -258,7 +288,20 @@ async function openProject(slug, requested = 'overview') {
   panel.setAttribute('role', 'tabpanel');
   function select(name) { activeTab = name; panel.setAttribute('aria-labelledby', `tab-${name}`); if (name === 'actions') renderActions(panel, { project, operations }); else if (name === 'export') renderExport(panel, { project, operations }); else if (name === 'assets') { const assets = el('div'), render = () => renderAssetsTable(assets, { project, feedbackForm, mediaGallery, selfReview }); panel.replaceChildren(renderBlockers(project, 'asset:', render), assets); render(); } else panel.replaceChildren(name === 'overview' ? overviewPanel(project) : platformPanel(project, project.posts.find(p => p.platform === name))); }
   for (const name of options) { const review = project.reviews.find(r => r.platform === name), label = ({ overview: 'Overview', assets: 'Assets', actions: 'Actions', export: 'Export' })[name] || displayName(name), tab = el('cds-tab', label); if (project.posts.some(post => post.platform === name)) tab.setAttribute('aria-label', `${label} · ${review?.verdict || 'unreviewed'}`); const icon = tabStatusIcon(review?.verdict); if (icon) tab.prepend(icon); tab.id = `tab-${name}`; tab.value = name; if (name === activeTab) tab.setAttribute('selected', ''); tabs.append(tab); }
-  job.project = project; tabs.addEventListener('cds-tabs-selected', event => { tabObserver?.disconnect(); const name = event.detail.item.value; select(name); event.detail.item.scrollIntoView({ block: 'nearest', inline: 'nearest' }); history.replaceState(null, '', `${campaignRoute(slug)}/${encodeURIComponent(name)}`); }); select(activeTab); container.append(job, tabs, panel); show('project'); await customElements.whenDefined('cds-tabs'); await customElements.whenDefined('cds-tab'); await tabs.updateComplete; const selectedTab = [...tabs.querySelectorAll('cds-tab')].find(tab => tab.value === requested); if (selectedTab && load === projectLoad) { selectedTab.selected = true; await selectedTab.updateComplete; await tabs.updateComplete; await document.fonts.ready; const viewport = tabs.shadowRoot?.querySelector('.cds--tabs-nav-content-container'); if (viewport && load === projectLoad) { const reveal = () => { const tabRect = selectedTab.getBoundingClientRect(), viewRect = viewport.getBoundingClientRect(); if (tabRect.right > viewRect.right) viewport.scrollLeft += tabRect.right - viewRect.right + 8; else if (tabRect.left < viewRect.left) viewport.scrollLeft -= viewRect.left - tabRect.left + 8; }; tabObserver = new ResizeObserver(reveal); tabObserver.observe(viewport); tabObserver.observe(selectedTab); reveal(); } } try { await jobStatus(project, job, apply); } catch (error) { if (activeProject === slug && !$('#project').hidden && job.isConnected) { message(error.message); scheduleStatus(project, job, apply); } }
+  let tabLoad = 0;
+  async function selectFresh(name) {
+    const request = ++tabLoad; activeTab = name; panel.setAttribute('aria-labelledby', `tab-${name}`); panel.replaceChildren(el('p', 'Loading campaign…', 'empty'));
+    try {
+      const updated = await api(`/api/project/${encodeURIComponent(slug)}`);
+      if (request !== tabLoad || load !== projectLoad || activeProject !== slug || !panel.isConnected || $('#project').hidden) return;
+      Object.assign(project, updated); select(name);
+    } catch (error) {
+      if (request !== tabLoad || load !== projectLoad || activeProject !== slug || !panel.isConnected || $('#project').hidden) return;
+      const retry = button('Retry', 'secondary'); retry.addEventListener('click', () => selectFresh(name));
+      panel.replaceChildren(el('p', `Could not refresh campaign: ${error.message}`, 'form-error'), retry);
+    }
+  }
+  job.project = project; tabs.addEventListener('cds-tabs-selected', event => { tabObserver?.disconnect(); const name = event.detail.item.value; selectFresh(name); event.detail.item.scrollIntoView({ block: 'nearest', inline: 'nearest' }); history.replaceState(null, '', `${campaignRoute(slug)}/${encodeURIComponent(name)}`); }); select(activeTab); container.append(job, tabs, panel); show('project'); await customElements.whenDefined('cds-tabs'); await customElements.whenDefined('cds-tab'); await tabs.updateComplete; const selectedTab = [...tabs.querySelectorAll('cds-tab')].find(tab => tab.value === requested); if (selectedTab && load === projectLoad) { selectedTab.selected = true; await selectedTab.updateComplete; await tabs.updateComplete; await document.fonts.ready; const viewport = tabs.shadowRoot?.querySelector('.cds--tabs-nav-content-container'); if (viewport && load === projectLoad) { const reveal = () => { const tabRect = selectedTab.getBoundingClientRect(), viewRect = viewport.getBoundingClientRect(); if (tabRect.right > viewRect.right) viewport.scrollLeft += tabRect.right - viewRect.right + 8; else if (tabRect.left < viewRect.left) viewport.scrollLeft -= viewRect.left - tabRect.left + 8; }; tabObserver = new ResizeObserver(reveal); tabObserver.observe(viewport); tabObserver.observe(selectedTab); reveal(); } } try { await jobStatus(project, job, apply); } catch (error) { if (activeProject === slug && !$('#project').hidden && job.isConnected) { message(error.message); scheduleStatus(project, job, apply); } }
 }
 async function route(focus = true) {
   const routeId = ++navigation; projectLoad++; libraryLoad++; tabObserver?.disconnect(); clearTimeout(timer); message(''); const [path, search = ''] = location.hash.slice(1).split('?'), parts = path.split('/').filter(Boolean).map(decodeURIComponent);

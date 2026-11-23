@@ -129,7 +129,7 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
   const anchors = new Set(brief.map(section => section.anchor));
   if (!post.evidence.length || post.evidence.some(anchor => !anchors.has(anchor))) add('specs', 'Missing or unknown evidence anchor');
   const mb = pack.marketBlasterMedia;
-  if (mb) {
+  if (mb && post.delivery !== 'manual' && pack.marketBlaster !== null) {
     const kinds = new Set(post.media.map(m => m.kind));
     for (const kind of kinds) if (!mb.allowedKinds.includes(kind) || kind === 'image' && post.media.some(m => m.kind === kind && /\.gif$/i.test(m.file))) add('specs', `Market Blaster does not support ${kind} media (${mb.source})`);
     for (const group of mb.exclusiveKinds ?? []) if (group.filter(kind => kinds.has(kind)).length > 1) add('specs', `Market Blaster does not support combining ${group.join(' and ')} (${mb.source})`);

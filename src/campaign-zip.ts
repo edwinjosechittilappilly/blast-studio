@@ -62,14 +62,14 @@ export function writeCampaignZip(project: string, identity: CampaignRef, prepare
       ...(m.cover === undefined ? {} : { cover: m.cover }), ...(m.lang === undefined ? {} : { lang: m.lang }), ...(m.captions === undefined ? {} : { captions: copyMedia(m.captions) }) }));
     const reviewFile = join(project, 'reviews', `${post.platform}.json`);
     file(`review/${post.platform}.json`, reviewFile);
-    if (!pack.marketBlaster) {
+    if (post.delivery === 'manual' || !pack.marketBlaster) {
       const folder = `handoff/${post.platform}/`;
       text(`${folder}post.md`, [post.title ? `# ${post.title}\n` : '', post.body, ...(post.thread ?? []).map(t => `\n---\n\n${t}`)].join('\n') + '\n');
       const guide = readFileSync(join(root, 'platforms', post.platform, 'guide.md'), 'utf8');
       const checklist = guide.match(/## Checklist\s*\n([\s\S]*?)(?=\n## |$)/)?.[1]?.trim() ?? '';
       const disclosures = Object.entries(post.disclosure ?? {}).map(([key, value]) => `- ${key}: ${value}`);
       const policy = Object.entries(pack.disclosure).map(([key, rule]) => `- ${key}: ${typeof rule === 'string' ? rule : rule.rule}`);
-      text(`${folder}README.md`, [`# ${pack.name} manual handoff`, '', '- [ ] Open the platform publishing interface and select the correct account.', '- [ ] Copy post.md and attach the listed media.', '- [ ] Enter alt text, captions and disclosures; review and publish manually.', '', '## Media', ...media.map(m => `- ../../${m.path} (${m.kind}; alt: ${m.alt})${'captions' in m && m.captions ? `; captions: ../../${m.captions}` : ''}`), '', '## Disclosure', ...(disclosures.length ? disclosures : ['- None specified.']), '', '## Platform disclosure rules', ...policy, '', '## Platform notes', ...(pack.notes ?? []).map(n => `- ${n}`), '', '## Platform checklist', checklist, ''].join('\n'));
+      text(`${folder}README.md`, [`# ${pack.name} manual handoff`, '', '- [ ] Open the platform publishing interface and select the correct account.', '- [ ] Copy post.md and attach the listed media.', '- [ ] Enter alt text, captions and disclosures; review and publish manually.', '- [ ] Record the live URL: `bstudio mark <address> <platform> --url <url>` (or Mark published in the dashboard).', '', '## Media', ...media.map(m => `- ../../${m.path} (${m.kind}${m.cover ? ', video cover' : ''}; alt: ${m.alt})${'captions' in m && m.captions ? `; captions: ../../${m.captions}` : ''}`), '', '## Disclosure', ...(disclosures.length ? disclosures : ['- None specified.']), '', '## Platform disclosure rules', ...policy, '', '## Platform notes', ...(pack.notes ?? []).map(n => `- ${n}`), '', '## Platform checklist', checklist, ''].join('\n'));
       manual.push({ platform: post.platform, folder, review: { verdict: review.verdict, total: review.total } });
       continue;
     }

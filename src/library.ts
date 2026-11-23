@@ -93,7 +93,7 @@ export function projectReview(config: StudioConfig, slug: string, environment: {
   const rubric = Object.fromEntries(project.posts.map(post => { const pack = packs.get(post.platform); return [post.platform, pack?.ai === 'outline' ? pack.outlineRubric ?? [] : pack?.rubric ?? []]; }));
   const platforms = Object.fromEntries(project.posts.flatMap(post => {
     const pack = packs.get(post.platform);
-    return pack ? [[post.platform, { name: pack.name, delivery: pack.marketBlaster === null ? 'manual' : 'marketBlaster', textLimit: pack.textLimit, titleLimit: pack.titleLimit, threadItemLimit: pack.textLimit }]] : [];
+    return pack ? [[post.platform, { name: pack.name, delivery: post.delivery === 'manual' || pack.marketBlaster === null ? 'manual' : 'marketBlaster', supportsMarketBlaster: pack.marketBlaster !== null, textLimit: pack.textLimit, titleLimit: pack.titleLimit, threadItemLimit: pack.textLimit }]] : [];
   }));
   const captions: Record<string, string> = {};
   for (const asset of project.assets) {

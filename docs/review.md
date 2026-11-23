@@ -38,4 +38,9 @@ bstudio accept acme/release-note linkedin --reason "Reviewed the draft and accep
 
 Acceptance requires a current review and passing gates. The command recalculates gates and refuses to override a failure. It records the reason in the review JSON. Changes to the title, body, media filenames, alt text or media file contents make the review stale; run review again before acceptance or export.
 
+Delivery is an owner decision, not an editorial score override. Setting a post's
+`delivery: manual` routes that post to a manual handoff; omitting it uses the
+platform pack's route. This does not bypass review or its gates. Review the
+content and destination requirements before exporting and publishing.
+
 `bstudio review --calibrate` runs the reviewer against the bundled labeled fixtures and reports exact agreement per criterion. Calibration requires a configured reviewer.

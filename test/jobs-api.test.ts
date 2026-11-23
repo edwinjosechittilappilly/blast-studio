@@ -37,12 +37,13 @@ test('jobs API enforces host, session, origin, header and argument schemas', asy
     assert.equal(operations.status, 200);
     const metadata = JSON.parse(operations.body);
     assert.ok(Object.hasOwn(metadata, 'plan'));
-    for (const name of ['new', 'brief', 'plan', 'make', 'render', 'review', 'revise', 'accept', 'confirm', 'export', 'mark', 'status', 'history', 'restore', 'feedback list', 'feedback add', 'feedback rm']) {
+    for (const name of ['new', 'brief', 'plan', 'make', 'render', 'review', 'revise', 'accept', 'confirm', 'export', 'delivery', 'mark', 'status', 'history', 'restore', 'feedback list', 'feedback add', 'feedback rm']) {
       assert.equal(metadata[name].fields.campaign.kind, 'campaign', name);
     }
     assert.equal(metadata['campaign rename'].fields.source.kind, 'campaign');
     assert.equal(metadata['campaign rename'].fields.destination.kind, 'campaign');
     assert.equal(metadata.accept.fields.platform.kind, 'id');
+    assert.equal(metadata.delivery.fields.delivery.kind, 'delivery');
     for (const name of ['new', 'render', 'revise', 'plan']) assert.equal(metadata[name].requiresTTY, false, name);
     assert.equal((await call('GET', '/api/jobs', { cookie: 'bs=valid' })).status, 200);
     const headers = { cookie: 'bs=valid', origin: `http://${host}`, 'x-requested-with': 'bstudio' };
@@ -166,9 +167,24 @@ test('dashboard starts, polls, reads and cancels a job over HTTP', { timeout: 15
     assert.ok((await matching.json() as { id: string }[]).some(item => item.id === id));
     const other = await fetch(`${base}/api/jobs?campaign=demo%2Fother`, { headers });
     assert.deepEqual(await other.json(), []);
-    const log = await fetch(`${base}/api/jobs/${id}/log`, { headers });
-    assert.equal(log.status, 200);
-    assert.match((await log.json() as { log: string }).log, /job output ready/);
+    const outputReady = Promise.withResolvers<void>();
+    const checkLog = async () => {
+      try {
+        const log = await fetch(`${base}/api/jobs/${id}/log`, { headers });
+        assert.equal(log.status, 200);
+        if (/job output ready/.test((await log.json() as { log: string }).log)) outputReady.resolve();
+      } catch (error) { outputReady.reject(error); }
+    };
+    watcher = watch(join(root, 'projects/demo/campaigns/launch/logs/jobs'), () => { void checkLog(); });
+    // Bound a real child-process output wait so failures still run cleanup.
+    const outputTimeout = setTimeout(() => outputReady.reject(new Error('job output ready marker was not observed')), 10000);
+    try {
+      await checkLog();
+      await outputReady.promise;
+    } finally {
+      clearTimeout(outputTimeout);
+    }
+    watcher.close(); watcher = undefined;
     const emptyTail = await fetch(`${base}/api/jobs/${id}/log?tail=0`, { headers });
     assert.equal((await emptyTail.json() as { log: string }).log, '');
     assert.equal((await fetch(`${base}/api/jobs/${id}/log?tail=-1`, { headers })).status, 400);

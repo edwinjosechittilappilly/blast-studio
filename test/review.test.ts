@@ -23,6 +23,14 @@ const image: AssetMeta = { id: 'a', kind: 'illustration', provider: 'openai', ou
 const brief = [{ anchor: 'E1', title: 'Evidence', body: 'A clear update.' }];
 const gate = (id: string, p = post, pk = pack, assets: AssetMeta[] = []) => runGates(p, pk, assets, brief, config).find(g => g.id === id)!;
 
+test('manual delivery skips Market Blaster media restrictions but keeps platform limits', () => {
+  const mediaPost: Post = { ...post, media: [{ asset: 'a', file: 'assets/a/image.png', alt: 'Example', kind: 'image' }] };
+  const mediaPack: PlatformPack = { ...pack, formats: ['image'], media: [{ kind: 'image' }], marketBlasterMedia: { source: 'mb', allowedKinds: [] } };
+  assert.match(gate('specs', mediaPost, mediaPack, [image]).message, /Market Blaster does not support image/);
+  assert.equal(gate('specs', { ...mediaPost, delivery: 'manual' }, mediaPack, [image]).pass, true);
+  assert.match(gate('specs', { ...mediaPost, delivery: 'manual' }, { ...mediaPack, media: [{ kind: 'image', maxCount: { value: 0, source: 'platform' } }] }, [image]).message, /image count/);
+});
+
 test('edge warnings identify the zone used for shared outputs', () => {
   const measured: AssetMeta = { ...image, metrics: [{ file: 'image.png', minFontPx: null, minContrast: null, overflow: false, edge: true, zoneDescription: 'YouTube Shorts zone (youtube-shorts-safe-zone), X default 5% margin' }] };
   const withMedia: Post = { ...post, media: [{ asset: 'a', file: 'assets/a/image.png', kind: 'image', alt: 'Example' }] };
