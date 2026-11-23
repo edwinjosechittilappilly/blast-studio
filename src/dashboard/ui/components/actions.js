@@ -12,7 +12,7 @@ const field = (label, tag = 'cds-text-input') => { const input = el(tag); input.
 const notice = (text, kind = 'error') => { const n = el('cds-inline-notification'); n.setAttribute('kind', kind); n.setAttribute('hide-close-button', ''); n.setAttribute('title', text); return n; };
 const slugOf = ctx => ctx.project.slug;
 const quote = value => /^[a-zA-Z0-9_./:=,-]+$/.test(String(value)) ? String(value) : `'${String(value).replaceAll("'", "'\\''")}'`;
-function terminalCommand(op, schema, campaign, args) {
+export function terminalCommand(op, schema, campaign, args) {
   const positional = [], flags = [];
   for (const [key, spec] of Object.entries(schema.fields)) {
     const value = key === 'campaign' ? campaign : args[key]; if (value == null || value === '' || value === false) continue;
@@ -70,11 +70,11 @@ export function jobRegion(container, ctx, options = {}) {
   setTimeout(refresh, 0); return run;
 }
 
-export function openForm(title, description, fields, submitLabel, onSubmit, kind = 'primary') {
+export function openForm(title, description, fields, submitLabel, onSubmit, kind = 'primary', focusCancel = false) {
   const modal = el('cds-modal'); modal.setAttribute('open', ''); const header = el('cds-modal-header'), heading = el('cds-modal-heading', title), x = el('cds-modal-close-button'); header.append(heading, x);
   const body = el('cds-modal-body', null, 'actions-modal-body'); if (description) body.append(el('p', description)); const error = el('p', null, 'form-error'); error.setAttribute('role', 'alert');
   for (const item of fields) body.append(item.node); body.append(error);
-  const footer = el('cds-modal-footer'), close = button('Cancel', 'secondary'), submit = button(submitLabel, kind); footer.append(close, submit); modal.append(header, body, footer); document.body.append(modal);
+  const footer = el('cds-modal-footer'), close = button('Cancel', 'secondary'), submit = button(submitLabel, kind); if (focusCancel) close.setAttribute('data-modal-primary-focus', ''); footer.append(close, submit); modal.append(header, body, footer); document.body.append(modal);
   const dismiss = () => modal.remove(); close.addEventListener('click', dismiss); x.addEventListener('click', dismiss); modal.addEventListener('cds-modal-closed', dismiss);
   for (const item of fields) item.node.addEventListener('change', () => item.node.removeAttribute('invalid'));
   submit.addEventListener('click', async () => { const args = {}; for (const item of fields) { const raw = item.bool ? item.node.checked : item.node.value?.trim(), value = raw === '__none' ? '' : raw; if (item.required && !value) { item.node.setAttribute('invalid', ''); item.node.setAttribute('invalid-text', item.invalidText || `Choose or enter ${item.label.toLowerCase()}.`); item.node.focus(); return; } if (value) args[item.key] = value; } if (args.platform && args.asset && title === 'Add feedback') { error.textContent = 'Choose either a platform or an asset, not both.'; return; } error.textContent = ''; submit.disabled = true; try { if (await onSubmit(args, message => { error.textContent = message; }) === false) { if (!error.textContent) error.textContent = 'Could not start the job.'; submit.disabled = false; } else dismiss(); } catch (failure) { error.textContent = failure.message; submit.disabled = false; } });
@@ -122,7 +122,7 @@ export function renderActions(container, ctx) {
     });
   }
   for (const [title, list] of [['Pipeline', pipeline], ['Decisions', [['accept', 'Accept'], ['confirm', 'Confirm rights'], ['mark', 'Mark published']]]]) { const group = el('div', null, 'actions-group'), controls = el('div', null, 'actions-controls'); group.append(el('h3', title), controls); section.append(group); for (const [op, label] of list) action(op, label, controls); }
-  section.append(el('p', 'To revise content, use Apply feedback in the campaign header.', 'muted')); const feedbackActions = el('div', null, 'actions-controls'); feedback.insertBefore(feedbackActions, feedbackContent); action('feedback add', 'Add feedback', feedbackActions); container.append(feedback, versions); loadData();
+  section.append(el('p', 'To revise content, use Apply feedback or Revise in the campaign header.', 'muted')); const feedbackActions = el('div', null, 'actions-controls'); feedback.insertBefore(feedbackActions, feedbackContent); action('feedback add', 'Add feedback', feedbackActions); container.append(feedback, versions); loadData();
 }
 
 export function renderAssetsTable(container, ctx) {
