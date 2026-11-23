@@ -13,6 +13,16 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 import { parsePost, serializePost } from './posts.ts';
 function safePath(path: string): boolean { return !!path && !isAbsolute(path) && normalize(path) === path && !path.split(/[\\/]/).some(p => p === '..' || p === '.'); }
 
+// Delivery is owner-controlled, so discard agent input before any output validation.
+function stripAgentDelivery(text: string): string {
+  const match = text.match(/^(---\s*\r?\n)([\s\S]*?)(\r?\n---\s*(?:\r?\n|$))([\s\S]*)$/);
+  if (!match) return text;
+  const data = parse(match[2]);
+  if (!data || typeof data !== 'object' || Array.isArray(data) || !Object.hasOwn(data, 'delivery')) return text;
+  delete data.delivery;
+  return `${match[1]}${stringify(data).trimEnd()}${match[3]}${match[4]}`;
+}
+
 export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs, passEnv = [], validate, preserveBlockers = false, workspaceOnly = [] }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string>; allowOut: RegExp[]; prompt: string; timeoutMs: number; passEnv?: string[]; validate?: (workspace: string) => { path: string; message: string }[]; preserveBlockers?: boolean; workspaceOnly?: string[] }): Promise<{ copied: string[]; ignored: string[] }> {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-agent-'));
   const temp = mkdtempSync(join(tmpdir(), 'bstudio-agent-tmp-'));
@@ -45,8 +55,12 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
           const permitted = allowOut.some(re => { re.lastIndex = 0; return re.test(rel); });
           if (st.isFile() && Object.hasOwn(files, rel) && readFileSync(path, 'utf8') === files[rel]) continue;
           if (!st.isFile() || !permitted) { ignored.push(rel); continue; }
-          const data = readFileSync(path);
+          let data = readFileSync(path);
           try {
+            if (/^posts\/[^/]+\.md$/.test(rel)) {
+              const cleaned = stripAgentDelivery(data.toString('utf8'));
+              if (cleaned !== data.toString('utf8')) { data = Buffer.from(cleaned); writeFileSync(path, data); }
+            }
             if (/\.ya?ml$/i.test(rel)) { const parsed = parse(data.toString('utf8')); if (!parsed || typeof parsed !== 'object') throw new Error('expected object or array'); }
             if (/^posts\/[^/]+\.md$/.test(rel)) { const post = parsePost(rel, data.toString('utf8')); if (`posts/${post.platform}.md` !== rel) throw new Error(`platform ${JSON.stringify(post.platform)} does not match ${rel}`); }
             if (/\.json$/i.test(rel)) JSON.parse(data.toString('utf8'));

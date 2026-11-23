@@ -1,5 +1,6 @@
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium, type Page } from 'playwright';
 import { startDashboard } from '../src/dashboard/server.ts';
@@ -19,7 +20,7 @@ async function dashboard(t: TestContext, viewport = { width: 1440, height: 900 }
   const browser = await chromium.launch({ headless: true });
   t.after(() => browser.close());
   const page = await browser.newPage({ viewport });
-  return { page, url: started.url };
+  return { page, url: started.url, root };
 }
 
 function gate() {
@@ -139,6 +140,23 @@ test('platform delivery control submits the chosen route and refreshes the effec
   await page.getByText('delivery: succeeded').waitFor();
   assert.deepEqual(submitted, { op: 'delivery', campaign: 'acme/launch', args: { platform: 'linkedin', delivery: 'manual' } });
   assert.equal(await route.inputValue(), 'manual');
+});
+
+test('delivery picker offers Market Blaster only for supported packs, including manual overrides', async t => {
+  const { page, url, root } = await dashboard(t);
+  writeFileSync(join(root, 'projects/acme/campaigns/launch/posts/linkedin.md'), '---\nplatform: linkedin\ndelivery: manual\nevidence: []\nmedia: []\n---\nLaunch post');
+  writeFileSync(join(root, 'projects/acme/campaigns/launch/posts/dailydev.md'), '---\nplatform: dailydev\nevidence: []\nmedia: []\n---\nDaily post');
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  const route = page.getByRole('combobox', { name: 'Delivery route' });
+  await route.waitFor();
+  assert.equal(await route.inputValue(), 'manual');
+  assert.deepEqual(await page.locator('.delivery-control cds-select-item').allTextContents(), ['Manual', 'Market Blaster']);
+  await route.selectOption('marketBlaster');
+  assert.equal(await route.inputValue(), 'marketBlaster');
+  await page.getByRole('tab', { name: /dailydev/i }).click();
+  await route.waitFor();
+  assert.equal(await route.inputValue(), 'manual');
+  assert.deepEqual(await page.locator('.delivery-control cds-select-item').allTextContents(), ['Manual']);
 });
 
 test('mark published offers manually routed posts regardless of platform', async t => {

@@ -222,6 +222,16 @@ test('export enforces current gates and reports Market Blaster check failures', 
   await assert.rejects(exportCommand(['acme/demo', '--mb', f.root], f.io), { name: 'UserError', message: /Market Blaster check failed: invalid destination/ });
 });
 
+test('export rejects Market Blaster media after delivery changes from manual', async () => {
+  const f = fixture('hashnode'), post = join(f.project, 'posts/hashnode.md');
+  const original = readFileSync(post, 'utf8');
+  writeFileSync(post, original.replace('platform: hashnode\n', 'platform: hashnode\ndelivery: manual\n'));
+  await exportCommand(['acme/demo'], f.io);
+
+  writeFileSync(post, original);
+  await assert.rejects(exportCommand(['acme/demo'], f.io), /hashnode: current gates failed/);
+});
+
 test('campaign commands support help, option forms and early address validation', async () => {
   const f = fixture();
   for (const command of [accept, confirm, mark, exportCommand, library]) {
@@ -463,6 +473,29 @@ test('a manual-only campaign is complete once its publications are marked', asyn
   await mark(['acme/demo', 'instagram', '--url', 'https://instagram.com/p/1'], f.io);
   await status(['acme/demo'], f.io);
   assert.match(f.io.text(), /next: done/);
+});
+
+test('status requires re-import after previously imported destinations become manual', async () => {
+  for (const format of [[], ['--dir']]) {
+    const f = fixture(), post = join(f.project, 'posts/bluesky.md');
+    writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+    f.io.run = async () => '';
+    const next = async () => {
+      const start = f.io.stdout.length;
+      await status(['acme/demo'], f.io);
+      return f.io.stdout.slice(start).find(line => line.includes('next:'))!;
+    };
+    await exportCommand(['acme/demo', '--mb', f.root, ...format], f.io);
+    writeFileSync(post, readFileSync(post, 'utf8').replace('platform: bluesky\n', 'platform: bluesky\ndelivery: manual\n'));
+    await exportCommand(['acme/demo', '--local', ...format], f.io);
+    assert.match(await next(), /record publication: bstudio mark acme\/demo bluesky/);
+    await mark(['acme/demo', 'bluesky', '--url', 'https://bsky.app/profile/example/post/1'], f.io);
+    assert.match(await next(), /next: import: bstudio export acme\/demo --mb <path>/);
+    await exportCommand(['acme/demo', '--mb', f.root, ...format], f.io);
+    assert.match(await next(), /next: done/);
+    await exportCommand(['acme/demo', '--local', ...format], f.io);
+    assert.match(await next(), /next: done/);
+  }
 });
 
 test('mixed campaigns require both a manual publication mark and an import', async () => {

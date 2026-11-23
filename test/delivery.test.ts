@@ -31,8 +31,18 @@ test('delivery updates only frontmatter value, snapshots, validates and locks', 
   for (const args of [['p/c', '../linkedin', 'manual'], ['p/c', 'linkedin', 'other'], ['p/c', 'linkedin'], ['p/c', 'youtube-shorts', 'marketBlaster']]) assert.equal(await main(['delivery', ...args], io), 1);
 });
 
+test('delivery repairs an invalid owner value without changing other bytes', async () => {
+  const { dir, io } = fixture(), file = join(dir, 'posts/linkedin.md');
+  const before = '---\nplatform: linkedin\nevidence: []\nmedia: []\ndelivery: auto # owner note\n---\nBody\n';
+  writeFileSync(file, before);
+  assert.throws(() => loadPosts(dir), /invalid delivery/);
+  assert.equal(await main(['delivery', 'p/c', 'linkedin', 'manual'], io), 0);
+  assert.equal(readFileSync(file, 'utf8'), before.replace('delivery: auto', 'delivery: manual'));
+  assert.equal(readFileSync(join(dir, 'history', historyEntries(dir)[0], 'posts/linkedin.md'), 'utf8'), before);
+});
+
 test('agent cannot add, remove or change owner delivery', async () => {
-  for (const [existing, agent, expected] of [['manual', 'marketBlaster', 'manual'], ['manual', '', 'manual'], ['', 'manual', undefined]] as const) {
+  for (const [existing, agent, expected] of [['manual', 'marketBlaster', 'manual'], ['manual', '', 'manual'], ['', 'manual', undefined], ['manual', 'auto', 'manual'], ['', 'Manual', undefined], ['manual', 'null', 'manual']] as const) {
     const { root, dir } = fixture(), file = join(dir, 'posts/linkedin.md');
     const text = (route: string) => `---\nplatform: linkedin\nevidence: []\nmedia: []\n${route ? `delivery: ${route}\n` : ''}---\nEdited\n`;
     writeFileSync(file, text(existing));
@@ -40,7 +50,7 @@ test('agent cannot add, remove or change owner delivery', async () => {
       mkdirSync(join(opts!.cwd!, 'posts'), { recursive: true });
       writeFileSync(join(opts!.cwd!, 'posts/linkedin.md'), text(agent)); return '';
     } });
-    await runAgentInWorkspace({ config: loadConfig(io), io, projectDir: dir, files: {}, allowOut: [/^posts\/linkedin\.md$/], prompt: 'write', timeoutMs: 1000 });
+    await runAgentInWorkspace({ config: loadConfig(io), io, projectDir: dir, files: {}, allowOut: [/^posts\/linkedin\.md$/], prompt: 'write', timeoutMs: 1000, validate: workspace => { assert.equal(loadPosts(workspace).get('linkedin')!.delivery, undefined); return []; } });
     assert.equal(loadPosts(dir).get('linkedin')!.delivery, expected);
   }
 });

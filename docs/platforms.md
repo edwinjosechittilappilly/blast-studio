@@ -15,7 +15,9 @@ Pack fields worth knowing:
 
 The Market Blaster column describes the pack's default route. An owner can
 override an individual post to manual delivery with `delivery: manual` in
-its frontmatter; all other values use the pack route.
+its frontmatter. Omission uses the pack route; `marketBlaster` selects that
+route for supported packs. Other values are invalid and can be repaired with
+`bstudio delivery <project>/<campaign> <platform> manual|marketBlaster`.
 
 | Platform and guide | AI policy | Pack formats | Market Blaster |
 | --- | --- | --- | --- |

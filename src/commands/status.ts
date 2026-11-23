@@ -1,6 +1,7 @@
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { strFromU8, unzipSync } from 'fflate';
 import { loadConfig, campaignDir } from '../config.ts';
 import { compositeSlug, parseCampaignRef } from '../campaigns.ts';
 import { listExports, projectReview, latestSources } from '../library.ts';
@@ -8,6 +9,17 @@ import { monthToDate } from '../budget/ledger.ts';
 import type { Command } from '../io.ts';
 import { UserError } from '../types.ts';
 import { listBlockers } from '../blockers.ts';
+import { loadPacks } from '../packs.ts';
+
+function importedDestinations(exportDir: string, entry: { name: string; kind: 'zip' | 'directory' }): Set<string> {
+  const path = join(exportDir, entry.name);
+  const manifest = entry.kind === 'zip'
+    ? JSON.parse(strFromU8(unzipSync(readFileSync(path), { filter: file => file.name === 'campaign.json' })['campaign.json']))
+    : JSON.parse(readFileSync(join(path, 'manifest.json'), 'utf8'));
+  const destinations = entry.kind === 'zip' ? manifest.destinations : manifest.posts;
+  if (!Array.isArray(destinations)) throw new Error('missing destinations');
+  return new Set(destinations.map(item => entry.kind === 'zip' ? item.id : item.destination).filter((id): id is string => typeof id === 'string'));
+}
 
 export const run: Command = async (args, io) => {
   const usage = 'usage: bstudio status [<project>/<campaign>] [--verbose]';
@@ -40,7 +52,8 @@ export const run: Command = async (args, io) => {
     }
     const exportDir = join(campaignDir(config, project.slug), 'export');
     const exportFiles = [join(exportDir, 'manifest.json'), join(exportDir, `${compositeSlug(parseCampaignRef(project.slug))}.campaign.zip`)].filter(existsSync);
-    const latestExport = listExports(config, project.slug)[0];
+    const exports = listExports(config, project.slug);
+    const latestExport = exports[0];
     const exportedAt = exportFiles.length ? new Date(Math.max(...exportFiles.map(file => statSync(file).mtimeMs))).toISOString() : latestExport?.time ?? null;
     const published = Object.keys(project.published);
     io.out(`  exported: ${exportedAt ?? 'not exported'}`);
@@ -66,7 +79,24 @@ export const run: Command = async (args, io) => {
     const needsRevision = project.reviews.some(review => review.verdict !== 'pass' && review.verdict !== 'accepted');
     const hasMarketBlasterPosts = project.posts.some(post => project.platforms[post.platform]?.delivery === 'marketBlaster');
     const imported = latestExport && existsSync(join(exportDir, latestExport.name.split('/')[0], 'imported.json'));
-    const next = blocker ? `resolve blockers: bstudio blockers ${project.slug}` : unresolved ? `confirm rights: ${unresolved[0]}` : staleReview ? `run bstudio review ${project.slug}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(dir, 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : staleExport ? `export: bstudio export ${project.slug}` : unmarked ? `record publication: bstudio mark ${project.slug} ${unmarked.platform} --url <url>` : hasMarketBlasterPosts && !imported ? `import: bstudio export ${project.slug} --mb <path>` : 'done';
+    const previousImport = !imported && !hasMarketBlasterPosts
+      ? exports.find(entry => existsSync(join(exportDir, entry.name.split('/')[0], 'imported.json')))
+      : undefined;
+    let removedDestination = false;
+    if (previousImport) {
+      try {
+        const destinations = importedDestinations(exportDir, previousImport), packs = loadPacks();
+        removedDestination = project.posts.some(post => {
+          const destination = packs.get(post.platform)?.marketBlaster;
+          return project.platforms[post.platform]?.delivery === 'manual' && !!destination && destinations.has(destination);
+        });
+      } catch (error) {
+        io.out(`  next: fix invalid imported export ${previousImport.name}: ${error instanceof Error ? error.message : String(error)}`);
+        continue;
+      }
+    }
+    const needsImport = !imported && (hasMarketBlasterPosts || removedDestination);
+    const next = blocker ? `resolve blockers: bstudio blockers ${project.slug}` : unresolved ? `confirm rights: ${unresolved[0]}` : staleReview ? `run bstudio review ${project.slug}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(dir, 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : staleExport ? `export: bstudio export ${project.slug}` : unmarked ? `record publication: bstudio mark ${project.slug} ${unmarked.platform} --url <url>` : needsImport ? `import: bstudio export ${project.slug} --mb <path>` : 'done';
     io.out(`  next: ${next}`);
   }
   io.out(`Month to date: $${monthToDate(config.root).toFixed(2)} / $${config.budget.monthlyUsd.toFixed(2)}`);

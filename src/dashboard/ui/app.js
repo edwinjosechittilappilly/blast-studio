@@ -159,7 +159,8 @@ function campaignRelativeMessage(message, slug) {
 function deliveryControl(project, post) {
   const section = el('section', null, 'delivery-control'), select = el('cds-select'), save = button('Save delivery', 'secondary'), error = el('p', null, 'form-error');
   select.setAttribute('label-text', 'Delivery route'); error.setAttribute('role', 'alert');
-  for (const [value, text] of [['manual', 'Manual'], ['marketBlaster', 'Market Blaster']]) { const option = el('cds-select-item', text); option.setAttribute('value', value); select.append(option); }
+  const routes = [['manual', 'Manual']]; if (project.platforms?.[post.platform]?.supportsMarketBlaster) routes.push(['marketBlaster', 'Market Blaster']);
+  for (const [value, text] of routes) { const option = el('cds-select-item', text); option.setAttribute('value', value); select.append(option); }
   select.value = project.platforms?.[post.platform]?.delivery === 'manual' ? 'manual' : 'marketBlaster'; section.append(select, save, el('p', 'Manual delivery is handed off for publishing yourself. Market Blaster delivery is included in the import for supported destinations only.', 'muted delivery-help'), error);
   const run = jobRegion(section, { project }, { operation: 'delivery', ownOnly: true, onComplete: async job => {
     try {

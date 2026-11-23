@@ -39,9 +39,10 @@ Set one post to manual delivery with
 `bstudio delivery acme/release-note linkedin manual`. This writes
 `delivery: manual` in the post's frontmatter. Use
 `bstudio delivery acme/release-note linkedin marketBlaster` to return to the
-pack route; this is rejected for packs without a Market Blaster mapping. Any
-frontmatter value other than `manual` uses the pack route. The choice does not
-change the platform's policy or review requirements.
+pack route; this is rejected for packs without a Market Blaster mapping. If
+`delivery` is absent, the pack route is used. Invalid values fail validation;
+repair them with the `bstudio delivery` command. The choice does not change the
+platform's policy or review requirements.
 
 Blockers are arrays of non-empty strings in post frontmatter or asset metadata; an empty `blockers:` field is treated as absent. Resolve the underlying issue in the brief or source first. List blockers with `bstudio blockers acme/release-note`, then pass the exact listed text and record the reason, for example `bstudio blockers acme/release-note resolve post:linkedin 0 --text "Verify the claim" --reason "Verified the claim"`. The index is zero-based and may change after a resolution, so list again before resolving another; a changed text is rejected instead of removing a different blocker. The command snapshots the campaign, removes the blocker, and records the owner decision in `resolutions.yml`. You can also resolve blockers from the dashboard. Revise preserves existing blockers and cannot clear them. Re-run review afterward.
 
@@ -62,7 +63,7 @@ bstudio export acme/release-note --mb /path/to/market-blaster-project
 
 Export requires every post to have a current passing or accepted review with passing gates. It writes `export/<project>--<campaign>.campaign.zip`, containing the manifest, brief, sources, posts, media, handoffs and reviews. Use `--dir` for the legacy v1 directory export. Each zip or directory export is preserved in `export/<timestamp>/`; list them with `bstudio export acme/release-note --list`. Without a Market Blaster target, the package is local only; import later by rerunning with `--mb <path>`. The target can also be set as `marketBlaster.project` in the studio configuration or the project's `project.yml` (relative project paths resolve from the project directory); `--mb` takes precedence. With a target, export invokes Market Blaster's `import` with `--slug <project>--<campaign>` and checks that slug; `--force` is passed to the import. Market Blaster can overwrite existing unapproved drafts with a warning; approved drafts require `--force`. The double-hyphen separator makes composite slugs distinct for distinct addresses; see [package identity and collisions](design/campaign-package.md). Export does not publish content.
 
-Successful Market Blaster imports are recorded in the corresponding export history directory as `imported.json`, even if the subsequent Market Blaster check fails. Status suggests importing when the latest export has not been imported; a newer local export or refused import does not inherit an earlier import's receipt. A campaign with only manual destinations can instead reach done when all its publications are marked. For mixed campaigns, mark the manual publications and import the latest export.
+Successful Market Blaster imports are recorded in the corresponding export history directory as `imported.json`, even if the subsequent Market Blaster check fails. Status suggests importing when the latest export has not been imported and the campaign has Market Blaster destinations, or when a destination in the last imported export is now manual; a newer local export or refused import does not inherit an earlier import's receipt. Re-import after changing a destination to manual, even if all destinations are now manual, so Market Blaster receives the updated campaign instead of retaining the old destination. A manual-only campaign without a destination to remove from its last import can reach done when all its publications are marked. For mixed campaigns, mark the manual publications and import the latest export.
 
 The archive includes the full brief and extracted evidence, not just publication-ready text. Inspect it before sharing. It is limited to 2,000 entries, 500 MiB per entry and 1 GiB total uncompressed content.
 
