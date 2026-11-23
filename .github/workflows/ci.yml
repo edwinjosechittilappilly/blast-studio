@@ -48,7 +48,7 @@ jobs:
       - name: Stress program timeout cleanup
         run: |
           for i in {1..20}; do
-            node --test --test-name-pattern='^program timeout terminates descendants holding output pipes$' test/jobs.test.ts
+            node --test --test-name-pattern='^program timeout' test/jobs.test.ts
           done
       - run: npm run typecheck
       - run: make docs

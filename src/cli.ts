@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createInterface, type Interface } from "node:readline/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { run as accept, confirm } from "./commands/accept.ts";
@@ -33,6 +33,7 @@ import { campaignDir, configFile, loadConfig } from "./config.ts";
 import { migrateProjects } from "./migrate.ts";
 import { recoverRenames } from "./rename.ts";
 import { acquireCampaignLock, finishSpawnedJob, JobConflict, processGroupRunning, startCliJob, updateJobProcesses } from "./jobs/runner.ts";
+import { linuxStat } from "./jobs/process.ts";
 import { campaignRef } from "./jobs/registry.ts";
 import { keychainGet } from "./keychain.ts";
 import type { Command, IO } from "./io.ts";
@@ -89,16 +90,30 @@ function signalGroup(pid: number, signal: NodeJS.Signals): void {
   try { process.kill(process.platform === "win32" ? pid : -pid, signal); }
   catch (error) { if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error; }
 }
+function survivingGroups(groups: number[]): string {
+  const members: string[] = [];
+  if (process.platform === "linux") {
+    try {
+      for (const name of readdirSync("/proc")) {
+        if (!/^\d+$/.test(name)) continue;
+        const stat = linuxStat(Number(name));
+        if (stat && groups.includes(Number(stat[2])) && stat[0] !== "Z") members.push(`${name} (${stat[0]})`);
+      }
+    } catch { /* Group IDs remain available if procfs cannot be read. */ }
+  }
+  return `process groups still running: ${groups.join(", ")}${members.length ? `; surviving PIDs (state): ${members.join(", ")}` : ""}`;
+}
 function stopSubprocesses(signal: NodeJS.Signals): Promise<void> {
   interrupted = signal;
   const groups = [...subprocesses];
   for (const pid of groups) signalGroup(pid, "SIGTERM");
   if (!groups.length) return Promise.resolve();
-  const { promise, resolve } = Promise.withResolvers<void>(), start = Date.now();
+  const { promise, resolve, reject } = Promise.withResolvers<void>(), start = performance.now();
   const timer = setInterval(() => {
-    const alive = groups.filter(processGroupRunning);
-    if (Date.now() - start >= 5000) for (const pid of alive) signalGroup(pid, "SIGKILL");
+    const alive = groups.filter(processGroupRunning), elapsed = performance.now() - start;
     if (!alive.length) { clearInterval(timer); resolve(); }
+    else if (elapsed >= 10000) { clearInterval(timer); reject(new Error(survivingGroups(alive))); }
+    else if (elapsed >= 5000) for (const pid of alive) signalGroup(pid, "SIGKILL");
   }, 50);
   return promise;
 }
@@ -125,14 +140,19 @@ function runProgram(cmd: string, args: string[], opts: { cwd?: string; env?: Rec
     child.once("error", error => { clearTimeout(timer); reject(error); });
     child.once("close", async (code, signal) => {
       clearTimeout(timer); clearTimeout(forceTimer);
+      let survivors = "";
       if (timedOut && child.pid) {
         signalGroup(child.pid, "SIGKILL");
         // Pipe closure can precede the kernel completing descendant termination.
-        while (processGroupRunning(child.pid)) await delay(50);
+        const deadline = performance.now() + 5000;
+        while (processGroupRunning(child.pid)) {
+          if (performance.now() >= deadline) { survivors = survivingGroups([child.pid]); break; }
+          await delay(50);
+        }
       }
-      if (child.pid && !interrupted) { subprocesses.delete(child.pid); recordProcesses?.([...subprocesses]); }
+      if (child.pid && !interrupted && !survivors) { subprocesses.delete(child.pid); recordProcesses?.([...subprocesses]); }
       if (!timedOut && code === 0) { if (stderr) opts.onStderr?.(stderr); resolve(stdout); return; }
-      const reason = timedOut ? `timed out after ${opts.timeoutMs! / 1000}s` : `exited with ${code ?? signal}`;
+      const reason = timedOut ? `timed out after ${opts.timeoutMs! / 1000}s${survivors ? `; ${survivors}` : ""}` : `exited with ${code ?? signal}`;
       const tail = [stdout, stderr].filter(Boolean).join("\n").trim().split("\n").slice(-20).join("\n");
       reject(new Error(`${cmd} ${reason}${tail ? `:\n${tail}` : ""}`));
     });
@@ -226,7 +246,7 @@ export async function main(argv: string[], io: IO = realIO()): Promise<number> {
     const code = signal === "SIGINT" ? 130 : signal === "SIGHUP" ? 129 : 143;
     if (interrupted) { for (const pid of subprocesses) signalGroup(pid, "SIGKILL"); abortJob?.(); process.exit(code); }
     stopping = stopSubprocesses(signal);
-    void stopping.then(() => { abortJob?.(); process.exit(code); });
+    void stopping.then(() => { abortJob?.(); process.exit(code); }, error => { io.err(`error: ${error instanceof Error ? error.message : String(error)}`); abortJob?.(); process.exit(code); });
   };
   const onTerm = () => onSignal("SIGTERM"), onInt = () => onSignal("SIGINT"), onHangup = () => onSignal("SIGHUP");
   if (managed) { process.on("SIGTERM", onTerm); process.on("SIGINT", onInt); process.on("SIGHUP", onHangup); }

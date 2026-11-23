@@ -480,11 +480,38 @@ test('program timeout terminates descendants holding output pipes', { timeout: 5
   } else assert.throws(() => process.kill(grandchild, 0), { code: 'ESRCH' });
 });
 
-test('program timeout kills descendants without inherited pipes even when the parent exits successfully', { timeout: 5000 }, async () => {
+test('program timeout kills descendants without inherited pipes even when the parent exits successfully', { timeout: 7000 }, async () => {
   if (process.platform === 'win32') return;
   let group = 0;
   const script = `const {spawn}=require('node:child_process'); const c=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});process.send("ready");setInterval(()=>{},1000)'],{stdio:['ignore','ignore','ignore','ipc']}); c.on('message',()=>console.log('group:'+process.pid)); process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{},1000);`;
-  await assert.rejects(realIO().run(process.execPath, ['-e', script], { timeoutMs: 500, onOutput: line => { if (line.startsWith('group:')) group = Number(line.slice(6)); } }), /timed out/);
+  await assert.rejects(realIO().run(process.execPath, ['-e', script], { timeoutMs: 2000, onOutput: line => { if (line.startsWith('group:')) group = Number(line.slice(6)); } }), /timed out/);
   assert.ok(group);
   assert.equal(processGroupRunning(group), false);
+});
+
+test('timeout cleanup reports a surviving process group within its deadline', { timeout: 10000 }, async () => {
+  if (process.platform === 'win32') return;
+  let group = 0, descendant = 0;
+  const originalKill = process.kill;
+  const script = `const {spawn}=require('node:child_process'); const c=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});process.send("ready");setInterval(()=>{},1000)'],{stdio:['ignore','ignore','ignore','ipc']}); c.on('message',()=>{console.log('group:'+process.pid);console.log('child:'+c.pid)}); process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{},1000);`;
+  process.kill = ((pid: number, signal?: string | number) => {
+    if (pid === -group && signal === 'SIGKILL') return true;
+    return originalKill(pid, signal);
+  }) as typeof process.kill;
+  const started = performance.now();
+  try {
+    await assert.rejects(realIO().run(process.execPath, ['-e', script], { timeoutMs: 1000, onOutput: line => {
+      if (line.startsWith('group:')) group = Number(line.slice(6));
+      if (line.startsWith('child:')) descendant = Number(line.slice(6));
+    } }), error => {
+      assert.ok(group && descendant);
+      assert.match(String(error), new RegExp(`timed out.*process groups still running: ${group}`));
+      if (process.platform === 'linux') assert.match(String(error), new RegExp(`surviving PIDs \\(state\\):.*${descendant} \\(`));
+      return true;
+    });
+    assert.ok(performance.now() - started < 9000);
+  } finally {
+    process.kill = originalKill;
+    if (group) { try { originalKill(-group, 'SIGKILL'); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error; } }
+  }
 });
