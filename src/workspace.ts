@@ -88,6 +88,11 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
           const asset = parse(data.toString('utf8')) as Record<string, unknown>;
           delete asset.trademarkChecked;
           delete asset.license;
+          asset.outputs = [];
+          if (existsSync(target)) {
+            const previous = parse(readFileSync(target, 'utf8')) as Record<string, unknown>;
+            if (Object.hasOwn(previous, 'outputs')) asset.outputs = previous.outputs;
+          }
           if (preserveBlockers && existsSync(target)) {
             const previous = parse(readFileSync(target, 'utf8')) as Record<string, unknown>;
             if (Object.hasOwn(previous, 'blockers')) asset.blockers = previous.blockers;

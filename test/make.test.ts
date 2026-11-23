@@ -146,13 +146,17 @@ test('agent cannot assert human asset rights; confirmation records them', async 
   const project = join(root, 'projects/demo/campaigns/launch'); mkdirSync(project, { recursive: true });
   const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') }, run: async (_cmd, _args, opts) => {
     const dir = join(opts!.cwd!, 'assets/logo'); mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'asset.yml'), stringify({ id: 'logo', kind: 'logo', trademarkChecked: true, license: 'forged', selfReview: { checks: [{ item: 'Contrast', pass: true }], iterations: 2, summary: 'Reviewed' } }));
+    writeFileSync(join(dir, 'asset.yml'), stringify({ id: 'logo', kind: 'logo', trademarkChecked: true, license: 'forged', outputs: [{ file: 'out/video.mp4', audio: false, audioHash: 'forged' }, { file: 'out/captions.vtt' }], selfReview: { checks: [{ item: 'Contrast', pass: true }], iterations: 2, summary: 'Reviewed' } }));
     return '';
   } });
   await runAgentInWorkspace({ config: loadConfig(io), io, projectDir: project, files: {}, allowOut: [/^assets\/logo\/asset\.yml$/], prompt: 'create asset', timeoutMs: 1000 });
   const file = join(project, 'assets/logo/asset.yml');
   assert.equal(parse(readFileSync(file, 'utf8')).trademarkChecked, undefined);
   assert.equal(parse(readFileSync(file, 'utf8')).license, undefined);
+  assert.deepEqual(parse(readFileSync(file, 'utf8')).outputs, []);
+  writeFileSync(file, stringify({ id: 'logo', kind: 'logo', outputs: [{ file: 'out/rendered.mp4', audio: true }] }));
+  await runAgentInWorkspace({ config: loadConfig(io), io, projectDir: project, files: {}, allowOut: [/^assets\/logo\/asset\.yml$/], prompt: 'create asset', timeoutMs: 1000 });
+  assert.deepEqual(parse(readFileSync(file, 'utf8')).outputs, [{ file: 'out/rendered.mp4', audio: true }]);
   assert.deepEqual(parse(readFileSync(file, 'utf8')).selfReview, { checks: [{ item: 'Contrast', pass: true }], iterations: 2, summary: 'Reviewed' });
   await confirm(['demo/launch', 'logo', '--trademark-checked', '--license', 'CC0'], io);
   assert.equal(parse(readFileSync(file, 'utf8')).trademarkChecked, true);

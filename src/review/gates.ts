@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { closeSync, openSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs';
+import { join, relative, isAbsolute } from 'node:path';
 import { readPlan } from '../plan.ts';
 import { blockerTexts } from '../blockers.ts';
 
@@ -23,8 +23,30 @@ function metrics(text: string): { token: string; key: string; metric: boolean }[
 }
 
 
-function hasAudio(file: string): boolean | undefined {
+function campaignFile(projectDir: string, ...parts: string[]): string | undefined {
+  try {
+    const root = realpathSync(projectDir);
+    const file = realpathSync(join(root, ...parts));
+    const rel = relative(root, file);
+    return rel && !isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && statSync(file).isFile() ? file : undefined;
+  } catch { return undefined; }
+}
+
+function fileHash(file: string): string | undefined {
+  try {
+    const fd = openSync(file, 'r');
+    try {
+      const hash = createHash('sha256'), buffer = Buffer.allocUnsafe(64 * 1024);
+      let bytes: number;
+      while ((bytes = readSync(fd, buffer, 0, buffer.length, null)) > 0) hash.update(buffer.subarray(0, bytes));
+      return hash.digest('hex');
+    } finally { closeSync(fd); }
+  } catch { return undefined; }
+}
+
+function hasAudio(file: string): boolean | undefined | 'missing' {
   const probe = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'json', file], { encoding: 'utf8', timeout: 10000 });
+  if (probe.error && (probe.error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
   if (probe.status !== 0) return undefined;
   try {
     const data = JSON.parse(probe.stdout) as { streams?: unknown };
@@ -47,7 +69,7 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
     for (const text of blockerTexts(value)) add('specs', `Blocker in ${label}: ${text}`);
   };
   blockers((post as Post & { blockers?: unknown }).blockers, post.path);
-  const planned = projectDir && existsSync(join(projectDir, 'plan.yml')) ? readPlan(projectDir).find(entry => entry.platform === post.platform)?.assets.map(asset => asset.id) ?? [] : [];
+  const planned = projectDir && campaignFile(projectDir, 'plan.yml') ? readPlan(projectDir).find(entry => entry.platform === post.platform)?.assets.map(asset => asset.id) ?? [] : [];
   for (const asset of assets) if (used.has(asset.id) || planned.includes(asset.id)) blockers((asset as AssetMeta & { blockers?: unknown }).blockers, `asset ${asset.id}`);
   // Post prose gets every marker, with Markdown code exempt (snippets legitimately hold `${{ secrets.X }}`, TODO
   // comments or `xxx` values). Rendered text and captions carry no backticks to mark code, so they only get the
@@ -131,14 +153,14 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
       else if (spec.aspectRatios && output?.aspect && !spec.aspectRatios.value.includes(output.aspect)) add('specs', `Unsupported aspect ${output.aspect} (${spec.aspectRatios.source})`);
     }
     if (['image', 'gif', 'video', 'document'].includes(media.kind) && !media.alt?.trim()) add('accessibility', `Missing alt text for ${media.asset}`);
-    if (media.kind === 'video' && !byId.get(media.asset)?.outputs.some(o => /\.vtt$/i.test(o.file))) {
-      const file = output && projectDir ? join(projectDir, media.file) : undefined;
+    if (media.kind === 'video' && !(projectDir && byId.get(media.asset)?.outputs.some(o => /\.vtt$/i.test(o.file) && campaignFile(projectDir, 'assets', media.asset, o.file)))) {
+      const file = output && projectDir ? campaignFile(projectDir, media.file) : undefined;
       let audio: boolean | undefined;
       if (file && output) {
-        try {
-          if (typeof output.audio === 'boolean' && output.audioHash && createHash('sha256').update(readFileSync(file)).digest('hex') === output.audioHash) audio = output.audio;
-        } catch { /* A missing or unreadable file cannot validate stored audio metadata. */ }
-        if (audio === undefined) audio = hasAudio(file);
+        const probed = hasAudio(file);
+        if (probed === 'missing') {
+          if (typeof output.audio === 'boolean' && output.audioHash && fileHash(file) === output.audioHash) audio = output.audio;
+        } else audio = probed;
       }
       if (audio !== false) add('accessibility', `Missing captions for ${media.asset}`);
     }
@@ -170,8 +192,8 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
   const evidence = new Set(metrics(brief.map(s => `${s.title}\n${s.body}`).join('\n')).map(m => m.key));
   const waived = new Set(config.grounding.waive.flatMap(w => metrics(w).map(m => m.key)));
   const captions = projectDir ? selected.flatMap(asset => asset.outputs.filter(o => /\.vtt$/i.test(o.file)).flatMap(o => {
-    const path = join(projectDir, 'assets', asset.id, o.file);
-    if (!existsSync(path)) return [];
+    const path = campaignFile(projectDir, 'assets', asset.id, o.file);
+    if (!path) return [];
     const text = readFileSync(path, 'utf8').replace(/^WEBVTT[^\n]*\n?/i, '').replace(/^(?:[^\n]*\n)?[^\n]*-->[^\n]*$/gm, '');
     checkPlaceholder(`assets/${asset.id}/${o.file} captions`, text, false);
     return [text];

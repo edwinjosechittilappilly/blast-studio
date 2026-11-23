@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadPack } from '../src/packs.ts';
@@ -59,12 +60,16 @@ test('video captions depend on the selected output audio and video still needs a
     assert.match(result(missingAlt).message, /Missing alt text/);
     const withAudio = { ...mediaPost, media: [{ ...mediaPost.media[0], file: 'assets/v/out/audio.mp4' }] };
     assert.match(result(withAudio).message, /Missing captions/);
-    assert.equal(result(withAudio, [{ ...video, outputs: [...video.outputs, { file: 'out/captions.vtt', bytes: 4 }] }]).pass, true);
+    const withCaptions = [{ ...video, outputs: [...video.outputs, { file: 'out/captions.vtt', bytes: 4 }] }];
+    assert.match(result(withAudio, withCaptions).message, /Missing captions/);
+    writeFileSync(join(dir, 'assets/v/out/captions.vtt'), 'WEBVTT\n');
+    assert.equal(result(withAudio, withCaptions).pass, true);
     writeFileSync(join(dir, mediaPost.media[0].file), 'changed');
     assert.match(result(mediaPost).message, /Missing captions/);
     const probe = join(dir, 'ffprobe');
     writeFileSync(probe, '#!/bin/sh\nprintf \'{"streams":[{"index":1}]}\'\n');
     chmodSync(probe, 0o755);
+    writeFileSync(join(dir, mediaPost.media[0].file), 'silent');
     assert.match(result(mediaPost).message, /Missing captions/);
     writeFileSync(probe, '#!/bin/sh\nprintf \'{"streams":[]}\'\n');
     assert.equal(result(mediaPost).pass, true);
@@ -81,6 +86,8 @@ test('legacy videos are probed and require captions if audio cannot be determine
   const result = () => runGates(mediaPost, pack, [video], brief, config, dir).find(g => g.id === 'accessibility')!;
   try {
     process.env.PATH = dir;
+    mkdirSync(join(dir, 'assets/v/out'), { recursive: true });
+    writeFileSync(join(dir, 'assets/v/out/video.mp4'), 'fake');
     assert.match(result().message, /Missing captions/);
     const probe = join(dir, 'ffprobe');
     writeFileSync(probe, '#!/bin/sh\nprintf \'{"streams":[]}\'\n');
@@ -93,6 +100,24 @@ test('legacy videos are probed and require captions if audio cannot be determine
   } finally {
     if (oldPath === undefined) delete process.env.PATH; else process.env.PATH = oldPath;
     rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('caption and video paths cannot escape the campaign or refer to FIFOs', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bstudio-path-'));
+  const outside = mkdtempSync(join(tmpdir(), 'bstudio-outside-'));
+  try {
+    mkdirSync(join(dir, 'assets/v/out'), { recursive: true });
+    writeFileSync(join(outside, 'captions.vtt'), 'WEBVTT\n');
+    symlinkSync(join(outside, 'captions.vtt'), join(dir, 'assets/v/out/captions.vtt'));
+    const fifo = join(dir, 'assets/v/out/video.mp4');
+    assert.equal(spawnSync('mkfifo', [fifo]).status, 0);
+    const video: AssetMeta = { id: 'v', kind: 'video', provider: 'hyperframes', outputs: [{ file: 'out/video.mp4', bytes: 4, audio: false, audioHash: 'forged' }, { file: 'out/captions.vtt', bytes: 4 }], license: null, aiGenerated: false };
+    const p: Post = { ...post, media: [{ asset: 'v', file: 'assets/v/out/video.mp4', kind: 'video', alt: 'Video' }] };
+    assert.match(runGates(p, pack, [video], brief, config, dir).find(g => g.id === 'accessibility')!.message, /Missing captions/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
   }
 });
 test('weighted scoring excludes N/A and verdict observes gates', () => {
