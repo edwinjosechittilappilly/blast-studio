@@ -176,8 +176,14 @@ test('dashboard starts, polls, reads and cancels a job over HTTP', { timeout: 15
       } catch (error) { outputReady.reject(error); }
     };
     watcher = watch(join(root, 'projects/demo/campaigns/launch/logs/jobs'), () => { void checkLog(); });
-    await checkLog();
-    await outputReady.promise;
+    // Bound a real child-process output wait so failures still run cleanup.
+    const outputTimeout = setTimeout(() => outputReady.reject(new Error('job output ready marker was not observed')), 10000);
+    try {
+      await checkLog();
+      await outputReady.promise;
+    } finally {
+      clearTimeout(outputTimeout);
+    }
     watcher.close(); watcher = undefined;
     const emptyTail = await fetch(`${base}/api/jobs/${id}/log?tail=0`, { headers });
     assert.equal((await emptyTail.json() as { log: string }).log, '');

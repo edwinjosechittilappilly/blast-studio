@@ -233,6 +233,53 @@ test('platform delivery control submits the chosen route and refreshes the effec
   assert.equal(await save.isDisabled(), true);
 });
 
+test('returning to a destination refreshes delivery after its job finishes on another tab', async t => {
+  const { page, url } = await dashboard(t);
+  let delivery = 'marketBlaster', state = 'running', submitted: unknown;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.platforms.linkedin.delivery = delivery;
+    await route.fulfill({ json: project });
+  });
+  await page.route('**/api/jobs', async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    submitted = route.request().postDataJSON();
+    await route.fulfill({ json: { ...job('queued'), operation: 'delivery' } });
+  });
+  await page.route('**/api/jobs?campaign=*', route => route.fulfill({ json: submitted ? [{ ...job(state), operation: 'delivery' }] : [] }));
+  await page.route('**/api/jobs/revision-1/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  const picker = page.getByRole('combobox', { name: 'Delivery route' });
+  await picker.selectOption('manual');
+  await page.getByRole('button', { name: 'Save delivery' }).click();
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.getByRole('heading', { name: 'Campaign summary' }).waitFor();
+  delivery = 'manual'; state = 'succeeded';
+  await page.getByRole('tab', { name: /LinkedIn/ }).click();
+  await picker.waitFor();
+  assert.equal(await picker.inputValue(), 'manual');
+  assert.equal(await page.getByRole('button', { name: 'Save delivery' }).isDisabled(), true);
+  await picker.selectOption('marketBlaster');
+  assert.equal(await page.getByRole('button', { name: 'Save delivery' }).isEnabled(), true);
+});
+
+test('a tab refresh failure does not display stale campaign data and can be retried', async t => {
+  const { page, url } = await dashboard(t);
+  let fail = false;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    if (fail) return route.fulfill({ status: 503, json: { error: 'Refresh unavailable' } });
+    await route.continue();
+  });
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  await page.getByRole('combobox', { name: 'Delivery route' }).waitFor();
+  fail = true;
+  await page.getByRole('tab', { name: 'Overview' }).click();
+  await page.getByText('Could not refresh campaign: Refresh unavailable').waitFor();
+  fail = false;
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await page.getByRole('heading', { name: 'Campaign summary' }).waitFor();
+});
+
 test('delivery picker offers Market Blaster only for supported packs, including manual overrides', async t => {
   const { page, url, root } = await dashboard(t);
   writeFileSync(join(root, 'projects/acme/campaigns/launch/posts/linkedin.md'), '---\nplatform: linkedin\ndelivery: manual\nevidence: []\nmedia: []\n---\nLaunch post');

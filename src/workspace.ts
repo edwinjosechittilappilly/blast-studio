@@ -117,8 +117,15 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
           const post = parsePost(rel, data.toString('utf8')) as Post & { blockers?: unknown };
           delete post.delivery;
           if (existsSync(target)) {
-            const previous = parsePost(rel, readFileSync(target, 'utf8')) as typeof post;
-            if (Object.hasOwn(previous, 'delivery')) post.delivery = previous.delivery;
+            const match = readFileSync(target, 'utf8').match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)/);
+            if (!match) throw new UserError(`${rel}: expected YAML frontmatter`);
+            let previous: Record<string, unknown>;
+            try { previous = parse(match[1]); } catch { throw new UserError(`${rel}: invalid frontmatter`); }
+            if (!previous || typeof previous !== 'object' || Array.isArray(previous)) throw new UserError(`${rel}: invalid frontmatter`);
+            if (Object.hasOwn(previous, 'delivery')) {
+              if (previous.delivery !== 'manual' && previous.delivery !== 'marketBlaster') throw new UserError(`${rel}: invalid delivery`);
+              post.delivery = previous.delivery;
+            }
             if (preserveBlockers && Object.hasOwn(previous, 'blockers')) post.blockers = previous.blockers;
           }
           content = serializePost(post);

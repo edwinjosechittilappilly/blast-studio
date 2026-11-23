@@ -237,6 +237,26 @@ test('mark accepts federated and custom-domain publication URLs over HTTPS', asy
   }
 });
 
+test('mark records a manually delivered newsletter publication', async () => {
+  const f = fixture('newsletter'), post = join(f.project, 'posts/newsletter.md');
+  writeFileSync(post, readFileSync(post, 'utf8').replace('platform: newsletter\n', 'platform: newsletter\ndelivery: manual\n'));
+  await mark(['acme/demo', 'newsletter', '--url', 'https://newsletter.example.org/issues/1'], f.io);
+  const published = JSON.parse(readFileSync(join(f.project, 'published.json'), 'utf8'));
+  assert.equal(published.newsletter.url, 'https://newsletter.example.org/issues/1');
+  assert.ok(!Number.isNaN(Date.parse(published.newsletter.at)));
+});
+
+test('mark leaves recorded publications unchanged when URL validation fails', async () => {
+  const f = fixture('mastodon'), post = join(f.project, 'posts/mastodon.md');
+  writeFileSync(post, readFileSync(post, 'utf8').replace('platform: mastodon\n', 'platform: mastodon\ndelivery: manual\n'));
+  await mark(['acme/demo', 'mastodon', '--url', 'https://social.example.org/@author/1'], f.io);
+  const file = join(f.project, 'published.json'), before = readFileSync(file, 'utf8');
+  for (const url of ['https://user@social.example.org/@author/2', 'https://:pass@social.example.org/@author/2', 'http://social.example.org/@author/2', 'not a url']) {
+    await assert.rejects(mark(['acme/demo', 'mastodon', '--url', url], f.io), /invalid publication URL/);
+    assert.equal(readFileSync(file, 'utf8'), before);
+  }
+});
+
 test('handoff invokes configured import and check and propagates failure', async () => {
   const f = fixture(), calls: string[][] = [];
   f.io.run = async (cmd, args, opts) => { calls.push([cmd, ...args]); assert.equal(opts?.cwd, f.root); return 'ok'; };
@@ -382,6 +402,25 @@ test('directory handoff labels video covers and explains how to record publicati
     const readme = readFileSync(join(f.project, 'exports/instagram/README.md'), 'utf8');
     assert.match(readme, cover ? /\(image, video cover; alt: Alt\)/ : /\(image; alt: Alt\)/);
     assert.ok(readme.includes('Record the live URL: `bstudio mark <address> <platform> --url <url>` (or Mark published in the dashboard).'));
+  }
+});
+
+test('directory thread handoffs give publication instructions for the selected delivery', async () => {
+  for (const delivery of [undefined, 'marketBlaster', 'manual']) {
+    const f = fixture(), post = join(f.project, 'posts/bluesky.md');
+    writeFileSync(post, readFileSync(post, 'utf8').replace('platform: bluesky\n', `platform: bluesky\n${delivery ? `delivery: ${delivery}\n` : ''}thread: [Second post]\n`));
+    await exportCommand(['acme/demo', '--dir'], f.io);
+    const readme = readFileSync(join(f.project, 'exports/bluesky/README.md'), 'utf8');
+    const manifest = JSON.parse(readFileSync(join(f.project, 'export/manifest.json'), 'utf8'));
+    if (delivery === 'manual') {
+      assert.match(readme, /bstudio mark <address> <platform> --url <url>/);
+      assert.match(readme, /Review and publish manually/);
+      assert.equal(manifest.posts.length, 0);
+    } else {
+      assert.match(readme, /Publish using Market Blaster/);
+      assert.doesNotMatch(readme, /bstudio mark|Mark published in the dashboard/);
+      assert.equal(manifest.posts.length, 1);
+    }
   }
 });
 

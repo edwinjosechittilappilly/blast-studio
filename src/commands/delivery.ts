@@ -32,8 +32,14 @@ export const run: Command = async (args, io) => {
   const value = doc.get('delivery', true);
   let updated: string;
   if (value === undefined) {
-    const newline = match[1].endsWith('\r\n') ? '\r\n' : '\n';
-    updated = `${source}${newline}delivery: ${delivery}`;
+    if (doc.contents.flow) {
+      const start = doc.contents.range?.[0];
+      if (start === undefined || source[start] !== '{') throw new UserError(`${platform}: cannot safely update delivery`);
+      updated = source.slice(0, start + 1) + `delivery: ${delivery}${doc.contents.items.length ? ', ' : ''}` + source.slice(start + 1);
+    } else {
+      const newline = match[1].endsWith('\r\n') ? '\r\n' : '\n';
+      updated = `${source}${newline}delivery: ${delivery}`;
+    }
   } else {
     if (!isNode(value) || !value.range) throw new UserError(`${platform}: cannot safely update delivery`);
     if (isScalar(value) && value.value === null && value.range[0] === value.range[1]) {

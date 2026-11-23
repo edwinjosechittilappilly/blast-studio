@@ -58,6 +58,34 @@ test('maker repairs invalid post and asset, preserving rejected files', async ()
   assert.equal(readFileSync(join(root, 'projects/demo/campaigns/launch/.rejected/posts/devto.md'), 'utf8'), 'not frontmatter');
   assert.match(readFileSync(join(root, 'projects/demo/campaigns/launch/.rejected/assets/card/asset.yml'), 'utf8'), /bad/);
 });
+test('maker replaces an invalid old draft while preserving its owner delivery', async () => {
+  for (const route of ['manual', 'marketBlaster', undefined]) {
+    const old = `---\nplatform: devto\nevidence: invalid\n${route ? `delivery: ${route}\n` : ''}---\nOld\n`;
+    const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/campaigns/launch/brief.md': 'Brief', 'projects/demo/campaigns/launch/plan.yml': stringify([item]), 'projects/demo/campaigns/launch/posts/devto.md': old });
+    const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root }, run: async (_cmd, _args, opts) => {
+      mkdirSync(join(opts!.cwd!, 'posts'), { recursive: true });
+      writeFileSync(join(opts!.cwd!, 'posts/devto.md'), '---\nplatform: devto\nevidence: []\nmedia: []\ndelivery: manual\n---\nNew\n');
+      return '';
+    } });
+    assert.equal(await makeCommand(['demo/launch'], io), 0);
+    const post = parsePost('posts/devto.md', readFileSync(join(root, 'projects/demo/campaigns/launch/posts/devto.md'), 'utf8'));
+    assert.equal(post.delivery, route);
+    assert.equal(post.body, 'New');
+  }
+});
+test('maker refuses to overwrite malformed old frontmatter or invalid owner delivery', async () => {
+  for (const old of ['not frontmatter', '---\ndelivery: [\n---\nOld\n', ...['null', 'auto', '[]'].map(route => `---\nevidence: invalid\ndelivery: ${route}\n---\nOld\n`)]) {
+    const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/campaigns/launch/brief.md': 'Brief', 'projects/demo/campaigns/launch/plan.yml': stringify([item]), 'projects/demo/campaigns/launch/posts/devto.md': old });
+    const file = join(root, 'projects/demo/campaigns/launch/posts/devto.md');
+    const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root }, run: async (_cmd, _args, opts) => {
+      mkdirSync(join(opts!.cwd!, 'posts'), { recursive: true });
+      writeFileSync(join(opts!.cwd!, 'posts/devto.md'), '---\nplatform: devto\nevidence: []\nmedia: []\n---\nNew\n');
+      return '';
+    } });
+    await assert.rejects(makeCommand(['demo/launch'], io));
+    assert.equal(readFileSync(file, 'utf8'), old);
+  }
+});
 test('maker validates self reviews and warns when they are absent', async () => {
   const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/campaigns/launch/brief.md': 'Brief', 'projects/demo/campaigns/launch/plan.yml': stringify([{ ...item, assets: [{ id: 'card', kind: 'card', brief: 'x' }] }]) });
   let calls = 0;

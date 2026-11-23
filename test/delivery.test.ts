@@ -31,6 +31,22 @@ test('delivery updates only frontmatter value, snapshots, validates and locks', 
   for (const args of [['p/c', '../linkedin', 'manual'], ['p/c', 'linkedin', 'other'], ['p/c', 'linkedin'], ['p/c', 'youtube-shorts', 'marketBlaster']]) assert.equal(await main(['delivery', ...args], io), 1);
 });
 
+test('delivery inserts into flow-style frontmatter without changing existing content', async () => {
+  for (const newline of ['\n', '\r\n']) {
+    for (const mapping of [
+      '{platform: linkedin, evidence: [], media: []}',
+      `{ # owner note${newline}  platform: linkedin,${newline}  evidence: [], media: [],${newline}}`,
+    ]) {
+      const { dir, io } = fixture(), file = join(dir, 'posts/linkedin.md');
+      const before = `---${newline}${mapping}${newline}---${newline}Body${newline}`;
+      writeFileSync(file, before);
+      assert.equal(await main(['delivery', 'p/c', 'linkedin', 'manual'], io), 0);
+      assert.equal(readFileSync(file, 'utf8'), before.replace('{', '{delivery: manual, '));
+      assert.equal(readFileSync(join(dir, 'history', historyEntries(dir)[0], 'posts/linkedin.md'), 'utf8'), before);
+    }
+  }
+});
+
 test('delivery repairs an invalid owner value without changing other bytes', async () => {
   const { dir, io } = fixture(), file = join(dir, 'posts/linkedin.md');
   const before = '---\nplatform: linkedin\nevidence: []\nmedia: []\ndelivery: auto # owner note\n---\nBody\n';
