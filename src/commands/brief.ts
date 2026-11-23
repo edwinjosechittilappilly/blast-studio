@@ -75,7 +75,12 @@ export const run: Command = async (args, io) => {
   if (inGit(dir) && !explicitlyConfigured(io, config.file)) throw new UserError("Project directory is inside a git repository; explicitly set studio.root or BSTUDIO_HOME to allow it");
   if (existsSync(path) && !values.force) throw new UserError(`${path} already exists; use --force to overwrite it`);
   const sections: string[] = [];
+  const sharedSources = new Set<string>();
+  let importingShared = false;
   const add = (title: string, status: ClaimStatus | undefined, body: string, source?: string) => {
+    const key = source && JSON.stringify([title, source]);
+    if (key && !importingShared && sharedSources.has(key)) return;
+    if (key && importingShared) sharedSources.add(key);
     sections.push(evidenceSection(sections.length + 1, title, status, body, source));
   };
   const addImported = (section: BriefSection, file: string, untrustedSource = false) => {
@@ -89,10 +94,17 @@ export const run: Command = async (args, io) => {
   };
   const shared = containedPath(project, "evidence", "sources.md");
   if (existsSync(shared)) {
+    importingShared = true;
     for (const section of parseBrief(readFileSync(shared, "utf8"))) addImported(section, shared);
+    importingShared = false;
   }
+  const include = (title: string, source: string) => {
+    if (!sharedSources.has(JSON.stringify([title, source]))) return true;
+    io.out(`Skipping ${title} from ${source}: already in shared evidence`);
+    return false;
+  };
   if (values.idea) add("Idea", "claim", values.idea);
-  await collectNotesAndUrls(io, add, values.note ?? [], values.url ?? []);
+  await collectNotesAndUrls(io, add, values.note ?? [], (values.url ?? []).filter(url => include("URL", url)));
   if (values.pr) {
     const raw = await io.run("gh", ["pr", "view", values.pr, "--repo", values.repo!, "--json", "number,title,body,state,mergedAt,url"], { cwd: io.cwd });
     let pr: { title?: string; body?: string; state?: string; mergedAt?: string | null; url?: string };
@@ -106,7 +118,7 @@ export const run: Command = async (args, io) => {
       : await io.run("gh", ["api", `repos/${values.repo}/commits/${values.commit}`], { cwd: io.cwd });
     add(`Commit ${values.commit}`, "shipped", raw, `${values.repo}@${values.commit}`);
   }
-  if (values.repo && !values.pr && !values.commit) await collectRepository(io, add, values.repo);
+  if (values.repo && !values.pr && !values.commit) await collectRepository(io, add, values.repo, include);
   if (values["mb-brief"]) {
     const input = values["mb-brief"];
     const file = resolve(io.cwd, input.startsWith("~/") ? join(io.env.HOME || homedir(), input.slice(2)) : input);

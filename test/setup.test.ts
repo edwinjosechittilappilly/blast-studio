@@ -137,3 +137,11 @@ test("subprocess IO exposes successful stderr without contaminating stdout", asy
   assert.equal(stdout, "output");
   assert.deepEqual(warnings, ["warning"]);
 });
+
+test("subprocesses receive EOF without input and explicit input when supplied", async () => {
+  const io = realIO();
+  const script = "let text=''; process.stdin.setEncoding('utf8'); process.stdin.on('data', chunk => text += chunk); process.stdin.on('end', () => process.stdout.write(JSON.stringify(text)));";
+  assert.equal(await io.run(process.execPath, ["-e", script]), '""');
+  assert.equal(await io.run(process.execPath, ["-e", script], { input: "hello" }), '"hello"');
+  assert.equal(await io.run(process.execPath, ["-e", "process.exit(0)"]), "");
+});
