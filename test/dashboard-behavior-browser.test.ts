@@ -440,8 +440,9 @@ test('stale blocker conflicts refresh the list without starting a job', async t 
   const modal = page.locator('cds-modal');
   await modal.locator('cds-textarea').locator('textarea').fill('Fixed');
   await modal.getByRole('button', { name: 'Resolve', exact: true }).click();
-  await modal.getByText('This blocker list changed — refresh').waitFor();
-  await page.getByText('New blocker').waitFor();
+  await page.getByText('This blocker list changed — refresh', { exact: true }).waitFor();
+  await page.getByText('New blocker', { exact: true }).waitFor();
+  assert.equal(await modal.count(), 0);
 });
 
 test('blocker gate summaries link to the list and assets show only asset blockers', async t => {

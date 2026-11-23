@@ -5,8 +5,8 @@ const targetPath = target => target.startsWith('post:') ? `posts/${target.slice(
 
 
 export function renderBlockers(project, target = null, onResolved = () => {}) {
-  const section = el('section', null, 'asset-blockers'), content = el('div');
-  section.id = 'blockers'; section.append(el('h3', 'Blockers'), content);
+  const section = el('section', null, 'asset-blockers'), content = el('div'), conflict = el('p', null, 'form-error');
+  conflict.setAttribute('role', 'alert'); section.id = 'blockers'; section.append(el('h3', 'Blockers'), conflict, content);
   const path = `/api/campaigns/${project.slug.split('/').map(encodeURIComponent).join('/')}/blockers`;
   let resolvingTarget;
   async function load() {
@@ -26,7 +26,7 @@ export function renderBlockers(project, target = null, onResolved = () => {}) {
           detail.append(el('strong', `${!target || target === 'asset:' ? `${targetPath(blocker.target)} · ` : ''}Blocker ${blocker.index + 1}`), el('p', blocker.text));
           resolve.addEventListener('click', () => {
             const reason = el('cds-textarea'), label = el('span', 'Reason'); label.slot = 'label-text'; reason.append(label);
-            openForm('Resolve blocker', `${targetPath(blocker.target)}: ${blocker.text} — Resolving removes this blocker, records your reason in the audit history, and creates a snapshot. Run review again to update the review.`, [{ key: 'reason', label: 'Reason', required: true, invalidText: 'Enter a reason.', node: reason }], 'Resolve', (args, reportError) => { resolvingTarget = blocker.target; return run('blockers resolve', { target: blocker.target, index: String(blocker.index), text: blocker.text, reason: args.reason }, reportError); });
+            openForm('Resolve blocker', `${targetPath(blocker.target)}: ${blocker.text} — Resolving removes this blocker, records your reason in the audit history, and creates a snapshot. Run review again to update the review.`, [{ key: 'reason', label: 'Reason', required: true, invalidText: 'Enter a reason.', node: reason }], 'Resolve', (args, reportError) => { conflict.textContent = ''; resolvingTarget = blocker.target; return run('blockers resolve', { target: blocker.target, index: String(blocker.index), text: blocker.text, reason: args.reason }, reportError); });
           });
           item.append(detail, resolve); list.append(item);
         }
@@ -48,7 +48,7 @@ export function renderBlockers(project, target = null, onResolved = () => {}) {
       content.replaceChildren(el('p', `Could not load blockers: ${error.message}`, 'form-error'), retry);
     }
   }
-  const run = jobRegion(section, { project }, { operation: 'blockers resolve', ownOnly: true, matches: job => !target || (target === 'asset:' ? job.target?.startsWith(target) : job.target === target), onConflict: load, onComplete: async job => { await load(); if (job.state === 'succeeded') { const updated = await api(`/api/project/${encodeURIComponent(project.slug)}`); project.reviews = updated.reviews; onResolved(job.target || resolvingTarget); } } });
+  const run = jobRegion(section, { project }, { operation: 'blockers resolve', ownOnly: true, matches: job => !target || (target === 'asset:' ? job.target?.startsWith(target) : job.target === target), onConflict: async error => { if (error.message !== 'This blocker list changed — refresh') return false; await load(); conflict.textContent = error.message; return true; }, onComplete: async job => { await load(); if (job.state === 'succeeded') { const updated = await api(`/api/project/${encodeURIComponent(project.slug)}`); project.reviews = updated.reviews; onResolved(job.target || resolvingTarget); } } });
   content.append(el('p', 'Loading blockers…', 'muted')); setTimeout(load, 0);
   return section;
 }

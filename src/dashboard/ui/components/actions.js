@@ -63,7 +63,7 @@ export function jobRegion(container, ctx, options = {}) {
       if (lockConflict) {
         try { const jobs = await api(`/api/jobs?campaign=${encodeURIComponent(slugOf(ctx))}`); const running = jobs.find(job => job.state === 'running' || job.state === 'queued'); message = `Another job${running ? ` (${running.operation})` : ''} is running on this campaign. Wait for it or cancel it.`; } catch { message = 'Another job is running on this campaign. Wait for it or cancel it.'; }
       }
-      if (error.status === 409) await options.onConflict?.(error);
+      if (error.status === 409 && await options.onConflict?.(error)) return true;
       const n = el('cds-inline-notification'); n.setAttribute('kind', 'error'); n.setAttribute('title', message); startError.replaceChildren(n); if (error.command) startError.append(el('code', error.command), copyButton('Copy command', error.command)); reportError(message); if (lockConflict) { clearTimeout(timer); timer = setTimeout(refresh, 2000); } return false;
     }
   }
