@@ -16,7 +16,7 @@ import { mediaGallery } from './components/media.js';
 import { api, headers, campaignPath, startFeedbackJob, cancelFeedbackJob, feedbackJobStatus } from './components/api.js';
 import { setupShell } from './components/shell.js';
 import { renderNewProject, renderNewCampaign } from './components/create.js';
-import { renderActions, renderAssetsTable } from './components/actions.js';
+import { renderActions, renderAssetsTable, openForm } from './components/actions.js';
 import { renderExport } from './components/export.js';
 import { renderBlockers } from './components/blockers.js';
 import { renderFeedbackHistory } from './components/feedback.js';
@@ -107,7 +107,7 @@ function feedbackForm(project, target) {
       project.feedback.push(entry); if (feedbackDrafts.get(key) === draft) { feedbackDrafts.delete(key); field.value = ''; }
       if (activeProject !== project.slug || $('#project').hidden) return;
       if (section.isConnected) { const next = feedbackHistory(project, target); history.replaceWith(next); history = next; history.querySelector('details')?.setAttribute('open', ''); }
-      const job = $('#project-detail .job-status'), apply = $('#apply-feedback'); if (apply && job?.project === project) { const count = project.feedback.filter(e => e.status === 'pending').length; apply.disabled = job.dataset.statusKnown !== 'yes' || job.dataset.running === 'yes'; apply.textContent = `Apply ${count} feedback ${count === 1 ? 'item' : 'items'}`; $('#apply-reason').textContent = ''; }
+      const job = $('#project-detail .job-status'), apply = $('#apply-feedback, #revise-findings'); if (apply && job?.project === project) { const count = project.feedback.filter(e => e.status === 'pending').length; apply.id = 'apply-feedback'; apply.dataset.mode = 'feedback'; apply.dataset.available = 'yes'; apply.setAttribute('kind', 'primary'); apply.disabled = job.dataset.statusKnown !== 'yes' || job.dataset.running === 'yes'; apply.textContent = `Apply ${count} feedback ${count === 1 ? 'item' : 'items'}`; $('#apply-reason').textContent = ''; }
       toast('Feedback queued. Use Apply feedback when ready.');
     } catch (failure) { error.textContent = failure.message; } finally { submit.disabled = false; }
   });
@@ -118,10 +118,10 @@ async function jobStatus(project, region, apply) {
   const announcement = region.querySelector('.job-announcement'), cancel = region.querySelector('.cancel-job'), log = region.querySelector('.job-log');
   if (log.textContent !== status.lines.join('\n')) log.textContent = status.lines.join('\n'); log.parentElement.hidden = !status.lines.length || (!status.running && status.state !== 'failed' && region.dataset.running !== 'yes');
   cancel.hidden = !status.running; cancel.disabled = !!status.cancelling; cancel.dataset.jobId = status.id || '';
-  region.dataset.statusKnown = 'yes'; apply.disabled = status.running || !project.feedback.some(entry => entry.status === 'pending');
+  region.dataset.statusKnown = 'yes'; apply.disabled = status.running || apply.dataset.available !== 'yes';
   if (status.running) {
     region.dataset.running = 'yes'; if (!region.pendingIds) region.pendingIds = project.feedback.filter(e => e.status === 'pending').map(e => e.id);
-    const label = status.cancelling ? 'Cancelling revision…' : 'Applying feedback…';
+    const label = status.cancelling ? 'Cancelling revision…' : apply.dataset.mode === 'revise' ? 'Revising campaign…' : 'Applying feedback…';
     if (region.dataset.state !== label) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'info'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', label); announcement.replaceChildren(notice); region.dataset.state = label; }
     scheduleStatus(project, region, apply);
   } else if (region.dataset.running === 'yes') {
@@ -214,8 +214,35 @@ function overviewPanel(project) {
 async function openProject(slug, requested = 'overview') {
   const load = ++projectLoad; clearTimeout(timer); activeProject = slug; const container = $('#project-detail'); container.replaceChildren(el('h1', slug.split('/')[1]), el('p', 'Loading campaign…', 'empty')); show('project'); const [project, operations] = await Promise.all([api(`/api/project/${encodeURIComponent(slug)}`), api(`/api/operations?campaign=${encodeURIComponent(slug)}`)]); if (load !== projectLoad || activeProject !== slug) return;
   container.replaceChildren(); const crumb = el('nav', null, 'breadcrumb'); crumb.setAttribute('aria-label', 'Breadcrumb'); const back = el('a', 'Projects'), projectLink = el('a', slug.split('/')[0]); back.href = '#/projects'; projectLink.href = `#/p/${encodeURIComponent(slug.split('/')[0])}`; crumb.append(back, document.createTextNode(' / '), projectLink, document.createTextNode(` / ${slug.split('/')[1]}`)); container.append(crumb);
-  const top = el('div', null, 'page-heading'), title = el('div'), actions = el('div'); title.append(el('h1', slug.split('/')[1]), el('p', project.inputs.join(' · ') || `Campaign in ${slug.split('/')[0]}`)); const count = project.feedback.filter(e => e.status === 'pending').length, apply = button(count ? `Apply ${count} feedback ${count === 1 ? 'item' : 'items'}` : 'Apply feedback', 'primary'), reason = el('p', count ? '' : 'No pending feedback', 'muted'); apply.id = 'apply-feedback'; reason.id = 'apply-reason'; apply.setAttribute('aria-describedby', 'apply-reason'); apply.disabled = true; if (operations.revise.requiresTTY) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'info'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', 'Apply feedback from the terminal'); actions.append(notice, commandSnippet(`bstudio revise ${slug} --feedback-only`)); } else actions.append(apply, reason); top.append(title, actions); container.append(top);
-  const job = el('div', null, 'job-status'), announcement = el('div', null, 'job-announcement'), cancelError = el('div'), logDetails = el('details'), log = el('pre', null, 'job-log'), cancel = button('Cancel revision', 'secondary'); cancel.className = 'cancel-job'; cancel.hidden = true; cancel.addEventListener('click', async () => { cancel.disabled = true; try { await cancelFeedbackJob(cancel.dataset.jobId); cancelError.replaceChildren(); await jobStatus(project, job, apply); } catch (error) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'error'); notice.setAttribute('title', error.message); cancelError.replaceChildren(notice); cancel.disabled = false; } }); announcement.setAttribute('role', 'status'); announcement.setAttribute('aria-live', 'polite'); logDetails.hidden = true; logDetails.append(el('summary', 'Revision log'), log); job.append(announcement, cancelError, cancel, logDetails); apply.addEventListener('click', async () => { apply.disabled = true; job.dataset.statusKnown = ''; try { job.pendingIds = project.feedback.filter(e => e.status === 'pending').map(e => e.id); await startFeedbackJob(slug); job.dataset.running = 'yes'; await jobStatus(project, job, apply); } catch (error) { announcement.replaceChildren(el('p', error.message)); if (error.command) announcement.append(commandSnippet(error.command)); if (job.dataset.running === 'yes') scheduleStatus(project, job, apply); else { job.dataset.statusKnown = 'yes'; apply.disabled = false; } } });
+  const top = el('div', null, 'page-heading'), title = el('div'), actions = el('div');
+  title.append(el('h1', slug.split('/')[1]), el('p', project.inputs.join(' · ') || `Campaign in ${slug.split('/')[0]}`));
+  const count = project.feedback.filter(e => e.status === 'pending').length;
+  const revise = !count && project.reviews.some(review => review.verdict === 'revise' && !review.stale);
+  const needsReview = project.reviews.some(review => review.stale) || project.reviews.length < project.posts.length;
+  const apply = button(revise ? 'Revise' : count ? `Apply ${count} feedback ${count === 1 ? 'item' : 'items'}` : 'Apply feedback', revise && needsReview ? 'secondary' : 'primary');
+  const reason = el('p', count || revise ? '' : 'No pending feedback', 'muted');
+  apply.id = revise ? 'revise-findings' : 'apply-feedback'; apply.dataset.mode = revise ? 'revise' : 'feedback'; apply.dataset.available = count || revise ? 'yes' : 'no';
+  reason.id = 'apply-reason'; apply.setAttribute('aria-describedby', 'apply-reason'); apply.disabled = true;
+  if (operations.revise.requiresTTY && !revise) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'info'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', 'Apply feedback from the terminal'); actions.append(notice, commandSnippet(`bstudio revise ${slug} --feedback-only`)); } else actions.append(apply, reason);
+  top.append(title, actions); container.append(top);
+  const job = el('div', null, 'job-status'), announcement = el('div', null, 'job-announcement'), cancelError = el('div'), logDetails = el('details'), log = el('pre', null, 'job-log'), cancel = button('Cancel revision', 'secondary');
+  cancel.className = 'cancel-job'; cancel.hidden = true; cancel.addEventListener('click', async () => { cancel.disabled = true; try { await cancelFeedbackJob(cancel.dataset.jobId); cancelError.replaceChildren(); await jobStatus(project, job, apply); } catch (error) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'error'); notice.setAttribute('title', error.message); cancelError.replaceChildren(notice); cancel.disabled = false; } });
+  announcement.setAttribute('role', 'status'); announcement.setAttribute('aria-live', 'polite'); logDetails.hidden = true; logDetails.append(el('summary', 'Revision log'), log); job.append(announcement, cancelError, cancel, logDetails);
+  async function start(args) {
+    apply.disabled = true; job.dataset.statusKnown = '';
+    try { job.pendingIds = project.feedback.filter(e => e.status === 'pending').map(e => e.id); await startFeedbackJob(slug, args); job.dataset.running = 'yes'; await jobStatus(project, job, apply); }
+    catch (error) { announcement.replaceChildren(el('p', error.message)); if (error.command) announcement.append(commandSnippet(error.command)); if (job.dataset.running === 'yes') scheduleStatus(project, job, apply); else { job.dataset.statusKnown = 'yes'; apply.disabled = false; } }
+  }
+  apply.addEventListener('click', () => {
+    if (apply.dataset.mode === 'feedback') { if (operations.revise.requiresTTY) announcement.replaceChildren(commandSnippet(`bstudio revise ${slug} --feedback-only`)); else start({ feedbackOnly: true }); return; }
+    const scope = (key, label, values) => { const node = el('cds-select'); node.setAttribute('label-text', label); const blank = el('cds-select-item', 'All'); blank.setAttribute('value', '__none'); node.append(blank); for (const value of values) { const item = el('cds-select-item', value); item.setAttribute('value', value); node.append(item); } return { key, label, node }; };
+    const fields = [scope('platform', 'Platform', [...new Set([...project.plan.map(item => item.platform), ...project.posts.map(item => item.platform)])]), scope('asset', 'Asset', project.assets.map(asset => asset.id))];
+    const tty = operations.revise.requiresTTY;
+    openForm('Revise', tty ? 'This operation requires an interactive terminal. Prepare a command to run there.' : 'This step can incur provider charges. Check Settings for budget details.', fields, tty ? 'Prepare command' : 'Revise', args => {
+      if (tty) { const command = `bstudio revise ${slug}${args.platform ? ` --platform=${args.platform}` : ''}${args.asset ? ` --asset=${args.asset}` : ''}`; announcement.replaceChildren(commandSnippet(command)); }
+      else start(args);
+    });
+  });
   const tabs = el('cds-tabs'); tabs.setAttribute('type', 'contained'); const panel = el('div', null, 'tab-content'), options = ['overview', ...orderedPosts(project).map(p => p.platform), 'assets', 'actions', 'export']; activeTab = options.includes(requested) ? requested : 'overview';
   panel.setAttribute('role', 'tabpanel');
   function select(name) { activeTab = name; panel.setAttribute('aria-labelledby', `tab-${name}`); if (name === 'actions') renderActions(panel, { project, operations }); else if (name === 'export') renderExport(panel, { project, operations }); else if (name === 'assets') { const assets = el('div'), render = () => renderAssetsTable(assets, { project, feedbackForm, mediaGallery, selfReview }); panel.replaceChildren(renderBlockers(project, 'asset:', render), assets); render(); } else panel.replaceChildren(name === 'overview' ? overviewPanel(project) : platformPanel(project, project.posts.find(p => p.platform === name))); }

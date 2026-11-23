@@ -122,7 +122,7 @@ export function renderActions(container, ctx) {
     });
   }
   for (const [title, list] of [['Pipeline', pipeline], ['Decisions', [['accept', 'Accept'], ['confirm', 'Confirm rights'], ['mark', 'Mark published']]]]) { const group = el('div', null, 'actions-group'), controls = el('div', null, 'actions-controls'); group.append(el('h3', title), controls); section.append(group); for (const [op, label] of list) action(op, label, controls); }
-  section.append(el('p', 'To revise content, use Apply feedback in the campaign header.', 'muted')); const feedbackActions = el('div', null, 'actions-controls'); feedback.insertBefore(feedbackActions, feedbackContent); action('feedback add', 'Add feedback', feedbackActions); container.append(feedback, versions); loadData();
+  section.append(el('p', 'To revise content, use Apply feedback or Revise in the campaign header.', 'muted')); const feedbackActions = el('div', null, 'actions-controls'); feedback.insertBefore(feedbackActions, feedbackContent); action('feedback add', 'Add feedback', feedbackActions); container.append(feedback, versions); loadData();
 }
 
 export function renderAssetsTable(container, ctx) {

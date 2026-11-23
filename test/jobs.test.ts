@@ -29,6 +29,15 @@ test('registry validates campaign addresses and constructs an argument vector', 
   assert.throws(() => buildOperation('export', { campaign: 'acme/launch', local: true, mb: '/tmp' }), /Local export/);
 });
 
+test('registry builds scoped and unscoped review revisions', () => {
+  const campaign = 'acme/launch';
+  assert.deepEqual(buildOperation('revise', { campaign }).args, ['revise', campaign]);
+  const scoped = buildOperation('revise', { campaign, platform: 'linkedin', asset: 'hero-card' });
+  assert.deepEqual(scoped.args, ['revise', campaign, '--asset=hero-card', '--platform=linkedin']);
+  assert.equal(scoped.operation.paid, true);
+  for (const key of ['asset', 'platform']) assert.throws(() => buildOperation('revise', { campaign, [key]: '../escape' }));
+});
+
 test('blocker resolution jobs validate arguments and preserve command order', () => {
   const args = { campaign: 'acme/launch', target: 'post:linkedin', index: '0', text: '  - Missing source  ', reason: '- approved by owner' };
   const job = buildOperation('blockers resolve', args);

@@ -7,8 +7,8 @@ export async function api(path, options) {
   if (!response.ok) { const error = new Error(data.error || 'Request failed'); error.status = response.status; error.command = data.command; throw error; }
   return data;
 }
-export async function startFeedbackJob(campaign) {
-  return api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op: 'revise', campaign, args: { feedbackOnly: true } }) });
+export async function startFeedbackJob(campaign, args = { feedbackOnly: true }) {
+  return api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op: 'revise', campaign, args }) });
 }
 export async function cancelFeedbackJob(id) {
   return api(`/api/jobs/${encodeURIComponent(id)}/cancel`, { method: 'POST', headers });

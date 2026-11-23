@@ -91,6 +91,58 @@ test('terminal-only campaign actions prepare a copyable command without starting
   assert.equal(submitted, false);
 });
 
+test('review findings can be revised with optional scope', async t => {
+  const { page, url } = await dashboard(t);
+  let submitted: unknown;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.reviews = [{ platform: 'linkedin', verdict: 'revise', stale: false, gates: [] }];
+    project.assets = [{ id: 'hero-card', outputs: [] }];
+    await route.fulfill({ json: project });
+  });
+  await page.route('**/api/jobs?*', route => route.fulfill({ json: submitted ? [job('running')] : [] }));
+  await page.route('**/api/jobs/revision-1/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.route('**/api/jobs', route => { submitted = route.request().postDataJSON(); return route.fulfill({ status: 202, json: job('running') }); });
+  await page.goto(`${url}#/p/acme/launch/overview`);
+  await page.getByRole('button', { name: 'Revise', exact: true }).click();
+  const modal = page.locator('cds-modal');
+  await modal.locator('cds-select').nth(0).locator('select').selectOption('linkedin');
+  await modal.locator('cds-select').nth(1).locator('select').selectOption('hero-card');
+  await modal.getByRole('button', { name: 'Revise', exact: true }).click();
+  await page.getByRole('button', { name: 'Cancel revision' }).waitFor();
+  assert.deepEqual(submitted, { op: 'revise', campaign: 'acme/launch', args: { platform: 'linkedin', asset: 'hero-card' } });
+});
+
+test('terminal-only review revision prepares a command without starting a job', async t => {
+  const { page, url } = await dashboard(t); let submitted = false;
+  await page.route('**/api/project/acme%2Flaunch', async route => { const response = await route.fetch(), project = await response.json(); project.reviews = [{ platform: 'linkedin', verdict: 'revise', stale: false, gates: [] }]; await route.fulfill({ json: project }); });
+  await page.route('**/api/operations?*', async route => { const response = await route.fetch(), operations = await response.json(); operations.revise.requiresTTY = true; await route.fulfill({ json: operations }); });
+  await page.route('**/api/jobs', route => { if (route.request().method() === 'POST') submitted = true; return route.continue(); });
+  await page.goto(`${url}#/p/acme/launch/overview`);
+  await page.getByRole('button', { name: 'Revise', exact: true }).click();
+  await page.getByRole('button', { name: 'Prepare command' }).click();
+  await page.getByText('bstudio revise acme/launch', { exact: true }).waitFor();
+  assert.equal(submitted, false);
+});
+
+test('pending feedback takes precedence and stale findings cannot trigger revision', async t => {
+  const { page, url } = await dashboard(t);
+  let pending = true;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.reviews = [{ platform: 'linkedin', verdict: 'revise', stale: !pending, gates: [] }];
+    project.feedback = pending ? [{ id: 'one', status: 'pending', target: {}, note: 'Improve' }] : [];
+    await route.fulfill({ json: project });
+  });
+  await page.goto(`${url}#/p/acme/launch/overview`);
+  await page.getByRole('button', { name: 'Apply 1 feedback item' }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Revise', exact: true }).count(), 0);
+  pending = false;
+  await page.reload();
+  await page.getByText('No pending feedback', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Revise', exact: true }).count(), 0);
+});
+
 test('accept offers only revised destinations with passing gates', async t => {
   const { page, url } = await dashboard(t);
   await page.route('**/api/project/acme%2Flaunch', async route => {
