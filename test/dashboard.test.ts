@@ -12,6 +12,8 @@ import { loadLibrary, latestSources } from '../src/library.ts';
 import { startDashboard } from '../src/dashboard/server.ts';
 import { startCliJob } from '../src/jobs/runner.ts';
 import { run as status } from '../src/commands/status.ts';
+import { loadPosts } from '../src/posts.ts';
+import { mediaContentHash, reviewHash } from '../src/review-hash.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 function fixture() {
@@ -273,6 +275,39 @@ test('project review payload includes rubric, threshold and maker review', async
   assert.equal(result.threshold, 75);
   assert.ok(result.rubric.linkedin.some((criterion: { question: string }) => criterion.question));
   assert.equal(result.posts[0].selfReview.summary, 'Ready');
+});
+
+test('project reviews remain stale after reload only for destinations affected by later resolutions', async t => {
+  const { root, io } = fixture(), dir = join(root, 'projects/acme/campaigns/launch');
+  writeFileSync(join(dir, 'assets/card/image.png'), 'image');
+  writeFileSync(join(dir, 'assets/card/asset.yml'), 'id: card\nkind: card\noutputs: []\nembeds: [logo]\n');
+  writeFileSync(join(dir, 'posts/linkedin.md'), '---\nplatform: linkedin\nevidence: []\nmedia: [{asset: card, file: assets/card/image.png, alt: Card, kind: image}]\n---\nHello');
+  writeFileSync(join(dir, 'posts/x.md'), '---\nplatform: x\nevidence: []\nmedia: []\n---\nHello');
+  const posts = loadPosts(dir);
+  const saveReview = (platform: 'linkedin' | 'x', at: string) => {
+    const post = posts.get(platform)!;
+    writeFileSync(join(dir, `reviews/${platform}.json`), JSON.stringify({
+      platform, at, verdict: 'pass', total: 90, scores: [],
+      postHash: reviewHash({ ...post, media: post.media.map(item => ({ path: item.file, alt: item.alt })) }),
+      mediaHash: mediaContentHash(dir, post.media),
+    }));
+  };
+  saveReview('linkedin', '2025-01-01T00:00:00.000Z');
+  saveReview('x', '2025-01-01T00:00:00.000Z');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const project = async () => (await (await fetch(`http://127.0.0.1:${started.port}/api/project/acme%2Flaunch`, { headers: { cookie } })).json()).reviews as { platform: string; stale: boolean }[];
+  const stale = async () => Object.fromEntries((await project()).map(review => [review.platform, review.stale]));
+  assert.deepEqual(await stale(), { linkedin: false, x: false });
+  writeFileSync(join(dir, 'resolutions.yml'), '- target: asset:logo\n  text: Confirm rights\n  reason: Verified\n  resolvedAt: "2025-01-02T00:00:00.000Z"\n  by: owner\n');
+  assert.deepEqual(await stale(), { linkedin: true, x: false });
+  assert.deepEqual(await stale(), { linkedin: true, x: false });
+  saveReview('linkedin', '2025-01-03T00:00:00.000Z');
+  assert.deepEqual(await stale(), { linkedin: false, x: false });
+  writeFileSync(join(dir, 'resolutions.yml'), '- target: post:x\n  text: Confirm claim\n  reason: Verified\n  resolvedAt: "2025-01-04T00:00:00.000Z"\n  by: owner\n');
+  assert.deepEqual(await stale(), { linkedin: false, x: true });
+  saveReview('x', '2025-01-04T00:00:00.000Z');
+  assert.deepEqual(await stale(), { linkedin: false, x: false });
 });
 
 test('blocker endpoint exposes active blockers and resolution history to authenticated sessions', async t => {
