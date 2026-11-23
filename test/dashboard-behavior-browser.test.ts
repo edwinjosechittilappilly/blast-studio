@@ -96,15 +96,19 @@ test('review findings start an unscoped revision', async t => {
   let submitted: unknown;
   await page.route('**/api/project/acme%2Flaunch', async route => {
     const response = await route.fetch(), project = await response.json();
-    project.reviews = [{ platform: 'linkedin', verdict: 'revise', stale: false, gates: [] }];
+    project.reviews = [{ platform: 'linkedin', verdict: 'revise', stale: false, gates: [] }, { platform: 'devto', verdict: 'revise', stale: false, gates: [] }];
     await route.fulfill({ json: project });
   });
+  await page.route('**/api/budget', route => route.fulfill({ json: { mtd: 2.5, cap: 20 } }));
   await page.route('**/api/jobs?*', route => route.fulfill({ json: submitted ? [job('running')] : [] }));
   await page.route('**/api/jobs/revision-1/log?*', route => route.fulfill({ json: { log: '' } }));
   await page.route('**/api/jobs', route => { submitted = route.request().postDataJSON(); return route.fulfill({ status: 202, json: job('running') }); });
   await page.goto(`${url}#/p/acme/launch/overview`);
   await page.getByRole('button', { name: 'Revise', exact: true }).click();
   const modal = page.locator('cds-modal');
+  await modal.getByText('Applies current review findings to LinkedIn and DEV.', { exact: false }).waitFor();
+  await modal.getByText('Monthly spend: $2.50 of $20.00.', { exact: false }).waitFor();
+  await page.waitForFunction(() => document.activeElement?.matches('cds-modal-footer cds-button[data-modal-primary-focus]'));
   await modal.getByRole('button', { name: 'Revise', exact: true }).click();
   await page.getByRole('button', { name: 'Cancel revision' }).waitFor();
   assert.deepEqual(submitted, { op: 'revise', campaign: 'acme/launch', args: {} });
@@ -136,7 +140,9 @@ test('pending feedback takes precedence and stale findings cannot trigger revisi
   assert.equal(await page.getByRole('button', { name: 'Revise', exact: true }).count(), 0);
   pending = false;
   await page.reload();
-  await page.getByText('Run review first', { exact: true }).waitFor();
+  const reviewLink = page.getByRole('link', { name: 'run review to revise' }); await reviewLink.waitFor();
+  assert.match(await reviewLink.getAttribute('href') ?? '', /\/actions\?start=review$/);
+  assert.equal(await page.locator('#apply-reason').textContent(), 'Review is out of date — run review to revise');
   assert.equal(await page.getByRole('button', { name: 'Revise', exact: true }).isDisabled(), true);
 });
 

@@ -70,11 +70,11 @@ export function jobRegion(container, ctx, options = {}) {
   setTimeout(refresh, 0); return run;
 }
 
-export function openForm(title, description, fields, submitLabel, onSubmit, kind = 'primary') {
+export function openForm(title, description, fields, submitLabel, onSubmit, kind = 'primary', focusCancel = false) {
   const modal = el('cds-modal'); modal.setAttribute('open', ''); const header = el('cds-modal-header'), heading = el('cds-modal-heading', title), x = el('cds-modal-close-button'); header.append(heading, x);
   const body = el('cds-modal-body', null, 'actions-modal-body'); if (description) body.append(el('p', description)); const error = el('p', null, 'form-error'); error.setAttribute('role', 'alert');
   for (const item of fields) body.append(item.node); body.append(error);
-  const footer = el('cds-modal-footer'), close = button('Cancel', 'secondary'), submit = button(submitLabel, kind); footer.append(close, submit); modal.append(header, body, footer); document.body.append(modal);
+  const footer = el('cds-modal-footer'), close = button('Cancel', 'secondary'), submit = button(submitLabel, kind); if (focusCancel) close.setAttribute('data-modal-primary-focus', ''); footer.append(close, submit); modal.append(header, body, footer); document.body.append(modal);
   const dismiss = () => modal.remove(); close.addEventListener('click', dismiss); x.addEventListener('click', dismiss); modal.addEventListener('cds-modal-closed', dismiss);
   for (const item of fields) item.node.addEventListener('change', () => item.node.removeAttribute('invalid'));
   submit.addEventListener('click', async () => { const args = {}; for (const item of fields) { const raw = item.bool ? item.node.checked : item.node.value?.trim(), value = raw === '__none' ? '' : raw; if (item.required && !value) { item.node.setAttribute('invalid', ''); item.node.setAttribute('invalid-text', item.invalidText || `Choose or enter ${item.label.toLowerCase()}.`); item.node.focus(); return; } if (value) args[item.key] = value; } if (args.platform && args.asset && title === 'Add feedback') { error.textContent = 'Choose either a platform or an asset, not both.'; return; } error.textContent = ''; submit.disabled = true; try { if (await onSubmit(args, message => { error.textContent = message; }) === false) { if (!error.textContent) error.textContent = 'Could not start the job.'; submit.disabled = false; } else dismiss(); } catch (failure) { error.textContent = failure.message; submit.disabled = false; } });

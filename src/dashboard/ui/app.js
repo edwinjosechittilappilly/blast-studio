@@ -220,10 +220,11 @@ async function openProject(slug, requested = 'overview') {
   const revise = !count && project.reviews.some(review => review.verdict === 'revise');
   const failing = project.reviews.filter(review => review.verdict !== 'pass' && review.verdict !== 'accepted');
   const blockerOnly = failing.some(review => (review.gates || []).some(gate => !gate.pass && gate.id === 'specs' && (gate.message || '').includes('Blocker in '))) && failing.every(review => (review.gates || []).every(gate => gate.pass || gate.id === 'specs' && !(gate.message || '').split('; ').some(message => !message.startsWith('Blocker in '))) && !(review.scores || []).some(score => score.score !== null && score.score < 2));
-  const disabledReason = failing.some(review => review.stale) ? 'Run review first' : project.reviews.some(review => review.verdict === 'blocked') ? 'Resolve blocked rights before revision' : blockerOnly ? 'Resolve blockers and run review before revision' : '';
+  const disabledReason = failing.some(review => review.stale) ? 'Review is out of date — run review to revise' : project.reviews.some(review => review.verdict === 'blocked') ? 'Resolve blocked rights before revision' : blockerOnly ? 'Resolve blockers and run review before revision' : '';
   const needsReview = project.reviews.some(review => review.stale) || project.reviews.length < project.posts.length;
   const apply = button(revise ? 'Revise' : count ? `Apply ${count} feedback ${count === 1 ? 'item' : 'items'}` : 'Apply feedback', revise && needsReview ? 'secondary' : 'primary');
   const reason = el('p', revise ? disabledReason : count ? '' : 'No pending feedback', 'muted');
+  if (revise && failing.some(review => review.stale)) { const link = el('a', 'run review to revise'); link.href = `${campaignRoute(slug)}/actions?start=review`; reason.replaceChildren(document.createTextNode('Review is out of date — '), link); }
   apply.id = revise ? 'revise-findings' : 'apply-feedback'; apply.dataset.mode = revise ? 'revise' : 'feedback'; apply.dataset.available = count || revise && !disabledReason ? 'yes' : 'no';
   reason.id = 'apply-reason'; apply.setAttribute('aria-describedby', 'apply-reason'); apply.disabled = true;
   if (operations.revise.requiresTTY && !revise) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'info'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', 'Apply feedback from the terminal'); actions.append(notice, commandSnippet(terminalCommand('revise', operations.revise, slug, { feedbackOnly: true }))); } else actions.append(apply, reason);
@@ -236,13 +237,22 @@ async function openProject(slug, requested = 'overview') {
     try { job.pendingIds = project.feedback.filter(e => e.status === 'pending').map(e => e.id); await startFeedbackJob(slug, args); job.dataset.running = 'yes'; await jobStatus(project, job, apply); }
     catch (error) { announcement.replaceChildren(el('p', error.message)); if (error.command) announcement.append(commandSnippet(error.command)); if (job.dataset.running === 'yes') scheduleStatus(project, job, apply); else { job.dataset.statusKnown = 'yes'; apply.disabled = false; } }
   }
-  apply.addEventListener('click', () => {
+  let openingRevise = false;
+  apply.addEventListener('click', async () => {
     if (apply.dataset.mode === 'feedback') { if (operations.revise.requiresTTY) announcement.replaceChildren(commandSnippet(terminalCommand('revise', operations.revise, slug, { feedbackOnly: true }))); else start({ feedbackOnly: true }); return; }
-    const tty = operations.revise.requiresTTY;
-    openForm('Revise', tty ? 'This operation requires an interactive terminal. Prepare a command to run there.' : 'This step can incur provider charges. Check Settings for budget details.', [], tty ? 'Prepare command' : 'Revise', () => {
+    if (openingRevise) return;
+    openingRevise = true;
+    const tty = operations.revise.requiresTTY, destinations = project.reviews.filter(review => review.verdict === 'revise').map(review => displayName(review.platform));
+    const names = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' }).format(destinations);
+    let budget; if (!tty) { try { budget = await api('/api/budget'); } catch {} }
+    openingRevise = false;
+    if (!apply.isConnected || activeProject !== slug || apply.dataset.mode !== 'revise' || apply.disabled) return;
+    const effect = `Applies current review findings to ${names}.`;
+    const description = tty ? `${effect} This operation requires an interactive terminal. Prepare a command to run there.` : `${effect} This step can incur provider charges.${budget ? ` Monthly spend: $${Number(budget.mtd).toFixed(2)} of $${Number(budget.cap).toFixed(2)}.` : ' Check Settings for budget details.'}`;
+    openForm('Revise', description, [], tty ? 'Prepare command' : 'Revise', () => {
       if (tty) announcement.replaceChildren(commandSnippet(terminalCommand('revise', operations.revise, slug, {})));
       else start({});
-    });
+    }, 'primary', true);
   });
   const tabs = el('cds-tabs'); tabs.setAttribute('type', 'contained'); const panel = el('div', null, 'tab-content'), options = ['overview', ...orderedPosts(project).map(p => p.platform), 'assets', 'actions', 'export']; activeTab = options.includes(requested) ? requested : 'overview';
   panel.setAttribute('role', 'tabpanel');
