@@ -32,7 +32,7 @@ All notable changes are recorded here. Format: [Keep a Changelog](https://keepac
 
 - `revise --note "…" [--platform id | --asset id]` applies owner feedback to one platform, one asset, or the whole campaign. Feedback is stored in `feedback.yml` and doesn't use up automatic review rounds. (#7, #11)
 - `feedback <address> add|list|rm` queues, inspects and removes notes without running a revision. (#11)
-- `history` lists the snapshots taken before `make`, `revise`, `render` and blocker resolution overwrite artifacts, and `restore <n>` brings one back. (#11, #28)
+- `history` lists the snapshots taken before commands such as `plan`, `make`, `revise`, `render`, `delivery`, `restore` and blocker resolution overwrite artifacts, and `restore <n>` brings one back. (#11, #28, #30)
 - `plan` and `make` accept `--platforms` and `--assets` to rerun a subset, and unknown IDs fail before the agent runs. (#11)
 - `jobs` lists, shows logs for, and cancels durable background jobs. (#12)
 - `project new|list|rename` and `campaign rename` keep records, history and spend attribution, and refuse to run during active jobs. (#14)
@@ -41,8 +41,8 @@ All notable changes are recorded here. Format: [Keep a Changelog](https://keepac
 - `export --list` shows previous exports. `export` without a Market Blaster target writes a local zip you can import later. The target comes from `--mb`, then `project.yml`, then studio config. (#19, #24)
 - `status` shows exported and published state, delivery routes, and recommends re-exporting or re-importing when content or routes changed after the last export. (#19, #30)
 - Export records a successful Market Blaster import; a zip written without importing no longer counts as handed off. (#23)
-- `--version`, `-h` and `--help` work across commands. (#23)
-- `brief --mb-brief ~/path` and `export --mb ~/path` expand `~/`. (#24)
+- `--version`, `-h` and `--help` work across commands, and `brief` and `new` help documents every option. (#14, #23)
+- `export --mb ~/path` and `brief --mb-brief ~/path` expand `~/`. (#19, #24)
 - A source checkout runs `src/` when Node can strip types, so it no longer runs stale `dist/` code. Installed packages still use `dist/`. (#16, #18)
 
 ### Quality and safety
@@ -53,7 +53,7 @@ All notable changes are recorded here. Format: [Keep a Changelog](https://keepac
 - Writing, visual and motion standards are tailored to each platform pack. (#6)
 - Captions are required only for videos with an audio stream, probed from the actual file. Agents can no longer write render outputs or audio metadata. (#27)
 - Agent-written `asset.yml` is validated against the schema on write-back; invalid fields are sent back to the agent. (#31)
-- Campaign locks are shared across CLI and dashboard. Dead-owner locks recover automatically, and cancel stops the whole process tree. (#12, #20, #23)
+- Campaign locks are shared across CLI and dashboard. Dead-owner locks recover automatically, and cancel stops the whole process tree. (#12, #20)
 - Feedback writes are serialized with a lock, so a note added during a revision isn't lost. (#9)
 - API keys in the dashboard are write-only and are never returned to the browser. (#12)
 
