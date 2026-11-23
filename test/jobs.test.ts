@@ -479,3 +479,12 @@ test('program timeout terminates descendants holding output pipes', { timeout: 5
     assert.ok(state === '' || state === 'Z', `descendant is still running: ${state}`);
   } else assert.throws(() => process.kill(grandchild, 0), { code: 'ESRCH' });
 });
+
+test('program timeout kills descendants without inherited pipes even when the parent exits successfully', { timeout: 5000 }, async () => {
+  if (process.platform === 'win32') return;
+  let group = 0;
+  const script = `const {spawn}=require('node:child_process'); const c=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});process.send("ready");setInterval(()=>{},1000)'],{stdio:['ignore','ignore','ignore','ipc']}); c.on('message',()=>console.log('group:'+process.pid)); process.on('SIGTERM',()=>process.exit(0)); setInterval(()=>{},1000);`;
+  await assert.rejects(realIO().run(process.execPath, ['-e', script], { timeoutMs: 500, onOutput: line => { if (line.startsWith('group:')) group = Number(line.slice(6)); } }), /timed out/);
+  assert.ok(group);
+  assert.equal(processGroupRunning(group), false);
+});

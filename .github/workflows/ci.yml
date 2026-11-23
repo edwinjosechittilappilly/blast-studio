@@ -45,5 +45,10 @@ jobs:
           "$HOME/.local/bin/d2" --version
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: npm test
+      - name: Stress program timeout cleanup
+        run: |
+          for i in {1..20}; do
+            node --test --test-name-pattern='^program timeout terminates descendants holding output pipes$' test/jobs.test.ts
+          done
       - run: npm run typecheck
       - run: make docs

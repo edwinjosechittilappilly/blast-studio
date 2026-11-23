@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createInterface, type Interface } from "node:readline/promises";
+import { setTimeout as delay } from "node:timers/promises";
 import { run as accept, confirm } from "./commands/accept.ts";
 import { run as auth } from "./commands/auth.ts";
 import { briefOptions, run as brief } from "./commands/brief.ts";
@@ -122,11 +123,15 @@ function runProgram(cmd: string, args: string[], opts: { cwd?: string; env?: Rec
     let forceTimer: NodeJS.Timeout | undefined;
     const timer = opts.timeoutMs ? setTimeout(() => { timedOut = true; if (child.pid) { signalGroup(child.pid, "SIGTERM"); forceTimer = setTimeout(() => signalGroup(child.pid!, "SIGKILL"), 1000); } }, opts.timeoutMs) : undefined;
     child.once("error", error => { clearTimeout(timer); reject(error); });
-    child.once("close", (code, signal) => {
-      if (child.pid && !interrupted) { subprocesses.delete(child.pid); recordProcesses?.([...subprocesses]); }
-      if (timedOut && child.pid) signalGroup(child.pid, "SIGKILL");
+    child.once("close", async (code, signal) => {
       clearTimeout(timer); clearTimeout(forceTimer);
-      if (code === 0) { if (stderr) opts.onStderr?.(stderr); resolve(stdout); return; }
+      if (timedOut && child.pid) {
+        signalGroup(child.pid, "SIGKILL");
+        // Pipe closure can precede the kernel completing descendant termination.
+        while (processGroupRunning(child.pid)) await delay(50);
+      }
+      if (child.pid && !interrupted) { subprocesses.delete(child.pid); recordProcesses?.([...subprocesses]); }
+      if (!timedOut && code === 0) { if (stderr) opts.onStderr?.(stderr); resolve(stdout); return; }
       const reason = timedOut ? `timed out after ${opts.timeoutMs! / 1000}s` : `exited with ${code ?? signal}`;
       const tail = [stdout, stderr].filter(Boolean).join("\n").trim().split("\n").slice(-20).join("\n");
       reject(new Error(`${cmd} ${reason}${tail ? `:\n${tail}` : ""}`));
