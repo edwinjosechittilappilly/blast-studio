@@ -14,6 +14,7 @@ import { runGates } from '../review/gates.ts';
 import { runReviewer } from '../review/reviewer.ts';
 import { totalScore, verdict } from '../review/score.ts';
 import { mediaContentHash, reviewHash } from '../review-hash.ts';
+import { loadFeedback, markReviewed } from '../feedback.ts';
 
 export function agreement(rows: { expected: ScoreResult[]; actual: ScoreResult[] }[]): Record<string, number> {
   const counts: Record<string, { total: number; match: number }> = {};
@@ -49,6 +50,7 @@ export const run: Command = async (args, io) => {
   if (positionals.length !== 1 || positionals[0].startsWith('-')) throw new UserError(usage);
   const selected = parsed.values.platforms === undefined ? undefined : new Set(parsed.values.platforms.split(',').filter(Boolean));
   const config = loadConfig(io), dir = campaignDir(config, positionals[0]), posts = loadPosts(dir), brief = readBrief(dir), plan = readPlan(dir);
+  const feedback = loadFeedback(dir);
   for (const id of selected ?? []) if (![...posts.keys()].some(platform => platform === id)) throw new UserError(`Unknown platform: ${id}. Valid platforms: ${[...posts.keys()].join(', ') || '(none)'}`);
   if (!posts.size) throw new UserError('No posts to review');
   const assetsDir = join(dir, 'assets');
@@ -104,5 +106,7 @@ export const run: Command = async (args, io) => {
     }
     if (!config.reviewer.command) for (const criterion of rubric) io.out(`[ ] ${criterion.question}`);
   }
-  writeFileSync(join(dir, 'review.md'), summaries.join('\n')); return 0;
+  writeFileSync(join(dir, 'review.md'), summaries.join('\n'));
+  markReviewed(dir, feedback, new Set([...posts.keys()].filter(platform => !selected || selected.has(platform))));
+  return 0;
 };
