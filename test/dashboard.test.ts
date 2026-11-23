@@ -319,6 +319,33 @@ test('blocker resolution rejects stale text without starting a job or changing t
   assert.deepEqual(await (await fetch(`${base}/api/jobs?campaign=acme%2Flaunch`, { headers })).json(), []);
 });
 
+test('blocker resolution job target remains available in the job list', { timeout: 15000 }, async t => {
+  const { root, io } = fixture(), dir = join(root, 'projects/acme/campaigns/launch');
+  writeFileSync(join(dir, 'posts/linkedin.md'), '---\nplatform: linkedin\nevidence: []\nmedia: []\nblockers: [Confirm source]\n---\nHello');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const base = `http://127.0.0.1:${started.port}`;
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const headers = { cookie, origin: base, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
+  const response = await fetch(`${base}/api/jobs`, { method: 'POST', headers, body: JSON.stringify({
+    op: 'blockers resolve', campaign: 'acme/launch', args: { target: 'post:linkedin', index: '0', text: 'Confirm source', reason: 'Verified' },
+  }) });
+  assert.equal(response.status, 202);
+  const job = await response.json() as { id: string; target?: string };
+  assert.equal(job.target, 'post:linkedin');
+  const finished = Promise.withResolvers<void>();
+  const check = async () => {
+    try {
+      const jobs = await (await fetch(`${base}/api/jobs?campaign=acme%2Flaunch`, { headers })).json() as Array<{ id: string; state: string; target?: string }>;
+      const current = jobs.find(item => item.id === job.id);
+      assert.equal(current?.target, 'post:linkedin');
+      if (current?.state === 'succeeded') finished.resolve();
+      else if (current?.state === 'failed' || current?.state === 'cancelled') finished.reject(new Error(`Resolution ${current.state}`));
+    } catch (error) { finished.reject(error); }
+  };
+  const watcher = watch(join(dir, 'logs/jobs'), () => { void check(); });
+  try { await check(); await finished.promise; } finally { watcher.close(); }
+});
+
 
 test('dashboard sessions survive restarts and reject tampering and expiration', async t => {
   const { root, io } = fixture();
