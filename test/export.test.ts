@@ -203,6 +203,29 @@ test('manual export and mark host validation', async () => {
   assert.equal(JSON.parse(readFileSync(join(f.project, 'published.json'), 'utf8')).instagram.url, 'https://www.instagram.com/p/1');
 });
 
+test('mark validates hosts for manual overrides and rejects destinations without a host list', async () => {
+  const destinations: [string, string][] = [
+    ['devto', 'dev.to'], ['hashnode', 'hashnode.com'], ['gist', 'gist.github.com'],
+    ['github-discussion', 'github.com'], ['linkedin', 'linkedin.com'], ['linkedin', 'www.linkedin.com'],
+    ['linkedin', 'lnkd.in'], ['x', 'x.com'], ['bluesky', 'bsky.app'], ['mastodon', 'mastodon.social'],
+    ['threads', 'threads.net'], ['reddit', 'reddit.com'], ['hn', 'news.ycombinator.com'],
+    ['producthunt', 'producthunt.com'], ['lemmy', 'lemmy.world'], ['medium', 'medium.com'],
+    ['substack', 'substack.com'], ['youtube-shorts', 'youtube.com'], ['youtube-shorts', 'youtu.be'],
+    ['instagram', 'instagram.com'], ['tiktok', 'tiktok.com'], ['dailydev', 'app.daily.dev'],
+  ];
+  for (const [platform, host] of destinations) {
+    const f = fixture(platform), post = join(f.project, `posts/${platform}.md`);
+    writeFileSync(post, readFileSync(post, 'utf8').replace(`platform: ${platform}\n`, `platform: ${platform}\ndelivery: manual\n`));
+    await assert.rejects(mark(['acme/demo', platform, '--url', 'https://example.com/posts/1'], f.io), /host/);
+    await mark(['acme/demo', platform, '--url', `https://${host}/posts/1`], f.io);
+    assert.equal(JSON.parse(readFileSync(join(f.project, 'published.json'), 'utf8'))[platform].url, `https://${host}/posts/1`);
+  }
+  const f = fixture('newsletter'), post = join(f.project, 'posts/newsletter.md');
+  writeFileSync(post, readFileSync(post, 'utf8').replace('platform: newsletter\n', 'platform: newsletter\ndelivery: manual\n'));
+  await assert.rejects(mark(['acme/demo', 'newsletter', '--url', 'https://example.com/posts/1'], f.io), /host/);
+  assert.equal(existsSync(join(f.project, 'published.json')), false);
+});
+
 test('handoff invokes configured import and check and propagates failure', async () => {
   const f = fixture(), calls: string[][] = [];
   f.io.run = async (cmd, args, opts) => { calls.push([cmd, ...args]); assert.equal(opts?.cwd, f.root); return 'ok'; };
@@ -337,6 +360,18 @@ test('status reports export time, publication marks and the next export action',
   await status(['acme/demo'], f.io);
   assert.match(f.io.text(), /exported: 2026-06-01T12:00:00.000Z/);
   assert.match(f.io.text(), /published: instagram/);
+});
+
+test('directory handoff labels video covers and explains how to record publication', async () => {
+  const f = fixture('instagram'), post = join(f.project, 'posts/instagram.md');
+  const original = readFileSync(post, 'utf8');
+  for (const cover of [false, true]) {
+    writeFileSync(post, original.replace('    kind: image\n', `    kind: image\n    cover: ${cover}\n`));
+    await exportCommand(['acme/demo', '--dir'], f.io);
+    const readme = readFileSync(join(f.project, 'exports/instagram/README.md'), 'utf8');
+    assert.match(readme, cover ? /\(image, video cover; alt: Alt\)/ : /\(image; alt: Alt\)/);
+    assert.ok(readme.includes('Record the live URL: `bstudio mark <address> <platform> --url <url>` (or Mark published in the dashboard).'));
+  }
 });
 
 test('directory exports retain snapshots including handoffs and report exported', async () => {

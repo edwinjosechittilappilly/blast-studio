@@ -132,14 +132,18 @@ test('platform delivery control submits the chosen route and refreshes the effec
   const route = page.getByRole('combobox', { name: 'Delivery route' }), save = page.getByRole('button', { name: 'Save delivery' });
   await page.getByText('Manual delivery is handed off for publishing yourself. Market Blaster delivery is included in the import for supported destinations only.').waitFor();
   assert.equal(await route.inputValue(), 'marketBlaster');
+  assert.equal(await save.isDisabled(), true);
   await route.selectOption('manual');
+  assert.equal(await save.isEnabled(), true);
   await save.click();
   await page.getByRole('alert').filter({ hasText: 'Cannot save delivery' }).waitFor();
   assert.equal(await route.inputValue(), 'manual');
   await save.click();
-  await page.getByText('delivery: succeeded').waitFor();
+  await page.getByText('Delivery set to Manual —').waitFor();
+  assert.equal(await page.getByRole('link', { name: 'Run review' }).first().getAttribute('href'), '#/p/acme/launch/actions?start=review&platform=linkedin');
   assert.deepEqual(submitted, { op: 'delivery', campaign: 'acme/launch', args: { platform: 'linkedin', delivery: 'manual' } });
   assert.equal(await route.inputValue(), 'manual');
+  assert.equal(await save.isDisabled(), true);
 });
 
 test('delivery picker offers Market Blaster only for supported packs, including manual overrides', async t => {
@@ -328,6 +332,32 @@ test('export readiness identifies stale reviews and formats small exports', asyn
   assert.match(await page.getByText('Export is unavailable for:', { exact: false }).innerText(), /LinkedIn/);
   await page.getByRole('link', { name: 're-run review' }).click();
   await page.getByRole('button', { name: 'Review', exact: true }).waitFor();
+});
+
+test('export shows delivery routes and summarizes manual handoffs after success', async t => {
+  const { page, url } = await dashboard(t);
+  let submitted = false;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.posts = [{ platform: 'linkedin' }, { platform: 'x' }];
+    project.platforms.linkedin.delivery = 'manual';
+    project.platforms.x = { name: 'X', delivery: 'marketBlaster' };
+    project.reviews = project.posts.map((post: { platform: string }) => ({ platform: post.platform, verdict: 'pass', gates: ['policy', 'disclosure', 'specs', 'accessibility', 'fabricated-metrics', 'rights'].map(id => ({ id, pass: true })) }));
+    await route.fulfill({ json: project });
+  });
+  await page.route('**/api/jobs', route => { submitted = true; return route.fulfill({ json: { ...job('queued'), operation: 'export' } }); });
+  await page.route('**/api/jobs?campaign=*', route => route.fulfill({ json: submitted ? [{ ...job('succeeded'), operation: 'export' }] : [] }));
+  await page.route('**/api/jobs/revision-1/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.goto(`${url}#/p/acme/launch/export`);
+  const readiness = page.locator('.export-readiness');
+  await readiness.getByText('LinkedIn — Manual handoff — pass').waitFor();
+  await readiness.getByText('X — Market Blaster — pass').waitFor();
+  await page.getByRole('button', { name: 'Export locally' }).click();
+  const summary = page.locator('.export-summary');
+  await summary.getByText('handoff/linkedin/').waitFor();
+  assert.equal(await summary.getByText('handoff/x/').count(), 0);
+  await summary.getByRole('link', { name: 'Mark published' }).click();
+  await page.locator('cds-modal').getByText('Mark published', { exact: true }).first().waitFor();
 });
 
 test('project page has one campaign action and jobs tooltip stays within the viewport', async t => {

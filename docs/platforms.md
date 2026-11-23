@@ -42,4 +42,4 @@ route for supported packs. Other values are invalid and can be repaired with
 | [X](platforms/x/guide.md) | draft | text, thread, image, video | x |
 | [YouTube Shorts](platforms/youtube-shorts/guide.md) | draft | video | manual |
 
-Select IDs in [`studio.yml`](configuration.md). After manually publishing a manual or owner-overridden post, use `bstudio mark <project>/<campaign> <platform> --url <https-url>` to record its publication URL. YouTube Shorts, Instagram, TikTok and daily.dev require an accepted destination host; other owner-overridden platforms accept any HTTPS URL. See [source updates](updater.md) for maintaining packs.
+Select IDs in [`studio.yml`](configuration.md). After manually publishing a manual or owner-overridden post, use `bstudio mark <project>/<campaign> <platform> --url <https-url>` to record its publication URL. The URL host must be allowed for that platform; platforms without an allowed host cannot be marked. See [source updates](updater.md) for maintaining packs.

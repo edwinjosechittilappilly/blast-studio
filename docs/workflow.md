@@ -69,6 +69,6 @@ The archive includes the full brief and extracted evidence, not just publication
 
 The archive is deterministic for unchanged inputs. Its manifest timestamp uses the latest valid review timestamp (or the ZIP epoch for older reviews without one), so re-exporting does not change the package solely because the clock advanced.
 
-Manual destinations, including owner-overridden posts, and threads are included under `handoff/` in the archive. Follow the platform checklist and publish through the destination. Record a manual publication with `bstudio mark <project>/<campaign> <platform> --url <https-url>`. YouTube Shorts, Instagram, TikTok and daily.dev require an accepted destination host; other owner-overridden platforms accept any HTTPS URL.
+Manual destinations, including owner-overridden posts, and threads are included under `handoff/` in the archive. Follow the platform checklist and publish through the destination. Record a manual publication with `bstudio mark <project>/<campaign> <platform> --url <https-url>`. The URL host must be allowed for that platform; platforms without an allowed host cannot be marked.
 
 Use `bstudio status [<project>/<campaign>]` and `bstudio library [search <query>]` to find work, `bstudio project list` to list projects, or `bstudio dashboard` for the local interface.

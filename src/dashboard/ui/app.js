@@ -157,21 +157,27 @@ function campaignRelativeMessage(message, slug) {
   });
 }
 function deliveryControl(project, post) {
-  const section = el('section', null, 'delivery-control'), select = el('cds-select'), save = button('Save delivery', 'secondary'), error = el('p', null, 'form-error');
-  select.setAttribute('label-text', 'Delivery route'); error.setAttribute('role', 'alert');
+  const section = el('section', null, 'delivery-control'), select = el('cds-select'), save = button('Save delivery', 'secondary'), error = el('p', null, 'form-error'), confirmation = el('p', null, 'delivery-confirmation');
+  select.setAttribute('label-text', 'Delivery route'); error.setAttribute('role', 'alert'); confirmation.setAttribute('role', 'status');
   const routes = [['manual', 'Manual']]; if (project.platforms?.[post.platform]?.supportsMarketBlaster) routes.push(['marketBlaster', 'Market Blaster']);
   for (const [value, text] of routes) { const option = el('cds-select-item', text); option.setAttribute('value', value); select.append(option); }
-  select.value = project.platforms?.[post.platform]?.delivery === 'manual' ? 'manual' : 'marketBlaster'; section.append(select, save, el('p', 'Manual delivery is handed off for publishing yourself. Market Blaster delivery is included in the import for supported destinations only.', 'muted delivery-help'), error);
+  let saved = project.platforms?.[post.platform]?.delivery === 'manual' ? 'manual' : 'marketBlaster';
+  select.value = saved; save.disabled = true; select.addEventListener('cds-select-selected', () => { save.disabled = select.value === saved; confirmation.replaceChildren(); });
+  section.append(el('h3', 'Delivery'), select, save, el('p', 'Manual delivery is handed off for publishing yourself. Market Blaster delivery is included in the import for supported destinations only.', 'muted delivery-help'), confirmation, error);
   const run = jobRegion(section, { project }, { operation: 'delivery', ownOnly: true, onComplete: async job => {
     try {
       if (job.state === 'succeeded') {
         const updated = await api(`/api/project/${encodeURIComponent(project.slug)}`);
         if (!section.isConnected) return;
         Object.assign(project, updated);
-        select.value = project.platforms?.[post.platform]?.delivery === 'manual' ? 'manual' : 'marketBlaster';
+        saved = project.platforms?.[post.platform]?.delivery === 'manual' ? 'manual' : 'marketBlaster';
+        select.value = saved;
+        const link = el('a', 'Run review'); link.href = `${campaignRoute(project.slug)}/actions?start=review&platform=${encodeURIComponent(post.platform)}`;
+        confirmation.replaceChildren(document.createTextNode(`Delivery set to ${saved === 'manual' ? 'Manual' : 'Market Blaster'} — `), link);
+        section.querySelector('.actions-job').hidden = true;
       }
     } catch (failure) { error.textContent = `Delivery saved, but the current route could not be refreshed: ${failure.message}. Reload the campaign.`; }
-    finally { save.disabled = false; select.disabled = false; }
+    finally { save.disabled = select.value === saved; select.disabled = false; }
   } });
   save.addEventListener('click', async () => {
     error.textContent = ''; save.disabled = true; select.disabled = true;
@@ -185,7 +191,7 @@ function platformPanel(project, post) {
     const blockers = gate.id === 'specs' ? parts.filter(part => part.startsWith('Blocker in ')) : [];
     return { ...gate, blockerCount: blockers.length, message: blockers.length ? [...parts.filter(part => !part.startsWith('Blocker in ')), `${blockers.length} blocker${blockers.length === 1 ? '' : 's'}`].join('; ') : parts.join('; ') };
   }) }, panel = el('div', null, 'platform-grid'), left = el('section', null, 'surface post-panel'), right = el('section', null, 'surface reviewer-panel');
-  const titleRow = el('div', null, 'section-title'); titleRow.append(el('h2', post.title || `${project.platforms?.[post.platform]?.name || displayName(post.platform)} post`)); left.append(titleRow); const limit = project.platforms?.[post.platform]?.textLimit; left.append(el('p', `${[...post.body].length} characters${typeof limit?.value === 'number' ? ` / ${limit.value}` : ''}`, 'muted'));
+  const titleRow = el('div', null, 'section-title'); titleRow.append(el('h2', post.title || `${project.platforms?.[post.platform]?.name || displayName(post.platform)} post`)); left.append(titleRow); const limit = project.platforms?.[post.platform]?.textLimit; left.append(el('p', `${[...post.body].length} characters${typeof limit?.value === 'number' ? ` / ${limit.value}` : ''}`, 'muted'), deliveryControl(project, post));
   const markdownPlatforms = new Set(['devto', 'hashnode', 'gist', 'github-discussion', 'medium', 'substack', 'newsletter']), body = el('div', null, markdownPlatforms.has(post.platform) ? 'markdown' : 'plain-post');
   if (markdownPlatforms.has(post.platform)) body.append(renderMarkdown(post.body, document)); else body.textContent = post.body;
   const thread = Array.isArray(post.thread) ? post.thread : [];
@@ -193,7 +199,6 @@ function platformPanel(project, post) {
   if (thread.length) { const list = el('ol', null, 'thread'); for (const [index, text] of thread.entries()) { const item = el('li'); item.append(el('h3', `Thread post ${index + 2}`), el('div', text, 'plain-post'), copyButton(`Copy thread post ${index + 2}`, text)); list.append(item); } left.append(list); }
   toolbar.append(copyButton('Copy all', [post.title, [post.body, ...thread].join('\n\n---\n\n')].filter(Boolean).join('\n\n')));
   if (post.media.length) { left.append(el('h3', 'Media'), mediaGallery(project.slug, post.media, project.captions)); }
-  left.append(deliveryControl(project, post));
   left.append(feedbackForm(project, { platform: post.platform }));
   const heading = el('div', null, 'section-title'), staleNotice = el('div');
   const showStale = () => { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'warning'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', 'Review is out of date'); const link = el('a', 'Run review'); link.href = `${campaignRoute(project.slug)}/actions?start=review&platform=${encodeURIComponent(post.platform)}`; notice.append(link); staleNotice.replaceChildren(notice); };
