@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { cpSync, existsSync, linkSync, mkdirSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
+import { closeSync, cpSync, existsSync, linkSync, mkdirSync, openSync, readSync, readdirSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { UserError } from './types.ts';
 
@@ -13,7 +13,22 @@ export function historyEntries(dir: string): string[] {
 function sameFile(a: string, b: string): boolean {
   if (!existsSync(b)) return false;
   const as = statSync(a), bs = statSync(b);
-  return as.isFile() && bs.isFile() && as.size === bs.size && Math.abs(as.mtimeMs - bs.mtimeMs) < 1;
+  if (!as.isFile() || !bs.isFile() || as.size !== bs.size || Math.abs(as.mtimeMs - bs.mtimeMs) >= 1) return false;
+  if (as.size === 0 || as.dev === bs.dev && as.ino === bs.ino) return true;
+  const left = openSync(a, 'r');
+  try {
+    const right = openSync(b, 'r');
+    try {
+      const length = Math.min(as.size, 64 * 1024);
+      const x = Buffer.allocUnsafe(length), y = Buffer.allocUnsafe(length);
+      for (let offset = 0; offset < as.size;) {
+        const count = readSync(left, x, 0, length, offset);
+        if (!count || readSync(right, y, 0, count, offset) !== count || Buffer.compare(x, y, 0, count, 0, count) !== 0) return false;
+        offset += count;
+      }
+      return true;
+    } finally { closeSync(right); }
+  } finally { closeSync(left); }
 }
 
 function same(a: string, b: string): boolean {

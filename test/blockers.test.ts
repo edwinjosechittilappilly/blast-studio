@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, utimesSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { main } from '../src/cli.ts';
 import { acquireCampaignLock } from '../src/jobs/runner.ts';
@@ -109,12 +109,26 @@ test('blocker snapshots do not evict workflow snapshots', async () => {
   const { dir, io } = fixture();
   const plan = join(dir, 'plan.yml');
   for (let n = 0; n < 20; n++) {
-    writeFileSync(plan, `version: ${n}\n`);
+    writeFileSync(plan, `version: ${'x'.repeat(n)}\n`);
     snapshot(dir, 'make');
   }
   assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'First', '--reason', 'Done'], io), 0);
   assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'Second', '--reason', 'Done'], io), 0);
   assert.equal(historyEntries(dir).filter(name => name.includes('-make-')).length, 20);
+});
+
+test('snapshots distinguish equal-sized files with identical modification times', () => {
+  const { dir } = fixture();
+  const plan = join(dir, 'plan.yml'), time = new Date('2020-01-01T00:00:00Z');
+  writeFileSync(plan, 'version: A\n');
+  utimesSync(plan, time, time);
+  const first = snapshot(dir, 'make')!;
+  writeFileSync(plan, 'version: B\n');
+  utimesSync(plan, time, time);
+  const second = snapshot(dir, 'make')!;
+  assert.notEqual(first, second);
+  assert.equal(readFileSync(join(dir, 'history', first, 'plan.yml'), 'utf8'), 'version: A\n');
+  assert.equal(readFileSync(join(dir, 'history', second, 'plan.yml'), 'utf8'), 'version: B\n');
 });
 
 test('parse errors explain ambiguous option values', async () => {
