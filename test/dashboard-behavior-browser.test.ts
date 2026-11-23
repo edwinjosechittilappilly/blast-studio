@@ -412,7 +412,7 @@ test('blockers can be resolved with a reason and appear in history', async t => 
     return route.fulfill({ json: { id: 'resolve-1' } });
   });
   await page.goto(`${url}#/p/acme/launch/linkedin`);
-  await page.getByText('posts/linkedin.md · Blocker 1', { exact: true }).waitFor();
+  await page.getByText('Blocker 1', { exact: true }).waitFor();
   const resolve = page.getByRole('button', { name: 'Resolve posts/linkedin.md blocker 1' });
   assert.equal(await page.locator('cds-button').filter({ hasText: 'Resolve posts/linkedin.md blocker 1' }).evaluate(node => node.firstChild?.textContent), 'Resolve');
   await resolve.click();
@@ -456,7 +456,7 @@ test('blocker gate summaries link to the list and assets show only asset blocker
     { target: 'asset:card', index: 0, text: 'Asset problem' },
   ], resolutions: [] } }));
   await page.goto(`${url}#/p/acme/launch/linkedin`);
-  await page.getByText('posts/linkedin.md · Blocker 3').waitFor();
+  await page.getByText('Blocker 3', { exact: true }).waitFor();
   assert.equal(await page.getByText('First', { exact: true }).count(), 1);
   assert.equal(await page.getByRole('link', { name: 'see Blockers' }).count(), 2);
   await page.getByRole('link', { name: 'Run review' }).waitFor();

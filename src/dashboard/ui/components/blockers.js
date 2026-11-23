@@ -23,10 +23,10 @@ export function renderBlockers(project, target = null, onResolved = () => {}) {
         for (const blocker of blockers) {
           const item = el('li'), detail = el('div'), resolve = button('Resolve', 'secondary');
           resolve.append(el('span', ` ${targetPath(blocker.target)} blocker ${blocker.index + 1}`, 'visually-hidden'));
-          detail.append(el('strong', `${targetPath(blocker.target)} · Blocker ${blocker.index + 1}`), el('p', blocker.text));
+          detail.append(el('strong', `${!target || target === 'asset:' ? `${targetPath(blocker.target)} · ` : ''}Blocker ${blocker.index + 1}`), el('p', blocker.text));
           resolve.addEventListener('click', () => {
             const reason = el('cds-textarea'), label = el('span', 'Reason'); label.slot = 'label-text'; reason.append(label);
-            openForm('Resolve blocker', `${targetPath(blocker.target)}: ${blocker.text}. Resolving removes this blocker, records your reason in the audit history, and creates a snapshot. Run review again to update the review.`, [{ key: 'reason', label: 'Reason', required: true, invalidText: 'Enter a reason.', node: reason }], 'Resolve', (args, reportError) => { resolvingTarget = blocker.target; return run('blockers resolve', { target: blocker.target, index: String(blocker.index), text: blocker.text, reason: args.reason }, reportError); });
+            openForm('Resolve blocker', `${targetPath(blocker.target)}: ${blocker.text} — Resolving removes this blocker, records your reason in the audit history, and creates a snapshot. Run review again to update the review.`, [{ key: 'reason', label: 'Reason', required: true, invalidText: 'Enter a reason.', node: reason }], 'Resolve', (args, reportError) => { resolvingTarget = blocker.target; return run('blockers resolve', { target: blocker.target, index: String(blocker.index), text: blocker.text, reason: args.reason }, reportError); });
           });
           item.append(detail, resolve); list.append(item);
         }
