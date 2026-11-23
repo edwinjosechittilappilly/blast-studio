@@ -503,10 +503,10 @@ test('stale destination review survives reload and opens review for that platfor
   await modal.locator('cds-select').waitFor();
   assert.equal(await modal.locator('cds-select').evaluate(node => (node as HTMLElement & { value: string }).value), 'linkedin');
   await modal.getByRole('button', { name: 'Cancel' }).click();
+  await page.getByRole('tab', { name: /LinkedIn/ }).click();
+  await page.getByRole('heading', { name: 'Independent review' }).waitFor();
   stale = false;
-  await page.goto(url);
   await page.reload();
-  await page.goto(`${url}#/p/acme/launch/linkedin`);
   await page.getByRole('heading', { name: 'Independent review' }).waitFor();
   assert.equal(await page.getByRole('link', { name: 'Run review' }).count(), 0);
 });
@@ -523,7 +523,7 @@ test('assets refresh blocker counts after resolution and keep long self-reviews 
   await page.route('**/api/campaigns/acme/launch/blockers', route => route.fulfill({ json: { blockers: resolved ? [] : [{ target: 'asset:card', index: 0, text: 'Missing source' }], resolutions: [] } }));
   await page.route('**/api/jobs?*', route => route.fulfill({ json: resolved ? [{ id: 'resolve-asset', operation: 'blockers resolve', target: 'asset:card', state: 'succeeded' }] : [] }));
   await page.route('**/api/jobs/resolve-asset/log?*', route => route.fulfill({ json: { log: '' } }));
-  await page.route('**/api/jobs', route => { resolved = true; return route.fulfill({ json: { id: 'resolve-asset' } }); });
+  await page.route('**/api/jobs', route => { if (route.request().method() !== 'POST') return route.fallback(); resolved = true; return route.fulfill({ json: { id: 'resolve-asset' } }); });
   await page.goto(`${url}#/p/acme/launch/assets`);
   const row = page.locator('cds-table-row').filter({ hasText: 'card' });
   await row.getByRole('button', { name: 'View' }).click();
