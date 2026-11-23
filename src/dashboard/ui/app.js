@@ -148,8 +148,15 @@ function scheduleStatus(project, region, apply) {
     });
   }, 3000);
 }
+function campaignRelativeMessage(message, slug) {
+  const [project, campaign] = slug.split('/'), marker = `/projects/${project}/campaigns/${campaign}/`;
+  return message.replace(/(?:[A-Za-z]:)?\/[^\s"'<>]*/g, path => {
+    const index = path.indexOf(marker);
+    return index < 0 ? path : path.slice(index + marker.length);
+  });
+}
 function platformPanel(project, post) {
-  const review = project.reviews.find(r => r.platform === post.platform), panel = el('div', null, 'platform-grid'), left = el('section', null, 'surface post-panel'), right = el('section', null, 'surface reviewer-panel');
+  const savedReview = project.reviews.find(r => r.platform === post.platform), review = savedReview && { ...savedReview, gates: (savedReview.gates || []).map(gate => ({ ...gate, message: gate.message && campaignRelativeMessage(gate.message, project.slug) })) }, panel = el('div', null, 'platform-grid'), left = el('section', null, 'surface post-panel'), right = el('section', null, 'surface reviewer-panel');
   const titleRow = el('div', null, 'section-title'); titleRow.append(el('h2', post.title || `${project.platforms?.[post.platform]?.name || displayName(post.platform)} post`)); left.append(titleRow); const limit = project.platforms?.[post.platform]?.textLimit; left.append(el('p', `${[...post.body].length} characters${typeof limit?.value === 'number' ? ` / ${limit.value}` : ''}`, 'muted'));
   const markdownPlatforms = new Set(['devto', 'hashnode', 'gist', 'github-discussion', 'medium', 'substack', 'newsletter']), body = el('div', null, markdownPlatforms.has(post.platform) ? 'markdown' : 'plain-post');
   if (markdownPlatforms.has(post.platform)) body.append(renderMarkdown(post.body, document)); else body.textContent = post.body;
@@ -159,7 +166,7 @@ function platformPanel(project, post) {
   toolbar.append(copyButton('Copy all', [post.title, [post.body, ...thread].join('\n\n---\n\n')].filter(Boolean).join('\n\n')));
   if (post.media.length) { left.append(el('h3', 'Media'), mediaGallery(project.slug, post.media, project.captions)); }
   left.append(feedbackForm(project, { platform: post.platform }));
-  const heading = el('div', null, 'section-title'); heading.append(el('h2', 'Independent review'), verdictTag(review)); right.append(heading);
+  const heading = el('div', null, 'section-title'); heading.append(el('h2', 'Independent review'), verdictTag(review)); right.append(heading, renderBlockers(project, `post:${post.platform}`));
   if (review) { const failed = (review.gates || []).filter(g => !g.pass); if (failed.length) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', review.verdict === 'blocked' ? 'error' : 'warning'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', `${review.verdict === 'blocked' ? 'Blocked' : 'Needs revision'}: ${failed.length} gate${failed.length === 1 ? '' : 's'} failed — ${failed.map(g => `${g.id}${g.message ? ': ' + g.message : ''}`).join('; ')}`); right.append(notice); } right.append(scoreMeter(review, project.threshold), el('h3', 'Gates'), gateList(review.gates)); if (review.warnings?.length) { const details = el('details'); details.open = review.verdict !== 'pass'; details.append(el('summary', `Warnings (${review.warnings.length})`)); const list = el('ul'); review.warnings.forEach(w => list.append(el('li', w))); details.append(list); right.append(details); } right.append(el('h3', 'Rubric'), rubricTable(project.rubric[post.platform] || [], review.scores || [], failed.length > 0)); }
   else right.append(el('p', 'No independent review yet.', 'muted'));
   const hooks = project.plan.find(p => p.platform === post.platform)?.hooks || []; if (hooks.length || review?.hookComparisons?.length) right.append(hookComparison(hooks, review?.hookComparisons)); right.append(selfReview(post.selfReview)); panel.append(left, right); return panel;

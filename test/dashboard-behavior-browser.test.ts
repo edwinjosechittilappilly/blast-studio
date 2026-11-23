@@ -411,9 +411,9 @@ test('blockers can be resolved with a reason and appear in history', async t => 
     submitted = route.request().postDataJSON();
     return route.fulfill({ json: { id: 'resolve-1' } });
   });
-  await page.goto(`${url}#/p/acme/launch/overview`);
-  await page.getByText('posts/linkedin.md').waitFor();
-  await page.getByRole('button', { name: 'Resolve blocker for post:linkedin: Missing source' }).click();
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  await page.getByText('posts/linkedin.md', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Resolve posts/linkedin.md blocker 1' }).click();
   const modal = page.locator('cds-modal');
   await modal.getByRole('button', { name: 'Resolve', exact: true }).click();
   assert.equal(await modal.locator('cds-textarea').getAttribute('invalid'), '');
@@ -424,4 +424,16 @@ test('blockers can be resolved with a reason and appear in history', async t => 
   await page.getByText('Resolved history (1)').click();
   await page.getByText('Reason: Source added').waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+});
+
+test('saved review gate paths are shown relative to the campaign', async t => {
+  const { page, url } = await dashboard(t);
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.reviews = [{ platform: 'linkedin', verdict: 'blocked', gates: [{ id: 'source', pass: false, message: 'See /old/home/projects/acme/campaigns/launch/posts/linkedin.md' }], scores: [] }];
+    await route.fulfill({ json: project });
+  });
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  await page.getByText('Fail · source — See posts/linkedin.md').waitFor();
+  assert.equal(await page.getByText('/old/home', { exact: false }).count(), 0);
 });
