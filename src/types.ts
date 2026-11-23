@@ -248,6 +248,9 @@ export interface FeedbackEntry {
   note: string;
   at: string;
   status: 'pending' | 'applied' | 'rejected';
+  sourcesWritten?: string;
+  sourceTargets?: { assets: string[]; platforms: string[] };
+  renderedAt?: string;
   appliedAt?: string;
   rejectedReason?: string;
 }

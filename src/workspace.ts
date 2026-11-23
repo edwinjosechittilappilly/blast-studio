@@ -23,7 +23,7 @@ function stripAgentDelivery(text: string): string {
   return `${match[1]}${stringify(data).trimEnd()}${match[3]}${match[4]}`;
 }
 
-export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs, passEnv = [], validate, preserveBlockers = false, workspaceOnly = [] }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string>; allowOut: RegExp[]; prompt: string; timeoutMs: number; passEnv?: string[]; validate?: (workspace: string) => { path: string; message: string }[]; preserveBlockers?: boolean; workspaceOnly?: string[] }): Promise<{ copied: string[]; ignored: string[] }> {
+export async function runAgentInWorkspace({ config, io, projectDir, files, allowOut, prompt, timeoutMs, passEnv = [], validate, preserveBlockers = false, workspaceOnly = [] }: { config: StudioConfig; io: IO; projectDir: string; files: Record<string, string | Buffer>; allowOut: RegExp[]; prompt: string; timeoutMs: number; passEnv?: string[]; validate?: (workspace: string) => { path: string; message: string }[]; preserveBlockers?: boolean; workspaceOnly?: string[] }): Promise<{ copied: string[]; ignored: string[] }> {
   const dir = mkdtempSync(join(tmpdir(), 'bstudio-agent-'));
   const temp = mkdtempSync(join(tmpdir(), 'bstudio-agent-tmp-'));
   const copied: string[] = [], ignored: string[] = [];
@@ -53,7 +53,7 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
           if (st.isDirectory()) { visit(path, rel); continue; }
           if (st.isFile() && workspaceOnly.includes(rel)) continue;
           const permitted = allowOut.some(re => { re.lastIndex = 0; return re.test(rel); });
-          if (st.isFile() && Object.hasOwn(files, rel) && readFileSync(path, 'utf8') === files[rel]) continue;
+          if (st.isFile() && Object.hasOwn(files, rel) && readFileSync(path).equals(Buffer.from(files[rel]))) continue;
           if (!st.isFile() || !permitted) { ignored.push(rel); continue; }
           let data = readFileSync(path);
           try {

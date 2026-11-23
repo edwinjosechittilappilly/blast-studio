@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { parse, stringify } from 'yaml';
+import { chromium } from 'playwright';
 import { createRevise, run as revise } from '../src/commands/revise.ts';
 import { run as review } from '../src/commands/review.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
@@ -11,6 +12,7 @@ import { loadFeedback, addFeedback } from '../src/feedback.ts';
 import { UserError } from '../src/types.ts';
 import { withCampaignLock } from '../src/cli.ts';
 import { acquireCampaignLock } from '../src/jobs/runner.ts';
+import { packageBin } from '../src/render/bins.ts';
 
 function fixture(maxRounds: number) {
   const root = tempStudio({
@@ -86,6 +88,8 @@ test('owner asset feedback is scoped, passed verbatim and marked applied', async
     prompt = args.join('\n');
     mkdirSync(join(opts!.cwd!, 'posts'), { recursive: true });
     writeFileSync(join(opts!.cwd!, 'posts/bluesky.md'), 'unauthorized');
+    const meta = join(opts!.cwd!, 'assets/logo/asset.yml');
+    writeFileSync(meta, `${readFileSync(meta, 'utf8')}description: Brighter\n`);
     return '';
   };
   await createRevise(async () => 0)(['demo/launch', '--note', 'Use a brighter color.\nKeep the mark.', '--asset', 'logo'], f.io);
@@ -143,8 +147,12 @@ test('plain revise applies pending dashboard feedback even with zero automatic r
   writeFileSync(join(f.project, 'reviews/bluesky.json'), JSON.stringify({ platform: 'bluesky', verdict: 'pass', gates: [] }));
   addFeedback(f.project, { platform: 'bluesky' }, 'Adjust the opening');
   let prompt = '';
-  f.io.run = async (_cmd, args) => { prompt = args.join('\n'); return ''; };
-  await revise(['demo/launch'], f.io);
+  f.io.run = async (_cmd, args, opts) => {
+    prompt = args.join('\n');
+    writeFileSync(join(opts!.cwd!, 'posts/bluesky.md'), '---\nplatform: bluesky\nevidence: [E1]\nmedia: []\n---\nRevised opening\n');
+    return '';
+  };
+  await assert.rejects(revise(['demo/launch'], f.io), /Revision round limit \(0\)/);
   assert.match(prompt, /Adjust the opening/);
   assert.equal(loadFeedback(f.project)[0].status, 'applied');
 });
@@ -196,8 +204,58 @@ test('render failure leaves feedback pending', async () => {
   mkdirSync(join(f.project, 'assets/logo'), { recursive: true });
   writeFileSync(join(f.project, 'assets/logo/asset.yml'), 'id: logo\nkind: logo\nprovider: template\naiGenerated: false\noutputs: []\n');
   f.io.run = async (_cmd, _args, opts) => { writeFileSync(join(opts!.cwd!, 'assets/logo/source.txt'), 'changed'); return ''; };
-  await assert.rejects(revise(['demo/launch', '--note', 'Change logo', '--asset', 'logo'], f.io), /Feedback remains pending[\s\S]*Re-render:[\s\S]*Re-review:/);
+  await assert.rejects(createRevise(async () => { throw new UserError('render failed'); })(['demo/launch', '--note', 'Change logo', '--asset', 'logo'], f.io), /Feedback remains pending[\s\S]*Re-render:[\s\S]*Re-review:/);
   assert.equal(loadFeedback(f.project)[0].status, 'pending');
+});
+
+test('unexpected render errors propagate unchanged and leave feedback pending', async () => {
+  const f = fixture(0);
+  writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'logo', kind: 'logo', brief: 'Logo' }] }]));
+  mkdirSync(join(f.project, 'assets/logo'), { recursive: true });
+  writeFileSync(join(f.project, 'assets/logo/asset.yml'), 'id: logo\nkind: logo\nprovider: template\naiGenerated: false\noutputs: []\n');
+  f.io.run = async (_cmd, _args, opts) => { writeFileSync(join(opts!.cwd!, 'assets/logo/source.txt'), 'changed'); return ''; };
+  const failure = new Error('unexpected render error');
+  await assert.rejects(createRevise(async () => { throw failure; })(['demo/launch', '--note', 'Change logo', '--asset', 'logo'], f.io), error => error === failure);
+  assert.equal(loadFeedback(f.project)[0].status, 'pending');
+});
+
+test('feedback remains pending when the agent makes no changes', async () => {
+  const f = fixture(0);
+  let renders = 0;
+  f.io.run = async () => '';
+  await assert.rejects(createRevise(async () => { renders++; return 0; })(['demo/launch', '--note', 'Improve the post', '--platform', 'bluesky'], f.io), /Feedback remains pending/);
+  assert.equal(renders, 0);
+  assert.equal(loadFeedback(f.project)[0].status, 'pending');
+});
+
+test('retry after fixing invalid aspects renders written sources without rerunning the agent', async () => {
+  const f = fixture(0);
+  writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'motion', kind: 'video', brief: 'Motion' }] }]));
+  mkdirSync(join(f.project, 'assets/motion/source/1:1'), { recursive: true });
+  const meta = join(f.project, 'assets/motion/asset.yml');
+  const source = join(f.project, 'assets/motion/source/1:1/index.html');
+  writeFileSync(meta, 'id: motion\nkind: video\nprovider: hyperframes\naiGenerated: false\naspects: [61]\noutputs: []\n');
+  writeFileSync(source, 'original');
+  let calls = 0;
+  f.io.run = async (_cmd, _args, opts) => {
+    calls++;
+    writeFileSync(join(opts!.cwd!, 'assets/motion/source/1:1/index.html'), 'revised');
+    return '';
+  };
+  await assert.rejects(revise(['demo/launch', '--note', 'Change motion', '--asset', 'motion'], f.io), /Feedback remains pending[\s\S]*aspects/);
+  assert.equal(readFileSync(source, 'utf8'), 'revised');
+  assert.equal(loadFeedback(f.project)[0].status, 'pending');
+  writeFileSync(meta, 'id: motion\nkind: video\nprovider: hyperframes\naiGenerated: false\naspects: ["1:1"]\noutputs: []\n');
+  let renders = 0;
+  await createRevise(async args => {
+    renders++;
+    assert.ok(args.includes('--assets=motion'));
+    assert.equal(readFileSync(source, 'utf8'), 'revised');
+    return 0;
+  })(['demo/launch', '--feedback-only'], f.io);
+  assert.equal(calls, 1);
+  assert.equal(renders, 1);
+  assert.equal(loadFeedback(f.project)[0].status, 'applied');
 });
 
 test('retry rerenders a targeted asset even when the agent makes no further edits', async () => {
@@ -212,12 +270,13 @@ test('retry rerenders a targeted asset even when the agent makes no further edit
   };
   const reviseWithRender = createRevise(async args => {
     assert.ok(args.includes('--assets=logo'));
-    if (++renders === 1) throw new Error('render failed');
+    if (++renders === 1) throw new UserError('render failed');
     return 0;
   });
   await assert.rejects(reviseWithRender(['demo/launch', '--note', 'Change logo', '--asset', 'logo'], f.io), /Feedback remains pending/);
   await reviseWithRender(['demo/launch', '--feedback-only'], f.io);
   assert.equal(renders, 2);
+  assert.equal(calls, 1);
   assert.equal(loadFeedback(f.project)[0].status, 'applied');
 });
 
@@ -237,24 +296,30 @@ test('asset feedback can update alt text in posts referencing the asset', async 
   assert.equal(loadFeedback(f.project)[0].status, 'applied');
 });
 
-test('video aspect sources are copied and sent to render, while fonts are ignored', async () => {
+test('video aspect sources, fonts and images are copied for rendering', async () => {
   const f = fixture(0);
   writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'motion', kind: 'video', brief: 'Motion' }] }]));
   mkdirSync(join(f.project, 'assets/motion/source/1:1'), { recursive: true });
-  writeFileSync(join(f.project, 'assets/motion/asset.yml'), 'id: motion\nkind: video\nprovider: template\naiGenerated: false\naspects: [61]\noutputs: []\n');
+  writeFileSync(join(f.project, 'assets/motion/asset.yml'), 'id: motion\nkind: video\nprovider: hyperframes\naiGenerated: false\naspects: ["1:1"]\noutputs: []\n');
   writeFileSync(join(f.project, 'assets/motion/source/1:1/index.html'), 'original');
   f.io.run = async (_cmd, _args, opts) => {
     const source = join(opts!.cwd!, 'assets/motion/source/1:1');
     assert.equal(readFileSync(join(source, 'index.html'), 'utf8'), 'original');
     writeFileSync(join(source, 'index.html'), 'revised');
     mkdirSync(join(source, 'fonts'));
-    writeFileSync(join(source, 'fonts/font.woff2'), 'binary');
+    mkdirSync(join(source, 'images'));
+    writeFileSync(join(source, 'fonts/font.woff2'), 'font bytes');
+    writeFileSync(join(source, 'images/hero.png'), 'image bytes');
     return '';
   };
-  await assert.rejects(revise(['demo/launch', '--note', 'Change motion', '--asset', 'motion'], f.io), /Feedback remains pending[\s\S]*aspects/);
-  assert.equal(readFileSync(join(f.project, 'assets/motion/source/1:1/index.html'), 'utf8'), 'revised');
-  assert.equal(loadFeedback(f.project)[0].status, 'pending');
-  assert.ok(f.io.stderr.some(line => line.includes('font.woff2')));
+  await createRevise(async args => {
+    assert.ok(args.includes('--assets=motion'));
+    for (const [path, content] of [['index.html', 'revised'], ['fonts/font.woff2', 'font bytes'], ['images/hero.png', 'image bytes']]) {
+      assert.equal(readFileSync(join(f.project, 'assets/motion/source/1:1', path), 'utf8'), content);
+    }
+    return 0;
+  })(['demo/launch', '--note', 'Change motion', '--asset', 'motion'], f.io);
+  assert.equal(loadFeedback(f.project)[0].status, 'applied');
 });
 
 test('ignored targeted output leaves feedback pending', async () => {
@@ -270,40 +335,53 @@ test('ignored targeted output leaves feedback pending', async () => {
   assert.equal(loadFeedback(f.project)[0].status, 'pending');
 });
 
-test('asset feedback copies video aspect edits and rerenders successfully', async () => {
+const hyperframesBin = packageBin('hyperframes', 'hyperframes');
+test('asset feedback renders revised per-aspect video sources', {
+  skip: !hyperframesBin || !existsSync(hyperframesBin) ? 'HyperFrames is not installed' : !existsSync(chromium.executablePath()) ? 'Playwright Chromium is not installed' : false,
+}, async () => {
   const f = fixture(0);
+  writeFileSync(join(f.root, 'studio.yml'), 'brand: {name: Demo}\nplatforms: [bluesky]\nagent: {sandbox: off}\nreviewer: {command: null}\nreview: {maxRounds: 0}\n');
+  f.io.env.HOME = f.root;
   writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'motion', kind: 'video', brief: 'Motion' }] }]));
-  mkdirSync(join(f.project, 'assets/motion/source/1:1'), { recursive: true });
-  const meta = join(f.project, 'assets/motion/asset.yml');
-  writeFileSync(meta, 'id: motion\nkind: video\nprovider: hyperframes\naiGenerated: false\naspects: ["1:1"]\noutputs: []\n');
-  writeFileSync(join(f.project, 'assets/motion/source/1:1/index.html'), 'original');
-  f.io.run = async (_cmd, _args, opts) => {
-    const source = join(opts!.cwd!, 'assets/motion/source/1:1/index.html');
-    assert.equal(readFileSync(source, 'utf8'), 'original');
-    writeFileSync(source, 'revised');
+  const asset = join(f.project, 'assets/motion');
+  for (const aspect of ['1:1', '9:16']) {
+    mkdirSync(join(asset, 'source', aspect), { recursive: true });
+    writeFileSync(join(asset, 'source', aspect, 'index.html'), `<html><body>Original ${aspect}</body></html>`);
+  }
+  const meta = join(asset, 'asset.yml');
+  writeFileSync(meta, 'id: motion\nkind: video\nprovider: hyperframes\naiGenerated: false\naspects: ["1:1", "9:16"]\noutputs: []\n');
+  const consumed: string[] = [];
+  f.io.run = async (cmd, args, opts) => {
+    if (cmd === hyperframesBin) {
+      const source = readFileSync(join(args[1], 'index.html'), 'utf8');
+      consumed.push(source);
+      writeFileSync(args[args.indexOf('--output') + 1], source);
+    } else if (cmd === 'ffmpeg') {
+      const input = args[args.indexOf('-i') + 1];
+      writeFileSync(args[args.length - 1], readFileSync(input));
+    } else if (cmd === 'ffprobe') {
+      const source = readFileSync(args[args.length - 1], 'utf8');
+      return JSON.stringify({ streams: [{ codec_type: 'video', width: 1080, height: source.includes('9:16') ? 1920 : 1080 }], format: { duration: '2' } });
+    } else {
+      for (const aspect of ['1:1', '9:16']) {
+        const source = join(opts!.cwd!, 'assets/motion/source', aspect, 'index.html');
+        assert.match(readFileSync(source, 'utf8'), /Original/);
+        writeFileSync(source, `<html><body>Revised ${aspect}</body></html>`);
+      }
+    }
     return '';
   };
-  let renders = 0;
-  const reviseWithRender = createRevise(async args => {
-    renders++;
-    assert.ok(args.includes('--assets=motion'));
-    assert.equal(readFileSync(join(f.project, 'assets/motion/source/1:1/index.html'), 'utf8'), 'revised');
-    mkdirSync(join(f.project, 'assets/motion/out'), { recursive: true });
-    writeFileSync(join(f.project, 'assets/motion/out/1x1.mp4'), 'rendered');
-    const asset = parse(readFileSync(meta, 'utf8'));
-    asset.outputs = [{ file: 'out/1x1.mp4', aspect: '1:1', bytes: 8 }];
-    writeFileSync(meta, stringify(asset));
-    return 0;
-  });
-  await reviseWithRender(['demo/launch', '--note', 'Change motion', '--asset', 'motion'], f.io);
-  assert.equal(renders, 1);
-  assert.equal(readFileSync(join(f.project, 'assets/motion/out/1x1.mp4'), 'utf8'), 'rendered');
-  assert.equal(parse(readFileSync(meta, 'utf8')).outputs[0].file, 'out/1x1.mp4');
+  await revise(['demo/launch', '--note', 'Change motion', '--asset', 'motion'], f.io);
+  assert.deepEqual(consumed, ['<html><body>Revised 1:1</body></html>', '<html><body>Revised 9:16</body></html>']);
+  for (const [aspect, label] of [['1:1', '1x1'], ['9:16', '9x16']]) {
+    assert.equal(readFileSync(join(asset, 'out', `${label}.mp4`), 'utf8'), `<html><body>Revised ${aspect}</body></html>`);
+    assert.ok(parse(readFileSync(meta, 'utf8')).outputs.some((output: { file: string; aspect: string }) => output.file === `out/${label}.mp4` && output.aspect === aspect));
+  }
   assert.equal(loadFeedback(f.project)[0].status, 'applied');
 });
 
 for (const tape of ['demo.tape', 'source/demo.tape']) {
-  test(`asset feedback supplies ${tape} as read-only context`, async () => {
+  test(`asset feedback supplies ${tape} as context`, async () => {
     const f = fixture(0);
     writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'motion', kind: 'video', brief: 'Motion' }] }]));
     mkdirSync(join(f.project, 'assets/motion/source'), { recursive: true });
@@ -322,7 +400,7 @@ for (const tape of ['demo.tape', 'source/demo.tape']) {
   });
 }
 
-test('attempted changes to read-only tape remain pending', async () => {
+test('asset feedback can revise a tape source', async () => {
   const f = fixture(0);
   writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'motion', kind: 'video', brief: 'Motion' }] }]));
   mkdirSync(join(f.project, 'assets/motion/source'), { recursive: true });
@@ -330,9 +408,11 @@ test('attempted changes to read-only tape remain pending', async () => {
   const tape = 'assets/motion/source/demo.tape';
   writeFileSync(join(f.project, tape), 'original');
   f.io.run = async (_cmd, _args, opts) => { writeFileSync(join(opts!.cwd!, tape), 'changed'); return ''; };
-  await assert.rejects(createRevise(async () => 0)(['demo/launch', '--note', 'Revise motion', '--asset', 'motion'], f.io), /Feedback remains pending.*source\/demo\.tape/);
-  assert.equal(readFileSync(join(f.project, tape), 'utf8'), 'original');
-  assert.equal(loadFeedback(f.project)[0].status, 'pending');
+  await createRevise(async () => {
+    assert.equal(readFileSync(join(f.project, tape), 'utf8'), 'changed');
+    return 0;
+  })(['demo/launch', '--note', 'Revise motion', '--asset', 'motion'], f.io);
+  assert.equal(loadFeedback(f.project)[0].status, 'applied');
 });
 
 test('automatic review revisions also receive existing tape context', async () => {
@@ -357,7 +437,11 @@ test('stale feedback is rejected without blocking other feedback', async () => {
   writeFileSync(join(f.project, 'feedback.yml'), stringify([{ id: 'old', target: { asset: 'removed' }, note: 'Old', at: new Date().toISOString(), status: 'pending' }]));
   addFeedback(f.project, { platform: 'bluesky' }, 'Current');
   let prompt = '';
-  f.io.run = async (_cmd, args) => { prompt = args.join('\n'); return ''; };
+  f.io.run = async (_cmd, args, opts) => {
+    prompt = args.join('\n');
+    writeFileSync(join(opts!.cwd!, 'posts/bluesky.md'), '---\nplatform: bluesky\nevidence: [E1]\nmedia: []\n---\nCurrent revision\n');
+    return '';
+  };
   await revise(['demo/launch', '--feedback-only'], f.io);
   const entries = loadFeedback(f.project);
   assert.equal(entries[0].status, 'rejected');
@@ -383,7 +467,17 @@ test('different feedback targets get separate scoped agent runs', async () => {
   addFeedback(f.project, { asset: 'logo' }, 'Adjust logo');
   addFeedback(f.project, { platform: 'bluesky' }, 'Adjust post');
   const prompts: string[] = [];
-  f.io.run = async (_cmd, args) => { prompts.push(args.join('\n')); return ''; };
+  f.io.run = async (_cmd, args, opts) => {
+    const prompt = args.join('\n');
+    prompts.push(prompt);
+    if (prompt.includes('Adjust logo')) {
+      const meta = join(opts!.cwd!, 'assets/logo/asset.yml');
+      writeFileSync(meta, `${readFileSync(meta, 'utf8')}description: Revised\n`);
+    } else {
+      writeFileSync(join(opts!.cwd!, 'posts/bluesky.md'), '---\nplatform: bluesky\nevidence: [E1]\nmedia: []\n---\nRevised post\n');
+    }
+    return '';
+  };
   await createRevise(async () => 0)(['demo/launch', '--feedback-only'], f.io);
   assert.equal(prompts.length, 2);
   assert.match(prompts[0], /Adjust logo/);

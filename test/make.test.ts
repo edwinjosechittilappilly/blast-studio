@@ -58,6 +58,21 @@ test('maker repairs invalid post and asset, preserving rejected files', async ()
   assert.equal(readFileSync(join(root, 'projects/demo/campaigns/launch/.rejected/posts/devto.md'), 'utf8'), 'not frontmatter');
   assert.match(readFileSync(join(root, 'projects/demo/campaigns/launch/.rejected/assets/card/asset.yml'), 'utf8'), /bad/);
 });
+test('maker preserves terminal-demo tapes and nested font files', async () => {
+  const root = tempStudio({ 'studio.yml': 'brand: {name: Demo}\nplatforms: [devto]\n', 'projects/demo/campaigns/launch/brief.md': 'Brief', 'projects/demo/campaigns/launch/plan.yml': stringify([{ ...item, assets: [{ id: 'demo', kind: 'card', brief: 'x' }] }]) });
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root }, run: async (_cmd, _args, opts) => {
+    const dir = opts!.cwd!;
+    mkdirSync(join(dir, 'posts'), { recursive: true }); mkdirSync(join(dir, 'assets/demo/source/fonts'), { recursive: true });
+    writeFileSync(join(dir, 'posts/devto.md'), '---\nplatform: devto\nevidence: []\nmedia: []\n---\nHello\n');
+    writeFileSync(join(dir, 'assets/demo/asset.yml'), stringify({ id: 'demo', kind: 'card' }));
+    writeFileSync(join(dir, 'assets/demo/source.tape'), 'Type "hello"\n');
+    writeFileSync(join(dir, 'assets/demo/source/fonts/demo.woff2'), Buffer.from([0, 1, 2, 255]));
+    return '';
+  } });
+  assert.equal(await makeCommand(['demo/launch'], io), 0);
+  assert.equal(readFileSync(join(root, 'projects/demo/campaigns/launch/assets/demo/source.tape'), 'utf8'), 'Type "hello"\n');
+  assert.deepEqual(readFileSync(join(root, 'projects/demo/campaigns/launch/assets/demo/source/fonts/demo.woff2')), Buffer.from([0, 1, 2, 255]));
+});
 test('maker replaces an invalid old draft while preserving its owner delivery', async () => {
   for (const route of ['manual', 'marketBlaster', undefined]) {
     const old = `---\nplatform: devto\nevidence: invalid\n${route ? `delivery: ${route}\n` : ''}---\nOld\n`;
