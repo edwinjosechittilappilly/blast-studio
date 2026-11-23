@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -91,6 +92,7 @@ for (const mode of ["off", "on"] as const) test(`renders a two-second portrait c
     assert.equal(probe.streams[0].codec_name, "h264"); assert.equal(probe.streams[0].pix_fmt, "yuv420p");
     const audio = JSON.parse(await io.run("ffprobe", ["-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "json", join(dir, video.file)]));
     assert.equal(video.audio, audio.streams.length > 0);
+    assert.equal(video.audioHash, createHash("sha256").update(readFileSync(join(dir, video.file))).digest("hex"));
     for (const i of [1, 2, 3]) assert.ok(existsSync(join(dir, `out/frames/9x16-${i}.png`)));
     assert.equal(readFileSync(join(dir, "out/captions.vtt"), "utf8"), readFileSync(join(fixtures, "captions.vtt"), "utf8"));
     const browser = await chromium.launch({ headless: true });

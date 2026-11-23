@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -131,7 +132,14 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
     }
     if (['image', 'gif', 'video', 'document'].includes(media.kind) && !media.alt?.trim()) add('accessibility', `Missing alt text for ${media.asset}`);
     if (media.kind === 'video' && !byId.get(media.asset)?.outputs.some(o => /\.vtt$/i.test(o.file))) {
-      const audio = typeof output?.audio === 'boolean' ? output.audio : output && projectDir ? hasAudio(join(projectDir, media.file)) : undefined;
+      const file = output && projectDir ? join(projectDir, media.file) : undefined;
+      let audio: boolean | undefined;
+      if (file && output) {
+        try {
+          if (typeof output.audio === 'boolean' && output.audioHash && createHash('sha256').update(readFileSync(file)).digest('hex') === output.audioHash) audio = output.audio;
+        } catch { /* A missing or unreadable file cannot validate stored audio metadata. */ }
+        if (audio === undefined) audio = hasAudio(file);
+      }
       if (audio !== false) add('accessibility', `Missing captions for ${media.asset}`);
     }
   }

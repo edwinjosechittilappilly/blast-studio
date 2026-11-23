@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -43,14 +44,34 @@ test('policy, disclosure, specs, accessibility, grounding and rights gates', () 
 });
 
 test('video captions depend on the selected output audio and video still needs alt text', () => {
-  const video: AssetMeta = { id: 'v', kind: 'video', provider: 'hyperframes', outputs: [{ file: 'out/silent.mp4', bytes: 4, audio: false }, { file: 'out/audio.mp4', bytes: 4, audio: true }], license: null, aiGenerated: false };
+  const dir = mkdtempSync(join(tmpdir(), 'bstudio-video-')), oldPath = process.env.PATH;
+  const hash = createHash('sha256').update('silent').digest('hex');
+  const video: AssetMeta = { id: 'v', kind: 'video', provider: 'hyperframes', outputs: [{ file: 'out/silent.mp4', bytes: 6, audio: false, audioHash: hash }, { file: 'out/audio.mp4', bytes: 5, audio: true, audioHash: createHash('sha256').update('audio').digest('hex') }], license: null, aiGenerated: false };
   const mediaPost: Post = { ...post, media: [{ asset: 'v', file: 'assets/v/out/silent.mp4', kind: 'video', alt: 'Motion poster' }] };
-  assert.equal(gate('accessibility', mediaPost, pack, [video]).pass, true);
-  const missingAlt = { ...mediaPost, media: [{ ...mediaPost.media[0], alt: '' }] };
-  assert.match(gate('accessibility', missingAlt, pack, [video]).message, /Missing alt text/);
-  const withAudio = { ...mediaPost, media: [{ ...mediaPost.media[0], file: 'assets/v/out/audio.mp4' }] };
-  assert.match(gate('accessibility', withAudio, pack, [video]).message, /Missing captions/);
-  assert.equal(gate('accessibility', withAudio, pack, [{ ...video, outputs: [...video.outputs, { file: 'out/captions.vtt', bytes: 4 }] }]).pass, true);
+  const result = (p: Post, assets = [video]) => runGates(p, pack, assets, brief, config, dir).find(g => g.id === 'accessibility')!;
+  try {
+    process.env.PATH = dir;
+    mkdirSync(join(dir, 'assets/v/out'), { recursive: true });
+    writeFileSync(join(dir, mediaPost.media[0].file), 'silent');
+    writeFileSync(join(dir, 'assets/v/out/audio.mp4'), 'audio');
+    assert.equal(result(mediaPost).pass, true);
+    const missingAlt = { ...mediaPost, media: [{ ...mediaPost.media[0], alt: '' }] };
+    assert.match(result(missingAlt).message, /Missing alt text/);
+    const withAudio = { ...mediaPost, media: [{ ...mediaPost.media[0], file: 'assets/v/out/audio.mp4' }] };
+    assert.match(result(withAudio).message, /Missing captions/);
+    assert.equal(result(withAudio, [{ ...video, outputs: [...video.outputs, { file: 'out/captions.vtt', bytes: 4 }] }]).pass, true);
+    writeFileSync(join(dir, mediaPost.media[0].file), 'changed');
+    assert.match(result(mediaPost).message, /Missing captions/);
+    const probe = join(dir, 'ffprobe');
+    writeFileSync(probe, '#!/bin/sh\nprintf \'{"streams":[{"index":1}]}\'\n');
+    chmodSync(probe, 0o755);
+    assert.match(result(mediaPost).message, /Missing captions/);
+    writeFileSync(probe, '#!/bin/sh\nprintf \'{"streams":[]}\'\n');
+    assert.equal(result(mediaPost).pass, true);
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH; else process.env.PATH = oldPath;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test('legacy videos are probed and require captions if audio cannot be determined', () => {
