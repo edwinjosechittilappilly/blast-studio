@@ -203,14 +203,13 @@ test('manual export and mark host validation', async () => {
   assert.equal(JSON.parse(readFileSync(join(f.project, 'published.json'), 'utf8')).instagram.url, 'https://www.instagram.com/p/1');
 });
 
-test('mark validates hosts for manual overrides and rejects destinations without a host list', async () => {
+test('mark validates hosts for fixed-domain manual overrides', async () => {
   const destinations: [string, string][] = [
-    ['devto', 'dev.to'], ['hashnode', 'hashnode.com'], ['gist', 'gist.github.com'],
+    ['devto', 'dev.to'], ['gist', 'gist.github.com'],
     ['github-discussion', 'github.com'], ['linkedin', 'linkedin.com'], ['linkedin', 'www.linkedin.com'],
-    ['linkedin', 'lnkd.in'], ['x', 'x.com'], ['bluesky', 'bsky.app'], ['mastodon', 'mastodon.social'],
+    ['linkedin', 'lnkd.in'], ['x', 'x.com'], ['bluesky', 'bsky.app'],
     ['threads', 'threads.net'], ['reddit', 'reddit.com'], ['hn', 'news.ycombinator.com'],
-    ['producthunt', 'producthunt.com'], ['lemmy', 'lemmy.world'], ['medium', 'medium.com'],
-    ['substack', 'substack.com'], ['youtube-shorts', 'youtube.com'], ['youtube-shorts', 'youtu.be'],
+    ['producthunt', 'producthunt.com'], ['youtube-shorts', 'youtube.com'], ['youtube-shorts', 'youtu.be'],
     ['instagram', 'instagram.com'], ['tiktok', 'tiktok.com'], ['dailydev', 'app.daily.dev'],
   ];
   for (const [platform, host] of destinations) {
@@ -220,10 +219,22 @@ test('mark validates hosts for manual overrides and rejects destinations without
     await mark(['acme/demo', platform, '--url', `https://${host}/posts/1`], f.io);
     assert.equal(JSON.parse(readFileSync(join(f.project, 'published.json'), 'utf8'))[platform].url, `https://${host}/posts/1`);
   }
-  const f = fixture('newsletter'), post = join(f.project, 'posts/newsletter.md');
-  writeFileSync(post, readFileSync(post, 'utf8').replace('platform: newsletter\n', 'platform: newsletter\ndelivery: manual\n'));
-  await assert.rejects(mark(['acme/demo', 'newsletter', '--url', 'https://example.com/posts/1'], f.io), /host/);
-  assert.equal(existsSync(join(f.project, 'published.json')), false);
+});
+
+test('mark accepts federated and custom-domain publication URLs over HTTPS', async () => {
+  const destinations: [string, string][] = [
+    ['mastodon', 'hachyderm.io'], ['lemmy', 'programming.dev'],
+    ['newsletter', 'buttondown.com'], ['hashnode', 'blog.example.com'],
+    ['medium', 'writing.example.com'], ['substack', 'news.example.com'],
+  ];
+  for (const [platform, host] of destinations) {
+    const f = fixture(platform), post = join(f.project, `posts/${platform}.md`);
+    writeFileSync(post, readFileSync(post, 'utf8').replace(`platform: ${platform}\n`, `platform: ${platform}\ndelivery: manual\n`));
+    await assert.rejects(mark(['acme/demo', platform, '--url', `http://${host}/posts/1`], f.io), /host/);
+    await assert.rejects(mark(['acme/demo', platform, '--url', `https://user:pass@${host}/posts/1`], f.io), /host/);
+    await mark(['acme/demo', platform, '--url', `https://${host}/posts/1`], f.io);
+    assert.equal(JSON.parse(readFileSync(join(f.project, 'published.json'), 'utf8'))[platform].url, `https://${host}/posts/1`);
+  }
 });
 
 test('handoff invokes configured import and check and propagates failure', async () => {

@@ -9,12 +9,12 @@ import type { Command } from '../io.ts';
 import { PLATFORM_IDS, UserError } from '../types.ts';
 import type { PlatformId } from '../types.ts';
 
-const hosts: Partial<Record<PlatformId, string[]>> = {
-  devto: ['dev.to'], hashnode: ['hashnode.com', 'hashnode.dev'], gist: ['gist.github.com'],
+const hosts: Record<PlatformId, string[] | null> = {
+  devto: ['dev.to'], hashnode: null, gist: ['gist.github.com'],
   'github-discussion': ['github.com'], linkedin: ['linkedin.com', 'lnkd.in'], x: ['x.com', 'twitter.com'],
-  bluesky: ['bsky.app'], mastodon: ['mastodon.social'], threads: ['threads.net', 'threads.com'],
+  bluesky: ['bsky.app'], mastodon: null, threads: ['threads.net', 'threads.com'],
   reddit: ['reddit.com', 'redd.it'], hn: ['news.ycombinator.com'], producthunt: ['producthunt.com'],
-  lemmy: ['lemmy.world'], medium: ['medium.com'], substack: ['substack.com'],
+  lemmy: null, medium: null, substack: null, newsletter: null,
   'youtube-shorts': ['youtube.com', 'youtu.be'], instagram: ['instagram.com'], tiktok: ['tiktok.com'], dailydev: ['app.daily.dev'],
 };
 const usage = 'usage: bstudio mark <project>/<campaign> <platform> --url <https URL>';
@@ -33,7 +33,7 @@ export const run: Command = async (args, io) => {
   if (post.delivery !== 'manual' && pack.marketBlaster !== null) throw new UserError(`${platform}: mark is only available for manual destinations`);
   let url: URL;
   try { url = new URL(parsed.values.url); } catch { throw new UserError(`${platform}: invalid publication URL`); }
-  if (url.protocol !== 'https:' || url.username || url.password || !allowed || !allowed.some(host => url.hostname === host || url.hostname.endsWith(`.${host}`))) throw new UserError(`${platform}: invalid publication URL host`);
+  if (url.protocol !== 'https:' || url.username || url.password || (allowed !== null && !allowed.some(host => url.hostname === host || url.hostname.endsWith(`.${host}`)))) throw new UserError(`${platform}: invalid publication URL host`);
   const file = join(dir, 'published.json');
   let published: Record<string, unknown> = {};
   if (existsSync(file)) {

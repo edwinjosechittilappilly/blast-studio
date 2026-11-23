@@ -41,6 +41,20 @@ test('delivery repairs an invalid owner value without changing other bytes', asy
   assert.equal(readFileSync(join(dir, 'history', historyEntries(dir)[0], 'posts/linkedin.md'), 'utf8'), before);
 });
 
+test('delivery repairs null and empty values while preserving surrounding content', async () => {
+  for (const newline of ['\n', '\r\n']) {
+    for (const value of ['', '# owner note', 'null', 'null # owner note', '~', '~ # owner note', "''", "'' # owner note"]) {
+      const { dir, io } = fixture(), file = join(dir, 'posts/linkedin.md');
+      const before = ['---', 'platform: linkedin', `delivery: ${value}`, '# keep', 'evidence: []', 'media: []', '---', 'Body', ''].join(newline);
+      writeFileSync(file, before);
+      assert.equal(await main(['delivery', 'p/c', 'linkedin', 'manual'], io), 0, `value: ${JSON.stringify(value)}`);
+      const comment = value.includes('#') ? ' # owner note' : '';
+      assert.equal(readFileSync(file, 'utf8'), before.replace(`delivery: ${value}`, `delivery: manual${comment}`));
+      assert.equal(readFileSync(join(dir, 'history', historyEntries(dir)[0], 'posts/linkedin.md'), 'utf8'), before);
+    }
+  }
+});
+
 test('agent cannot add, remove or change owner delivery', async () => {
   for (const [existing, agent, expected] of [['manual', 'marketBlaster', 'manual'], ['manual', '', 'manual'], ['', 'manual', undefined], ['manual', 'auto', 'manual'], ['', 'Manual', undefined], ['manual', 'null', 'manual']] as const) {
     const { root, dir } = fixture(), file = join(dir, 'posts/linkedin.md');

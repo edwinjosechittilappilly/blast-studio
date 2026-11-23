@@ -36,9 +36,21 @@ export const run: Command = async (args, io) => {
     updated = `${source}${newline}delivery: ${delivery}`;
   } else {
     if (!isNode(value) || !value.range) throw new UserError(`${platform}: cannot safely update delivery`);
-    const removed = source.slice(value.range[0], value.range[1]);
-    const newline = !isScalar(value) && /\r?\n$/.test(removed) ? (removed.endsWith('\r\n') ? '\r\n' : '\n') : '';
-    updated = source.slice(0, value.range[0]) + delivery + newline + source.slice(value.range[1]);
+    if (isScalar(value) && value.value === null && value.range[0] === value.range[1]) {
+      const key = doc.contents.items.find(pair => isScalar(pair.key) && pair.key.value === 'delivery')?.key;
+      if (!isNode(key) || !key.range) throw new UserError(`${platform}: cannot safely update delivery`);
+      const lineStart = source.lastIndexOf('\n', key.range[0] - 1) + 1;
+      const lineEnd = source.indexOf('\n', key.range[1]);
+      const end = lineEnd === -1 ? source.length : lineEnd;
+      const line = source.slice(lineStart, end);
+      const empty = line.match(/^([^\r\n]*?:[ \t]*)(#[^\r\n]*)?(\r?)$/);
+      if (!empty) throw new UserError(`${platform}: cannot safely update delivery`);
+      updated = source.slice(0, lineStart) + empty[1] + (empty[1].endsWith(':') ? ' ' : '') + delivery + (empty[2] ? ` ${empty[2]}` : '') + empty[3] + source.slice(end);
+    } else {
+      const removed = source.slice(value.range[0], value.range[1]);
+      const newline = !isScalar(value) && /\r?\n$/.test(removed) ? (removed.endsWith('\r\n') ? '\r\n' : '\n') : '';
+      updated = source.slice(0, value.range[0]) + delivery + newline + source.slice(value.range[1]);
+    }
   }
   try {
     const before = doc.toJS();

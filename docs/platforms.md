@@ -42,4 +42,4 @@ route for supported packs. Other values are invalid and can be repaired with
 | [X](platforms/x/guide.md) | draft | text, thread, image, video | x |
 | [YouTube Shorts](platforms/youtube-shorts/guide.md) | draft | video | manual |
 
-Select IDs in [`studio.yml`](configuration.md). After manually publishing a manual or owner-overridden post, use `bstudio mark <project>/<campaign> <platform> --url <https-url>` to record its publication URL. The URL host must be allowed for that platform; platforms without an allowed host cannot be marked. See [source updates](updater.md) for maintaining packs.
+Select IDs in [`studio.yml`](configuration.md). After manually publishing a manual or owner-overridden post, use `bstudio mark <project>/<campaign> <platform> --url <https-url>` to record its publication URL. URLs must use HTTPS without credentials. Fixed-domain platforms require an allowed host; Mastodon, Lemmy, newsletter, Hashnode, Medium and Substack accept any host for federated instances or custom domains. See [source updates](updater.md) for maintaining packs.
