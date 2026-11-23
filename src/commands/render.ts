@@ -56,7 +56,6 @@ async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<nu
       if (!existsSync(metaPath)) throw new UserError(`Missing ${metaPath}`);
       const raw = parse(readFileSync(metaPath, 'utf8')) as AssetMeta & { size?: { width: number; height: number }; width?: number; height?: number };
       if (!raw || raw.id !== asset.id || raw.kind !== asset.kind) throw new UserError(`Invalid metadata for ${asset.id}`);
-      const renderedSourceHash = sourceHash(dir);
       const out = join(dir, 'out'); mkdirSync(out, { recursive: true });
       const outputs: AssetMeta['outputs'] = [], metrics: NonNullable<AssetMeta['metrics']> = [];
       const add = (file: string, width?: number, height?: number) => outputs.push({ file: `out/${basename(file)}`, bytes: statSync(file).size, ...(width ? { width } : {}), ...(height ? { height } : {}) });
@@ -140,12 +139,17 @@ async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<nu
         selections.set(asset.id, chosen);
       }
       else throw new UserError(`Unsupported asset kind: ${asset.kind}`);
-      for (const output of outputs) output.sourceHash = renderedSourceHash;
       if (outputs.length) delete raw.skipped;
       raw.outputs = outputs; raw.metrics = metrics; metadata.set(asset.id, { dir, meta: raw });
     }
     const resolveAI = (id: string, visiting = new Set<string>()): boolean => { const item = metadata.get(id); if (!item) throw new UserError(`Unknown embedded asset: ${id}`); if (visiting.has(id)) throw new UserError(`Cyclic asset embeds: ${id}`); visiting.add(id); const inherited = (item.meta.embeds ?? []).map(child => resolveAI(child, visiting)).some(Boolean); visiting.delete(id); item.meta.aiGenerated ||= inherited; return item.meta.aiGenerated; };
     for (const id of rendered) { const item = metadata.get(id)!; resolveAI(id); writeFileSync(join(item.dir, 'asset.yml'), stringify(item.meta)); }
+    for (const id of rendered) {
+      const item = metadata.get(id)!;
+      const hash = sourceHash(item.dir);
+      for (const output of item.meta.outputs) output.sourceHash = hash;
+      writeFileSync(join(item.dir, 'asset.yml'), stringify(item.meta));
+    }
     for (const [platform, post] of loadPosts(project)) {
       if (selectedPlatforms && !selectedPlatforms.has(platform)) continue;
       let changed = false;

@@ -311,18 +311,18 @@ test('specs detect changed sources for used and planned assets while legacy outp
     const hash = sourceHash(assetDir);
     const asset: AssetMeta = { ...image, outputs: [{ ...image.outputs[0], sourceHash: hash }, { file: 'other.png', bytes: 4, sourceHash: hash }] };
     const draft: Post = { ...post, media: [{ asset: 'a', file: 'assets/a/image.png', alt: 'Image', kind: 'image' }] };
-    const check = (p: Post, a: AssetMeta = asset) => runGates(p, { ...pack, formats: ['image'], media: [{ kind: 'image' }] }, [a], brief, config, dir);
+    const check = (p: Post, a: AssetMeta = asset) => runGates(p, { ...pack, formats: ['image'], media: [{ kind: 'image' }] }, [a], brief, config, dir, 'project/campaign');
     assert.equal(check(draft).find(g => g.id === 'specs')!.pass, true);
     for (const path of ['source.html', 'source/nested/style.css', 'slides/01.html', 'demo.tape']) {
       writeFileSync(join(assetDir, path), 'changed');
       const specs = check(draft).find(g => g.id === 'specs')!;
       assert.equal(specs.pass, false);
-      assert.equal(specs.message, 'assets/a: rendered output is out of date; run render');
+      assert.equal(specs.message, 'assets/a: rendered output is out of date — run bstudio render project/campaign --assets=a');
       writeFileSync(join(assetDir, path), 'original');
     }
     writeFileSync(join(dir, 'plan.yml'), stringify([{ platform: 'x', type: 'image', angle: 'Explain', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'a', kind: 'illustration', brief: 'Explain' }] }]));
     writeFileSync(join(assetDir, 'slides/02.html'), 'new slide');
-    assert.equal(check(post).find(g => g.id === 'specs')!.message, 'assets/a: rendered output is out of date; run render');
+    assert.equal(check(post).find(g => g.id === 'specs')!.message, 'assets/a: rendered output is out of date — run bstudio render project/campaign --assets=a');
     const legacy = check(post, { ...asset, outputs: [{ file: 'old.png', bytes: 4 }] });
     assert.equal(legacy.find(g => g.id === 'specs')!.pass, true);
     assert.match(legacy.warnings.join('\n'), /assets\/a:.*source hash/);

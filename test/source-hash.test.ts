@@ -1,0 +1,60 @@
+import { after, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { parse, stringify } from 'yaml';
+import { sourceHash } from '../src/render/source-hash.ts';
+import { run as render } from '../src/commands/render.ts';
+import { closeBrowser } from '../src/render/stills.ts';
+import { fakeIO, tempStudio } from './helpers.ts';
+
+after(async () => { await closeBrowser(); });
+
+test('fingerprints binary resources and render metadata, but not review metadata', () => {
+  const root = tempStudio(), asset = join(root, 'assets/video');
+  mkdirSync(join(asset, 'source/fonts'), { recursive: true });
+  mkdirSync(join(asset, 'slides'), { recursive: true });
+  const meta = { id: 'video', kind: 'video', aspects: ['9:16'], outputs: [], metrics: [], selfReview: { summary: 'first' }, blockers: [], notes: 'first' };
+  const save = () => writeFileSync(join(asset, 'asset.yml'), stringify(meta));
+  save();
+  const font = join(asset, 'source/fonts/font.woff2');
+  writeFileSync(font, Buffer.from([0, 1, 2, 3]));
+  writeFileSync(join(asset, 'slides/image.png'), Buffer.from([0, 3, 2, 1]));
+  const initial = sourceHash(asset);
+  writeFileSync(font, Buffer.from([0, 1, 2, 4]));
+  assert.notEqual(sourceHash(asset), initial);
+  writeFileSync(font, Buffer.from([0, 1, 2, 3]));
+  meta.aspects.push('1:1'); save();
+  assert.notEqual(sourceHash(asset), initial);
+  meta.aspects.pop(); meta.notes = 'reviewed'; meta.selfReview.summary = 'second'; save();
+  assert.equal(sourceHash(asset), initial);
+  writeFileSync(join(asset, 'slides/image.png'), Buffer.from([0, 3, 2, 2]));
+  assert.notEqual(sourceHash(asset), initial);
+});
+
+test('re-rendering an embedded asset makes its composite fingerprint stale', { timeout: 20000 }, async () => {
+  const root = tempStudio(), project = join(root, 'projects/demo/campaigns/launch');
+  const child = join(project, 'assets/child'), parent = join(project, 'assets/parent');
+  mkdirSync(child, { recursive: true }); mkdirSync(parent, { recursive: true });
+  writeFileSync(join(project, 'plan.yml'), stringify([{ platform: 'x', type: 'image', angle: 'Explain', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'child', kind: 'card', brief: 'Child' }, { id: 'parent', kind: 'card', brief: 'Parent' }] }]));
+  const meta = (id: string) => ({ id, kind: 'card', provider: 'template', outputs: [], license: null, aiGenerated: false, size: { width: 160, height: 160 } });
+  writeFileSync(join(child, 'asset.yml'), stringify(meta('child')));
+  writeFileSync(join(parent, 'asset.yml'), stringify(meta('parent')));
+  writeFileSync(join(child, 'source.html'), '<html><body>First</body></html>');
+  writeFileSync(join(parent, 'source.html'), '<html><body><img src="../child/out/image.png"></body></html>');
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root } });
+  await render(['demo/launch', '--assets', 'child'], io);
+  await render(['demo/launch', '--assets', 'parent'], io);
+  const parentMeta = parse(readFileSync(join(parent, 'asset.yml'), 'utf8'));
+  assert.deepEqual(parentMeta.embeds, ['child']);
+  const recorded = parentMeta.outputs[0].sourceHash;
+  assert.equal(sourceHash(parent), recorded);
+  const childOutput = join(child, 'out/image.png');
+  const originalOutput = readFileSync(childOutput);
+  writeFileSync(childOutput, Buffer.from('new rendered artifact'));
+  assert.notEqual(sourceHash(parent), recorded);
+  writeFileSync(childOutput, originalOutput);
+  writeFileSync(join(child, 'source.html'), '<html><body>Second</body></html>');
+  await render(['demo/launch', '--assets', 'child'], io);
+  assert.notEqual(sourceHash(parent), recorded);
+});

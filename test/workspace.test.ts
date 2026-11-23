@@ -28,6 +28,23 @@ test('workspace retries invalid video metadata with field-specific errors before
   assert.deepEqual(parse(readFileSync(join(project, 'assets/clip/asset.yml'), 'utf8')).aspects, ['1:1']);
 });
 
+test('workspace accepts video metadata without aspects when the campaign has a tape', async () => {
+  const root = tempStudio(), project = join(root, 'projects/demo/campaigns/launch');
+  const source = join(project, 'assets/clip/source'); mkdirSync(source, { recursive: true });
+  writeFileSync(join(source, 'demo.tape'), 'Output demo.gif\n');
+  let calls = 0;
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') }, run: async (_cmd, _args, opts) => {
+    calls++;
+    assert.equal(existsSync(join(opts!.cwd!, 'assets/clip/source/demo.tape')), false);
+    const dir = join(opts!.cwd!, 'assets/clip'); mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, 'asset.yml'), stringify({ id: 'clip', kind: 'video' }));
+    return '';
+  } });
+  await runAgentInWorkspace({ config: loadConfig(io), io, projectDir: project, files: {}, allowOut: [/^assets\/clip\/asset\.yml$/], prompt: 'write', timeoutMs: 1000 });
+  assert.equal(calls, 1);
+  assert.equal(parse(readFileSync(join(project, 'assets/clip/asset.yml'), 'utf8')).aspects, undefined);
+});
+
 test('workspace rejects missing identity fields for every asset kind and never writes partial output', async () => {
   const root = tempStudio(), project = join(root, 'projects/demo/campaigns/launch');
   mkdirSync(project, { recursive: true });

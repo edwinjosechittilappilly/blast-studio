@@ -22,7 +22,7 @@ function stripAgentDelivery(text: string): string {
   delete data.delivery;
   return `${match[1]}${stringify(data).trimEnd()}${match[3]}${match[4]}`;
 }
-function validateAssetMetadata(rel: string, value: unknown, workspace: string): { path: string; message: string }[] {
+function validateAssetMetadata(rel: string, value: unknown, workspace: string, projectDir: string): { path: string; message: string }[] {
   const errors: { path: string; message: string }[] = [];
   const problem = (field: string, actual: unknown, expectation: string) =>
     errors.push({ path: rel, message: `${rel}: ${field} ${JSON.stringify(actual) ?? 'undefined'} ${expectation}` });
@@ -35,7 +35,7 @@ function validateAssetMetadata(rel: string, value: unknown, workspace: string): 
   const kinds = ['card', 'poster', 'carousel', 'logo', 'diagram', 'video', 'terminal-demo', 'illustration', 'voiceover'];
   if (meta.id !== id) problem('id', meta.id, `must be ${JSON.stringify(id)}`);
   if (typeof meta.kind !== 'string' || !kinds.includes(meta.kind)) problem('kind', meta.kind, `must be one of ${kinds.join(', ')}`);
-  const tape = existsSync(join(workspace, 'assets', id, 'source', 'demo.tape')) || existsSync(join(workspace, 'assets', id, 'demo.tape'));
+  const tape = [workspace, projectDir].some(dir => existsSync(join(dir, 'assets', id, 'source', 'demo.tape')) || existsSync(join(dir, 'assets', id, 'demo.tape')));
   if (meta.aspects !== undefined || (meta.kind === 'video' && !tape)) {
     if (!Array.isArray(meta.aspects) || !meta.aspects.length) problem('aspects', meta.aspects, 'must be a nonempty array of distinct quoted aspect ratios: 9:16, 1:1, 16:9');
     else {
@@ -111,7 +111,7 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
             }
             if (/\.ya?ml$/i.test(rel)) {
               const parsed = parse(data.toString('utf8'));
-              if (/^assets\/[^/]+\/asset\.yml$/.test(rel)) errors.push(...validateAssetMetadata(rel, parsed, dir));
+              if (/^assets\/[^/]+\/asset\.yml$/.test(rel)) errors.push(...validateAssetMetadata(rel, parsed, dir, projectDir));
               else if (!parsed || typeof parsed !== 'object') throw new Error('expected object or array');
             }
             if (/^posts\/[^/]+\.md$/.test(rel)) { const post = parsePost(rel, data.toString('utf8')); if (`posts/${post.platform}.md` !== rel) throw new Error(`platform ${JSON.stringify(post.platform)} does not match ${rel}`); }

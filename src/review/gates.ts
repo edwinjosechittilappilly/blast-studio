@@ -78,7 +78,7 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
     if (asset.outputs.some(output => output.sourceHash)) {
       let current: string | undefined;
       try { current = sourceHash(join(projectDir, 'assets', asset.id)); } catch { /* Missing or unreadable sources cannot match a render. */ }
-      if (asset.outputs.some(output => output.sourceHash && output.sourceHash !== current)) add('specs', `assets/${asset.id}: rendered output is out of date; run render`);
+      if (asset.outputs.some(output => output.sourceHash && output.sourceHash !== current)) add('specs', `assets/${asset.id}: rendered output is out of date — run bstudio render ${address} --assets=${asset.id}`);
     }
   }
   // Post prose gets every marker, with Markdown code exempt (snippets legitimately hold `${{ secrets.X }}`, TODO

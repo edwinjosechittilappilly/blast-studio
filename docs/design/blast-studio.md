@@ -164,7 +164,7 @@ gives `5d5491c0f7ae06bef68e9dabfd55f2e6c8152f8e6fdb96cd24d294cd203bc977`. Both r
 | Kind | Source | Renderer | Output |
 |---|---|---|---|
 | Card, quote, code, poster, thumbnail | `source.html` from `templates/` and brand tokens | Playwright at the pack size; records per-text-node min font px, WCAG contrast and safe-zone overflow | PNG |
-| Carousel | `slides/*.html` | Playwright; PNG per slide plus print-to-PDF | PNGs and PDF |
+| Carousel | `source/*.html` | Playwright; PNG per slide plus print-to-PDF | PNGs and PDF |
 | Logo | `source.svg` | `@resvg/resvg-js` | SVG, PNG at 32/180/512, favicon |
 | Diagram | `.mmd` or `.d2` (arch-diagram JSON when installed) | mmdc, d2, arch-diagram script | SVG and PNG |
 | Short video, motion | One HyperFrames composition per aspect ratio | `hyperframes render` (pinned); FFmpeg only encodes and muxes | MP4 H.264, VTT, burned-in captions on request |
