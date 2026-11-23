@@ -14,6 +14,14 @@ Campaign details compare the independent review, weighted rubric, gates and hook
 
 Post review panels and asset details list agent-declared blockers. Address the underlying issue, then select **Resolve** and provide a reason to record the owner decision. Resolved blocker history is available in the collapsed history section. Resolution saves a snapshot and changes campaign content; run review again using **Run review** before exporting.
 
+Delivery is an owner decision for each post. In the platform tab, choose
+**Manual** or **Market Blaster** under **Delivery route** and select **Save
+delivery**. The job shows its status and errors and refreshes the effective
+route when complete. Manual delivery produces a handoff; Market Blaster restores
+the pack route and is unavailable for packs without a Market Blaster mapping.
+The choice does not bypass review gates or publish the post. After exporting,
+follow the handoff checklist and use **Mark published** to record its URL.
+
 **Budget & providers** displays spend and manages caps, providers, upload consent and write-only provider keys in macOS Keychain. **Source updates** checks and verifies guidance; **Health check** runs the local doctor. Configuration settings are saved to `studio.yml`.
 
 Keychain is shared with other processes running as your macOS user; a key saved here is not isolated from them. See [agent isolation](configuration.md#agent-isolation) for Keychain access and approval guidance.

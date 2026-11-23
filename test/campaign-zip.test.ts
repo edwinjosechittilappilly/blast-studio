@@ -52,6 +52,19 @@ test('campaign zip contains a validated complete deterministic package', async (
   assert.equal(manifest.destinations[0].review.reviewHash, reviewHash({ title: 'T', body: 'Hello', media: [{ path: 'image.png', alt: 'Alt' }] }));
 });
 
+test('manual override moves a Market Blaster destination into the handoff', async () => {
+  const f = fixture(), post = join(f.project, 'posts/bluesky.md');
+  writeFileSync(post, readFileSync(post, 'utf8').replace('platform: bluesky\n', 'platform: bluesky\ndelivery: manual\n'));
+  await exportCommand(['acme/demo'], f.io);
+  const entries = unzipSync(readFileSync(join(f.project, 'export/acme--demo.campaign.zip')));
+  const manifest = JSON.parse(strFromU8(entries['campaign.json']));
+  assert.deepEqual(manifest.destinations, []);
+  assert.ok(manifest.manual.some((entry: { platform: string }) => entry.platform === 'bluesky'));
+  assert.ok(entries['handoff/bluesky/post.md']);
+  assert.ok(entries['handoff/bluesky/README.md']);
+  assert.equal(entries['posts/bluesky.md'], undefined);
+});
+
 test('absent source status remains null', async () => {
   const f = fixture();
   const brief = join(f.project, 'brief.md');

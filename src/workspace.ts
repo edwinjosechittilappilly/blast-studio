@@ -99,10 +99,14 @@ export async function runAgentInWorkspace({ config, io, projectDir, files, allow
           }
           content = stringify(asset);
         }
-        else if (preserveBlockers && /^posts\/[^/]+\.md$/.test(rel) && existsSync(target)) {
+        else if (/^posts\/[^/]+\.md$/.test(rel)) {
           const post = parsePost(rel, data.toString('utf8')) as Post & { blockers?: unknown };
-          const previous = parsePost(rel, readFileSync(target, 'utf8')) as typeof post;
-          if (Object.hasOwn(previous, 'blockers')) post.blockers = previous.blockers;
+          delete post.delivery;
+          if (existsSync(target)) {
+            const previous = parsePost(rel, readFileSync(target, 'utf8')) as typeof post;
+            if (Object.hasOwn(previous, 'delivery')) post.delivery = previous.delivery;
+            if (preserveBlockers && Object.hasOwn(previous, 'blockers')) post.blockers = previous.blockers;
+          }
           content = serializePost(post);
         }
         mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, content); copied.push(rel);

@@ -22,12 +22,13 @@ export const run: Command = async (args, io) => {
   const [address, platformId] = parsed.positionals;
   if (parsed.positionals.length !== 2 || !parsed.values.url || !PLATFORM_IDS.includes(platformId as PlatformId)) throw new UserError(usage);
   const ref = parseCampaignRef(address), platform = platformId as PlatformId, pack = loadPack(platform), allowed = hosts[platform];
-  if (pack.marketBlaster !== null || !allowed) throw new UserError(`${platform}: mark is only available for manual destinations`);
+  const dir = campaignDir(loadConfig(io), ref);
+  const post = loadPosts(dir).get(platform);
+  if (!post) throw new UserError(`${platform}: post not found`);
+  if (post.delivery !== 'manual' && pack.marketBlaster !== null) throw new UserError(`${platform}: mark is only available for manual destinations`);
   let url: URL;
   try { url = new URL(parsed.values.url); } catch { throw new UserError(`${platform}: invalid publication URL`); }
-  if (url.protocol !== 'https:' || url.username || url.password || !allowed.some(host => url.hostname === host || url.hostname.endsWith(`.${host}`))) throw new UserError(`${platform}: invalid publication URL host`);
-  const dir = campaignDir(loadConfig(io), ref);
-  if (!loadPosts(dir).has(platform)) throw new UserError(`${platform}: post not found`);
+  if (url.protocol !== 'https:' || url.username || url.password || (allowed && !allowed.some(host => url.hostname === host || url.hostname.endsWith(`.${host}`)))) throw new UserError(`${platform}: invalid publication URL host`);
   const file = join(dir, 'published.json');
   let published: Record<string, unknown> = {};
   if (existsSync(file)) {

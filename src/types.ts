@@ -174,6 +174,8 @@ export interface AssetSelfReview extends SelfReview {
 
 export interface Post {
   platform: PlatformId;
+  /** Owner-selected delivery route; omitted uses the platform pack route. */
+  delivery?: "manual" | "marketBlaster";
   title?: string;
   tags?: string[];
   evidence: string[];

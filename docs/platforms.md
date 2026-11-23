@@ -13,6 +13,10 @@ Pack fields worth knowing:
 - **`accessibility`** overrides the review thresholds: `minFontPx`, `minContrast` (4.5 by default), `minContrastLarge` (3 by default, WCAG large text) and `largeTextPx`.
 - **`safeZones`** gives sourced per-edge frame fractions for video or image overlays; unknown or omitted zones use a 5% inset. The YouTube and Instagram zones are conservative 9:16 ad guidance, not guarantees for every organic surface. Shared outputs use the strictest applicable insets; video timelines are sampled when seekable, and VHS text is not measured.
 
+The Market Blaster column describes the pack's default route. An owner can
+override an individual post to manual delivery with `delivery: manual` in
+its frontmatter; all other values use the pack route.
+
 | Platform and guide | AI policy | Pack formats | Market Blaster |
 | --- | --- | --- | --- |
 | [Bluesky](platforms/bluesky/guide.md) | draft | text, thread, image, video | bluesky |
@@ -36,4 +40,4 @@ Pack fields worth knowing:
 | [X](platforms/x/guide.md) | draft | text, thread, image, video | x |
 | [YouTube Shorts](platforms/youtube-shorts/guide.md) | draft | video | manual |
 
-Select IDs in [`studio.yml`](configuration.md). After manually publishing on YouTube Shorts, Instagram, TikTok or daily.dev, use `bstudio mark <project>/<campaign> <platform> --url <https-url>` to record the link; other handoff destinations do not support `mark`. See [source updates](updater.md) for maintaining packs.
+Select IDs in [`studio.yml`](configuration.md). After manually publishing a manual or owner-overridden post, use `bstudio mark <project>/<campaign> <platform> --url <https-url>` to record its publication URL. YouTube Shorts, Instagram, TikTok and daily.dev require an accepted destination host; other owner-overridden platforms accept any HTTPS URL. See [source updates](updater.md) for maintaining packs.

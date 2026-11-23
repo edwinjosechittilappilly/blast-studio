@@ -8,6 +8,7 @@ import { run as blockers } from "./commands/blockers.ts";
 import { run as budget } from "./commands/budget.ts";
 import { run as campaign } from "./commands/campaign.ts";
 import { run as dashboard } from "./commands/dashboard.ts";
+import { run as delivery } from "./commands/delivery.ts";
 import { run as doctor } from "./commands/doctor.ts";
 import { run as exportProject } from "./commands/export.ts";
 import { run as feedback } from "./commands/feedback.ts";
@@ -55,6 +56,7 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
   revise: { summary: "apply findings or feedback: revise <project>/<campaign> [--note text] [--asset id] [--platform id] [--feedback-only]", run: revise },
   feedback: { summary: "queue and manage feedback: feedback <project>/<campaign> list|add|rm", run: feedback },
   blockers: { summary: "list or resolve blockers: blockers <project>/<campaign> [list|resolve <target> <index> --text <original text> --reason <text>]", run: blockers },
+  delivery: { summary: "set owner delivery route: delivery <project>/<campaign> <platform> manual|marketBlaster", run: delivery },
   history: { summary: "list snapshots: history <project>/<campaign>", run: history },
   restore: { summary: "restore a snapshot: restore <project>/<campaign> <n>", run: restore },
   accept: { summary: "human override of scores (never gates): accept <project>/<campaign> <platform> --reason <reason>", run: accept },
@@ -150,7 +152,7 @@ export function realIO(): IO {
 }
 /** Serialize campaign mutations across CLI and dashboard processes. */
 export async function withCampaignLock(name: string, args: string[], io: IO, run: (io: IO) => Promise<number>): Promise<number> {
-  const locked = (["new", "brief", "plan", "make", "render", "review", "revise", "accept", "confirm", "export", "mark", "feedback", "restore"].includes(name) && !(name === "feedback" && args[1] === "list")) || (name === "blockers" && args.includes("resolve"));
+  const locked = (["new", "brief", "plan", "make", "render", "review", "revise", "accept", "confirm", "export", "mark", "feedback", "restore", "delivery"].includes(name) && !(name === "feedback" && args[1] === "list")) || (name === "blockers" && args.includes("resolve"));
   const valued = ["--idea", "--note", "--url", "--pr", "--commit", "--repo", "--mb-brief", "--from", "--assets", "--platforms", "--asset", "--platform", "--reason", "--text", "--license", "--mb"];
   let refArg: string | undefined;
   if (locked && !args.includes("--help") && !args.includes("-h")) {
@@ -195,7 +197,7 @@ const migratedRoots = new Map<string, Map<string, Error>>();
 function targetedProjects(name: string, args: string[]): string[] {
   if (args.includes("--help") || args.includes("-h")) return [];
   if ((name === "project" || name === "campaign") && args[0] === "rename") return args.slice(1, 3).map(value => value.split("/")[0]);
-  if (!["new", "brief", "plan", "make", "render", "review", "revise", "accept", "confirm", "export", "mark", "feedback", "blockers", "history", "restore", "status"].includes(name)) return [];
+  if (!["new", "brief", "plan", "make", "render", "review", "revise", "accept", "confirm", "export", "mark", "feedback", "blockers", "delivery", "history", "restore", "status"].includes(name)) return [];
   const valued = ["--idea", "--note", "--url", "--pr", "--commit", "--repo", "--mb-brief", "--from", "--assets", "--platforms", "--asset", "--platform", "--reason", "--text", "--license", "--mb"];
   for (let i = 0; i < args.length; i++) {
     if (valued.includes(args[i])) { i++; continue; }

@@ -360,6 +360,26 @@ test('status suggests re-export for newer posts and marking unpublished manual d
   assert.match(f.io.stdout.slice(before).join('\n'), /next: export: bstudio export acme\/demo/);
 });
 
+test('manual override controls directory export, library, status and marking', async () => {
+  const f = fixture(), post = join(f.project, 'posts/bluesky.md');
+  writeFileSync(post, readFileSync(post, 'utf8').replace('platform: bluesky\n', 'platform: bluesky\ndelivery: manual\n'));
+  writeFileSync(join(f.project, 'plan.yml'), '[]\n');
+  assert.equal(projectReview(loadConfig(f.io), 'acme/demo').platforms.bluesky.delivery, 'manual');
+  await exportCommand(['acme/demo', '--dir'], f.io);
+  const manifest = JSON.parse(readFileSync(join(f.project, 'export/manifest.json'), 'utf8'));
+  assert.deepEqual(manifest.posts, []);
+  assert.ok(existsSync(join(f.project, 'exports/bluesky/post.md')));
+  const future = new Date('2030-01-01T00:00:00Z');
+  utimesSync(join(f.project, 'export/manifest.json'), future, future);
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.text(), /bluesky: pass \(90\/100\) \[manual\]/);
+  assert.match(f.io.text(), /record publication: bstudio mark acme\/demo bluesky --url <url>/);
+  await mark(['acme/demo', 'bluesky', '--url', 'https://bsky.app/profile/example/post/1'], f.io);
+  const before = f.io.stdout.length;
+  await status(['acme/demo'], f.io);
+  assert.match(f.io.stdout.slice(before).join('\n'), /next: done/);
+});
+
 test('library updatedAt includes post, review and asset metadata edits', () => {
   const f = fixture(), config = loadConfig(f.io);
   for (const [file, year] of [['posts/bluesky.md', 2031], ['reviews/bluesky.json', 2032], ['assets/a/asset.yml', 2033]] as const) {

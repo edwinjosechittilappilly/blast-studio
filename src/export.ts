@@ -82,9 +82,10 @@ export function exportProject(project: string, identity: CampaignRef, config: St
   const dir = join(project, 'export'); mkdirSync(dir, { recursive: true });
   const brief = readFileSync(join(project, 'brief.md'), 'utf8');
   const entries = prepared.flatMap(({ post, review, hash, pack }) => {
-    const needsHandoff = !pack.marketBlaster || !!post.thread?.length || (post.platform === 'linkedin' && post.media.some(m => m.kind === 'document' && m.file.toLowerCase().endsWith('.pdf')));
+    const manual = post.delivery === 'manual' || !pack.marketBlaster;
+    const needsHandoff = manual || !!post.thread?.length || (post.platform === 'linkedin' && post.media.some(m => m.kind === 'document' && m.file.toLowerCase().endsWith('.pdf')));
     if (needsHandoff) handoff(project, post, pack.name, pack.notes ?? [], readFileSync(join(root, 'platforms', post.platform, 'guide.md'), 'utf8'));
-    if (!pack.marketBlaster) return [];
+    if (manual) return [];
     const media = (post.media as ExtraMedia[]).map(m => ({ path: copyMedia(project, dir, m.file), alt: m.alt, kind: m.kind,
       ...(m.cover === undefined ? {} : { cover: m.cover }), ...(m.lang === undefined ? {} : { lang: m.lang }), ...(m.captions === undefined ? {} : { captions: copyMedia(project, dir, m.captions) }) }));
     return [{ platform: post.platform, destination: pack.marketBlaster, ...(post.title === undefined ? {} : { title: post.title }), ...(post.tags === undefined ? {} : { tags: post.tags }), body: post.body, evidence: post.evidence,

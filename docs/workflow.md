@@ -34,6 +34,15 @@ Projects are stored in the studio root and copied into temporary agent workspace
 
 Scope reruns with `--platforms=bluesky` or `--assets=logo` (space forms also work). Unknown IDs fail before the agent runs. Agent-declared blockers appear after make and fail the specs gate; review prints failing gates, suggested fixes and the review file path.
 
+Delivery is an owner decision, not something the author agent should choose.
+Set one post to manual delivery with
+`bstudio delivery acme/release-note linkedin manual`. This writes
+`delivery: manual` in the post's frontmatter. Use
+`bstudio delivery acme/release-note linkedin marketBlaster` to return to the
+pack route; this is rejected for packs without a Market Blaster mapping. Any
+frontmatter value other than `manual` uses the pack route. The choice does not
+change the platform's policy or review requirements.
+
 Blockers are arrays of non-empty strings in post frontmatter or asset metadata; an empty `blockers:` field is treated as absent. Resolve the underlying issue in the brief or source first. List blockers with `bstudio blockers acme/release-note`, then pass the exact listed text and record the reason, for example `bstudio blockers acme/release-note resolve post:linkedin 0 --text "Verify the claim" --reason "Verified the claim"`. The index is zero-based and may change after a resolution, so list again before resolving another; a changed text is rejected instead of removing a different blocker. The command snapshots the campaign, removes the blocker, and records the owner decision in `resolutions.yml`. You can also resolve blockers from the dashboard. Revise preserves existing blockers and cannot clear them. Re-run review afterward.
 
 ## Render, review and revise
@@ -59,6 +68,6 @@ The archive includes the full brief and extracted evidence, not just publication
 
 The archive is deterministic for unchanged inputs. Its manifest timestamp uses the latest valid review timestamp (or the ZIP epoch for older reviews without one), so re-exporting does not change the package solely because the clock advanced.
 
-Manual destinations and threads are included under `handoff/` in the archive. Follow the platform checklist, publish through the destination, and use `bstudio mark <project>/<campaign> <platform> --url <https-url>` to record a publication for supported manual destinations: YouTube Shorts, Instagram, TikTok and daily.dev. The URL must belong to the destination's accepted host.
+Manual destinations, including owner-overridden posts, and threads are included under `handoff/` in the archive. Follow the platform checklist and publish through the destination. Record a manual publication with `bstudio mark <project>/<campaign> <platform> --url <https-url>`. YouTube Shorts, Instagram, TikTok and daily.dev require an accepted destination host; other owner-overridden platforms accept any HTTPS URL.
 
 Use `bstudio status [<project>/<campaign>]` and `bstudio library [search <query>]` to find work, `bstudio project list` to list projects, or `bstudio dashboard` for the local interface.

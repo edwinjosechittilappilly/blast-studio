@@ -6,6 +6,7 @@ import '@carbon/web-components/es/components/modal/index.js';
 import '@carbon/web-components/es/components/textarea/index.js';
 import '@carbon/web-components/es/components/data-table/index.js';
 import '@carbon/web-components/es/components/notification/index.js';
+import '@carbon/web-components/es/components/select/index.js';
 import '@carbon/web-components/es/components/overflow-menu/index.js';
 import CheckmarkFilled16 from '@carbon/icons/es/checkmark--filled/16.js';
 import WarningFilled16 from '@carbon/icons/es/warning--filled/16.js';
@@ -16,7 +17,7 @@ import { mediaGallery } from './components/media.js';
 import { api, headers, campaignPath, startFeedbackJob, cancelFeedbackJob, feedbackJobStatus } from './components/api.js';
 import { setupShell } from './components/shell.js';
 import { renderNewProject, renderNewCampaign } from './components/create.js';
-import { renderActions, renderAssetsTable } from './components/actions.js';
+import { jobRegion, renderActions, renderAssetsTable } from './components/actions.js';
 import { renderExport } from './components/export.js';
 import { renderBlockers } from './components/blockers.js';
 import { renderFeedbackHistory } from './components/feedback.js';
@@ -155,6 +156,28 @@ function campaignRelativeMessage(message, slug) {
     return index < 0 ? path : path.slice(index + marker.length);
   });
 }
+function deliveryControl(project, post) {
+  const section = el('section', null, 'delivery-control'), select = el('cds-select'), save = button('Save delivery', 'secondary'), error = el('p', null, 'form-error');
+  select.setAttribute('label-text', 'Delivery route'); error.setAttribute('role', 'alert');
+  for (const [value, text] of [['manual', 'Manual'], ['marketBlaster', 'Market Blaster']]) { const option = el('cds-select-item', text); option.setAttribute('value', value); select.append(option); }
+  select.value = project.platforms?.[post.platform]?.delivery === 'manual' ? 'manual' : 'marketBlaster'; section.append(select, save, el('p', 'Manual delivery is handed off for publishing yourself. Market Blaster delivery is included in the import for supported destinations only.', 'muted delivery-help'), error);
+  const run = jobRegion(section, { project }, { operation: 'delivery', ownOnly: true, onComplete: async job => {
+    try {
+      if (job.state === 'succeeded') {
+        const updated = await api(`/api/project/${encodeURIComponent(project.slug)}`);
+        if (!section.isConnected) return;
+        Object.assign(project, updated);
+        select.value = project.platforms?.[post.platform]?.delivery === 'manual' ? 'manual' : 'marketBlaster';
+      }
+    } catch (failure) { error.textContent = `Delivery saved, but the current route could not be refreshed: ${failure.message}. Reload the campaign.`; }
+    finally { save.disabled = false; select.disabled = false; }
+  } });
+  save.addEventListener('click', async () => {
+    error.textContent = ''; save.disabled = true; select.disabled = true;
+    if (!await run('delivery', { platform: post.platform, delivery: select.value }, message => { error.textContent = message; })) { save.disabled = false; select.disabled = false; }
+  });
+  return section;
+}
 function platformPanel(project, post) {
   const savedReview = project.reviews.find(r => r.platform === post.platform), review = savedReview && { ...savedReview, gates: (savedReview.gates || []).map(gate => {
     const parts = gate.message ? campaignRelativeMessage(gate.message, project.slug).split('; ') : [];
@@ -169,6 +192,7 @@ function platformPanel(project, post) {
   if (thread.length) { const list = el('ol', null, 'thread'); for (const [index, text] of thread.entries()) { const item = el('li'); item.append(el('h3', `Thread post ${index + 2}`), el('div', text, 'plain-post'), copyButton(`Copy thread post ${index + 2}`, text)); list.append(item); } left.append(list); }
   toolbar.append(copyButton('Copy all', [post.title, [post.body, ...thread].join('\n\n---\n\n')].filter(Boolean).join('\n\n')));
   if (post.media.length) { left.append(el('h3', 'Media'), mediaGallery(project.slug, post.media, project.captions)); }
+  left.append(deliveryControl(project, post));
   left.append(feedbackForm(project, { platform: post.platform }));
   const heading = el('div', null, 'section-title'), staleNotice = el('div');
   const showStale = () => { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'warning'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', 'Review is out of date'); const link = el('a', 'Run review'); link.href = `${campaignRoute(project.slug)}/actions?start=review&platform=${encodeURIComponent(post.platform)}`; notice.append(link); staleNotice.replaceChildren(notice); };

@@ -47,7 +47,7 @@ export const run: Command = async (args, io) => {
     io.out(`  published: ${published.length ? published.join(', ') : 'none'}`);
     for (const platform of new Set([...project.posts.map(p => p.platform), ...project.reviews.map(r => r.platform)])) {
       const review = project.reviews.find(r => r.platform === platform);
-      io.out(`  ${platform}: ${review?.verdict ?? 'unreviewed'}${review?.total == null ? '' : ` (${review.total}/100)`}`);
+      io.out(`  ${platform}: ${review?.verdict ?? 'unreviewed'}${review?.total == null ? '' : ` (${review.total}/100)`}${project.platforms[platform] ? ` [${project.platforms[platform].delivery}]` : ''}`);
     }
     const gates = project.reviews.flatMap(review => (review.gates ?? []).filter(gate => !gate.pass));
     const dir = campaignDir(config, project.slug);
@@ -62,9 +62,9 @@ export const run: Command = async (args, io) => {
     const inputFiles = [...project.posts.map(post => join(dir, 'posts', `${post.platform}.md`)), ...project.reviews.map(review => join(dir, 'reviews', `${review.platform}.json`)), ...project.assets.map(asset => join(dir, 'assets', asset.id, 'asset.yml'))];
     const latestInput = Math.max(0, ...inputFiles.filter(existsSync).map(file => statSync(file).mtimeMs), ...project.reviews.map(review => Date.parse(review.at ?? '') || 0));
     const staleExport = !exportedAt || latestInput > Date.parse(exportedAt);
-    const unmarked = project.posts.find(post => ['instagram', 'youtube-shorts', 'tiktok', 'dailydev'].includes(post.platform) && !published.includes(post.platform));
+    const unmarked = project.posts.find(post => project.platforms[post.platform]?.delivery === 'manual' && !published.includes(post.platform));
     const needsRevision = project.reviews.some(review => review.verdict !== 'pass' && review.verdict !== 'accepted');
-    const hasMarketBlasterPosts = project.posts.some(post => !['instagram', 'youtube-shorts', 'tiktok', 'dailydev'].includes(post.platform));
+    const hasMarketBlasterPosts = project.posts.some(post => project.platforms[post.platform]?.delivery === 'marketBlaster');
     const imported = latestExport && existsSync(join(exportDir, latestExport.name.split('/')[0], 'imported.json'));
     const next = blocker ? `resolve blockers: bstudio blockers ${project.slug}` : unresolved ? `confirm rights: ${unresolved[0]}` : staleReview ? `run bstudio review ${project.slug}` : rights.length ? `run bstudio review ${project.slug}` : !existsSync(join(dir, 'plan.yml')) ? `run bstudio plan ${project.slug}` : !project.posts.length ? `run bstudio make ${project.slug}` : unreviewed ? `run bstudio review ${project.slug}` : needsRevision ? `run bstudio revise ${project.slug}` : staleExport ? `export: bstudio export ${project.slug}` : unmarked ? `record publication: bstudio mark ${project.slug} ${unmarked.platform} --url <url>` : hasMarketBlasterPosts && !imported ? `import: bstudio export ${project.slug} --mb <path>` : 'done';
     io.out(`  next: ${next}`);

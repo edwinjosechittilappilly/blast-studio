@@ -110,6 +110,49 @@ test('accept offers only revised destinations with passing gates', async t => {
   assert.deepEqual(await options.allTextContents(), ['linkedin']);
 });
 
+test('platform delivery control submits the chosen route and refreshes the effective route', async t => {
+  const { page, url } = await dashboard(t);
+  let delivery = 'marketBlaster', submitted: unknown, attempts = 0;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.platforms.linkedin.delivery = delivery;
+    await route.fulfill({ json: project });
+  });
+  await page.route('**/api/jobs', async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    submitted = route.request().postDataJSON();
+    if (++attempts === 1) return route.fulfill({ status: 400, json: { error: 'Cannot save delivery' } });
+    delivery = 'manual';
+    return route.fulfill({ json: { ...job('queued'), operation: 'delivery' } });
+  });
+  await page.route('**/api/jobs?campaign=*', route => route.fulfill({ json: attempts > 1 ? [{ ...job('succeeded'), operation: 'delivery' }] : [] }));
+  await page.route('**/api/jobs/revision-1/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  const route = page.getByRole('combobox', { name: 'Delivery route' }), save = page.getByRole('button', { name: 'Save delivery' });
+  await page.getByText('Manual delivery is handed off for publishing yourself. Market Blaster delivery is included in the import for supported destinations only.').waitFor();
+  assert.equal(await route.inputValue(), 'marketBlaster');
+  await route.selectOption('manual');
+  await save.click();
+  await page.getByRole('alert').filter({ hasText: 'Cannot save delivery' }).waitFor();
+  assert.equal(await route.inputValue(), 'manual');
+  await save.click();
+  await page.getByText('delivery: succeeded').waitFor();
+  assert.deepEqual(submitted, { op: 'delivery', campaign: 'acme/launch', args: { platform: 'linkedin', delivery: 'manual' } });
+  assert.equal(await route.inputValue(), 'manual');
+});
+
+test('mark published offers manually routed posts regardless of platform', async t => {
+  const { page, url } = await dashboard(t);
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.platforms.linkedin.delivery = 'manual';
+    await route.fulfill({ json: project });
+  });
+  await page.goto(`${url}#/p/acme/launch/actions`);
+  await page.getByRole('button', { name: 'Mark published' }).click();
+  assert.deepEqual(await page.locator('cds-modal cds-select-item').allTextContents(), ['linkedin']);
+});
+
 test('campaign lock error clears when the conflicting job finishes', async t => {
   const { page, url } = await dashboard(t); let running = true;
   await page.route('**/api/jobs?*', route => route.fulfill({ json: [job(running ? 'running' : 'succeeded')] }));

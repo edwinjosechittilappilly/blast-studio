@@ -37,12 +37,13 @@ test('jobs API enforces host, session, origin, header and argument schemas', asy
     assert.equal(operations.status, 200);
     const metadata = JSON.parse(operations.body);
     assert.ok(Object.hasOwn(metadata, 'plan'));
-    for (const name of ['new', 'brief', 'plan', 'make', 'render', 'review', 'revise', 'accept', 'confirm', 'export', 'mark', 'status', 'history', 'restore', 'feedback list', 'feedback add', 'feedback rm']) {
+    for (const name of ['new', 'brief', 'plan', 'make', 'render', 'review', 'revise', 'accept', 'confirm', 'export', 'delivery', 'mark', 'status', 'history', 'restore', 'feedback list', 'feedback add', 'feedback rm']) {
       assert.equal(metadata[name].fields.campaign.kind, 'campaign', name);
     }
     assert.equal(metadata['campaign rename'].fields.source.kind, 'campaign');
     assert.equal(metadata['campaign rename'].fields.destination.kind, 'campaign');
     assert.equal(metadata.accept.fields.platform.kind, 'id');
+    assert.equal(metadata.delivery.fields.delivery.kind, 'delivery');
     for (const name of ['new', 'render', 'revise', 'plan']) assert.equal(metadata[name].requiresTTY, false, name);
     assert.equal((await call('GET', '/api/jobs', { cookie: 'bs=valid' })).status, 200);
     const headers = { cookie: 'bs=valid', origin: `http://${host}`, 'x-requested-with': 'bstudio' };

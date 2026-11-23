@@ -29,6 +29,19 @@ test('registry validates campaign addresses and constructs an argument vector', 
   assert.throws(() => buildOperation('export', { campaign: 'acme/launch', local: true, mb: '/tmp' }), /Local export/);
 });
 
+test('delivery jobs allow only supported routes and preserve command order', () => {
+  for (const delivery of ['manual', 'marketBlaster']) {
+    const job = buildOperation('delivery', { campaign: 'acme/launch', platform: 'linkedin', delivery });
+    assert.deepEqual(job.args, ['delivery', 'acme/launch', 'linkedin', delivery]);
+    assert.equal(job.campaign, 'acme/launch');
+    assert.equal(job.operation.paid, false);
+  }
+  for (const delivery of ['', 'automatic', 'marketblaster', '--help', null]) assert.throws(() => buildOperation('delivery', { campaign: 'acme/launch', platform: 'linkedin', delivery }));
+  assert.throws(() => buildOperation('delivery', { campaign: 'acme/launch', platform: '../linkedin', delivery: 'manual' }));
+  assert.throws(() => buildOperation('delivery', { campaign: 'acme/launch', platform: 'linkedin' }));
+  assert.throws(() => buildOperation('delivery', { campaign: 'acme/launch', platform: 'linkedin', delivery: 'manual', extra: true }));
+});
+
 test('blocker resolution jobs validate arguments and preserve command order', () => {
   const args = { campaign: 'acme/launch', target: 'post:linkedin', index: '0', text: '  - Missing source  ', reason: '- approved by owner' };
   const job = buildOperation('blockers resolve', args);

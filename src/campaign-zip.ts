@@ -62,7 +62,7 @@ export function writeCampaignZip(project: string, identity: CampaignRef, prepare
       ...(m.cover === undefined ? {} : { cover: m.cover }), ...(m.lang === undefined ? {} : { lang: m.lang }), ...(m.captions === undefined ? {} : { captions: copyMedia(m.captions) }) }));
     const reviewFile = join(project, 'reviews', `${post.platform}.json`);
     file(`review/${post.platform}.json`, reviewFile);
-    if (!pack.marketBlaster) {
+    if (post.delivery === 'manual' || !pack.marketBlaster) {
       const folder = `handoff/${post.platform}/`;
       text(`${folder}post.md`, [post.title ? `# ${post.title}\n` : '', post.body, ...(post.thread ?? []).map(t => `\n---\n\n${t}`)].join('\n') + '\n');
       const guide = readFileSync(join(root, 'platforms', post.platform, 'guide.md'), 'utf8');

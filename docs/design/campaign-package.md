@@ -23,7 +23,7 @@ Individual project and campaign slugs cannot contain consecutive hyphens, so the
 ├── media/<file>             every image, video, PDF and VTT the posts reference
 ├── handoff/
 │   ├── <destination>-thread.md        thread items to post by hand
-│   └── <platform>/                    platforms Market Blaster can't publish (youtube-shorts, instagram, tiktok, dailydev)
+│   └── <platform>/                    manual destinations, including owner overrides
 │       ├── post.md
 │       ├── <media files>
 │       └── README.md                  upload checklist and disclosure lines from the platform pack
@@ -72,7 +72,7 @@ Individual project and campaign slugs cannot contain consecutive hyphens, so the
 | `destinations[].tags` | Optional array of post tags, also included in the post frontmatter and v1 manifest |
 | `media[].kind` | `image`, `video`, `gif` or `document`. Optional `cover: true` (DEV), `lang` (BCP-47) and `captions` (path to a VTT file) |
 | `review.reviewHash` | The shared review-hash contract (test vector `5d5491c0…c977`) |
-| `manual` | Platforms outside Market Blaster; the importer copies these folders to `campaigns/<slug>/handoff/` |
+| `manual` | Manual destinations, including posts whose owner selected `delivery: manual`; the importer copies these folders to `campaigns/<slug>/handoff/` |
 
 ## Import rules (Market Blaster)
 
