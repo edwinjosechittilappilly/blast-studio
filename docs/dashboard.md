@@ -12,6 +12,8 @@ The Actions tab starts campaign steps, review decisions, feedback operations and
 
 Campaign details compare the independent review, weighted rubric, gates and hook checks with the maker's self-review. Add feedback to a post or asset with **Your feedback**; its pending, applied and rejected history stays in the campaign's `feedback.yml`. **Apply feedback** starts a registered `bstudio revise <project>/<campaign> --feedback-only` job. Jobs for the same campaign share a lock with CLI operations. The CLI and dashboard automatically recover job locks whose owners have stopped; active jobs continue to hold their locks.
 
+When no feedback is pending and a destination review calls for revision, **Revise** applies review findings across the campaign. Its confirmation names the affected destinations and shows monthly spend when available. Stale failing reviews must be rerun first using the header link; blocked rights and blocker-only findings must be resolved before revision. This paid operation shows progress and can be cancelled like Apply feedback. If it requires an interactive terminal, the dialog prepares a copyable command instead.
+
 Post review panels and asset details list agent-declared blockers. Address the underlying issue, then select **Resolve** and provide a reason to record the owner decision. Resolved blocker history is available in the collapsed history section. Resolution saves a snapshot and changes campaign content; run review again using **Run review** before exporting.
 
 **Budget & providers** displays spend and manages caps, providers, upload consent and write-only provider keys in macOS Keychain. **Source updates** checks and verifies guidance; **Health check** runs the local doctor. Configuration settings are saved to `studio.yml`.

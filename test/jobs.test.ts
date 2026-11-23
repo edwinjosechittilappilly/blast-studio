@@ -16,6 +16,7 @@ import { runBilledAgent } from '../src/agent-env.ts';
 import { loadConfig } from '../src/config.ts';
 import { usualStepMs } from '../src/budget/ledger.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
+import { run as revise } from '../src/commands/revise.ts';
 
 test('registry validates campaign addresses and constructs an argument vector', () => {
   const job = buildOperation('render', { campaign: 'acme/launch', assets: 'card-one,card-two', regen: true });
@@ -27,6 +28,22 @@ test('registry validates campaign addresses and constructs an argument vector', 
   assert.throws(() => buildOperation('mark', { campaign: 'acme/launch', platform: 'x', url: 'javascript:alert(1)' }));
   assert.throws(() => buildOperation('export', { campaign: 'acme/launch', local: true, force: true }), /Local export/);
   assert.throws(() => buildOperation('export', { campaign: 'acme/launch', local: true, mb: '/tmp' }), /Local export/);
+});
+
+test('registry builds scoped and unscoped review revisions', () => {
+  const campaign = 'acme/launch';
+  assert.deepEqual(buildOperation('revise', { campaign }).args, ['revise', campaign]);
+  const scoped = buildOperation('revise', { campaign, platform: 'linkedin', asset: 'hero-card' });
+  assert.deepEqual(scoped.args, ['revise', campaign, '--asset=hero-card', '--platform=linkedin']);
+  assert.equal(scoped.operation.paid, true);
+  for (const key of ['asset', 'platform']) assert.throws(() => buildOperation('revise', { campaign, [key]: '../escape' }));
+});
+
+test('dashboard review revision arguments reach the CLI review loop', async () => {
+  const root = tempStudio({ 'projects/acme/campaigns/launch/brief.md': '# Launch' });
+  const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') } });
+  const { args } = buildOperation('revise', { campaign: 'acme/launch' });
+  await assert.rejects(revise(args.slice(1), io), /Run review before revise/);
 });
 
 test('blocker resolution jobs validate arguments and preserve command order', () => {
