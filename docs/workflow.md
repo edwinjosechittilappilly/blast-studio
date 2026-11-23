@@ -34,7 +34,7 @@ Projects are stored in the studio root and copied into temporary agent workspace
 
 Scope reruns with `--platforms=bluesky` or `--assets=logo` (space forms also work). Unknown IDs fail before the agent runs. Agent-declared blockers appear after make and fail the specs gate; review prints failing gates, suggested fixes and the review file path.
 
-Blockers are arrays of non-empty strings in post frontmatter or asset metadata; an empty `blockers:` field is treated as absent. Resolve the underlying issue in the brief or source, then remove the resolved blocker from that file or run a fresh make; revise preserves existing blockers and cannot clear them. Re-run review afterward.
+Blockers are arrays of non-empty strings in post frontmatter or asset metadata; an empty `blockers:` field is treated as absent. Resolve the underlying issue in the brief or source first. List blockers with `bstudio blockers acme/release-note`, then record the reason for resolving one, for example `bstudio blockers acme/release-note resolve post:linkedin 0 --reason "Verified the claim"`. The index is zero-based and may change after a resolution, so list again before resolving another. The command snapshots the campaign, removes the blocker, and records the owner decision in `resolutions.yml`. You can also resolve blockers from the dashboard. Revise preserves existing blockers and cannot clear them. Re-run review afterward.
 
 ## Render, review and revise
 
