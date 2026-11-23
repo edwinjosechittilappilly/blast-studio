@@ -221,6 +221,8 @@ test('status points to planning and unresolved blockers', async () => {
   await status(['demo/launch'], io);
   assert.ok(io.stdout.some(line => line.includes('bstudio plan demo/launch')));
   mkdirSync(join(dir, 'reviews'), { recursive: true });
+  mkdirSync(join(dir, 'assets/hero'), { recursive: true });
+  writeFileSync(join(dir, 'assets/hero/asset.yml'), 'id: hero\nkind: card\nblockers: [Missing evidence]\n');
   writeFileSync(join(dir, 'reviews/bluesky.json'), JSON.stringify({ platform: 'bluesky', verdict: 'revise', gates: [{ id: 'specs', pass: false, message: 'Blocker in asset hero: Missing evidence' }] }));
   await status(['demo/launch'], io);
   assert.ok(io.stdout.some(line => line.includes('resolve blockers')));
