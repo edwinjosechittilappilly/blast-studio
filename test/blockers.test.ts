@@ -9,6 +9,7 @@ import { fakeIO, tempStudio } from './helpers.ts';
 
 function fixture() {
   const root = tempStudio({
+    'projects/p/project.yml': 'name: P\ncreatedAt: 2025-01-01\n',
     'projects/p/campaigns/c/posts/x.md': '---\nplatform: x\nevidence: []\nmedia: []\nblockers:\n  - First\n  - Second\n---\n\nKeep this body.\n',
     'projects/p/campaigns/c/assets/a/asset.yml': 'id: a\nkind: card\nblockers:\n  - Asset issue\n',
   });
