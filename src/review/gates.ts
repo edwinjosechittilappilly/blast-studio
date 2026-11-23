@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { readPlan } from '../plan.ts';
@@ -20,6 +21,15 @@ function metrics(text: string): { token: string; key: string; metric: boolean }[
   return result;
 }
 
+
+function hasAudio(file: string): boolean | undefined {
+  const probe = spawnSync('ffprobe', ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'json', file], { encoding: 'utf8', timeout: 10000 });
+  if (probe.status !== 0) return undefined;
+  try {
+    const data = JSON.parse(probe.stdout) as { streams?: unknown };
+    return Array.isArray(data.streams) ? data.streams.length > 0 : undefined;
+  } catch { return undefined; }
+}
 
 export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], brief: BriefSection[], config: StudioConfig, projectDir?: string, address = '<project>/<campaign>'): GateResult[] & { warnings: string[] } {
   const failures: Record<GateResult['id'], string[]> = { policy: [], disclosure: [], specs: [], accessibility: [], 'fabricated-metrics': [], rights: [] };
@@ -119,8 +129,11 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
       if (spec.aspectRatios === 'unknown') warnings.push(`aspect ratios unknown; verify ${pack.sources.join(', ') || pack.id}`);
       else if (spec.aspectRatios && output?.aspect && !spec.aspectRatios.value.includes(output.aspect)) add('specs', `Unsupported aspect ${output.aspect} (${spec.aspectRatios.source})`);
     }
-    if (['image', 'gif', 'document'].includes(media.kind) && !media.alt?.trim()) add('accessibility', `Missing alt text for ${media.asset}`);
-    if (media.kind === 'video' && !byId.get(media.asset)?.outputs.some(o => /\.vtt$/i.test(o.file))) add('accessibility', `Missing captions for ${media.asset}`);
+    if (['image', 'gif', 'video', 'document'].includes(media.kind) && !media.alt?.trim()) add('accessibility', `Missing alt text for ${media.asset}`);
+    if (media.kind === 'video' && !byId.get(media.asset)?.outputs.some(o => /\.vtt$/i.test(o.file))) {
+      const audio = typeof output?.audio === 'boolean' ? output.audio : output && projectDir ? hasAudio(join(projectDir, media.file)) : undefined;
+      if (audio !== false) add('accessibility', `Missing captions for ${media.asset}`);
+    }
   }
   for (const asset of selected) {
     if (['gemini', 'openai', 'omp'].includes(asset.provider) && !asset.license?.trim()) add('rights', `Missing license for ${asset.id}; confirm rights: bstudio confirm ${address} ${asset.id} --license <license>`);

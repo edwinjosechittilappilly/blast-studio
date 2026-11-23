@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadPack } from '../src/packs.ts';
@@ -40,6 +40,39 @@ test('policy, disclosure, specs, accessibility, grounding and rights gates', () 
   assert.equal(gate('rights', mediaPost, pack, [{ ...image, license: null }]).unfixable, true);
   assert.equal(gate('fabricated-metrics', { ...post, body: 'We grew 42%.' }).pass, false);
   assert.equal(gate('fabricated-metrics', { ...post, body: 'We grew 42%.' }, pack, []).pass, false);
+});
+
+test('video captions depend on the selected output audio and video still needs alt text', () => {
+  const video: AssetMeta = { id: 'v', kind: 'video', provider: 'hyperframes', outputs: [{ file: 'out/silent.mp4', bytes: 4, audio: false }, { file: 'out/audio.mp4', bytes: 4, audio: true }], license: null, aiGenerated: false };
+  const mediaPost: Post = { ...post, media: [{ asset: 'v', file: 'assets/v/out/silent.mp4', kind: 'video', alt: 'Motion poster' }] };
+  assert.equal(gate('accessibility', mediaPost, pack, [video]).pass, true);
+  const missingAlt = { ...mediaPost, media: [{ ...mediaPost.media[0], alt: '' }] };
+  assert.match(gate('accessibility', missingAlt, pack, [video]).message, /Missing alt text/);
+  const withAudio = { ...mediaPost, media: [{ ...mediaPost.media[0], file: 'assets/v/out/audio.mp4' }] };
+  assert.match(gate('accessibility', withAudio, pack, [video]).message, /Missing captions/);
+  assert.equal(gate('accessibility', withAudio, pack, [{ ...video, outputs: [...video.outputs, { file: 'out/captions.vtt', bytes: 4 }] }]).pass, true);
+});
+
+test('legacy videos are probed and require captions if audio cannot be determined', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bstudio-probe-')), oldPath = process.env.PATH;
+  const video: AssetMeta = { id: 'v', kind: 'video', provider: 'hyperframes', outputs: [{ file: 'out/video.mp4', bytes: 4 }], license: null, aiGenerated: false };
+  const mediaPost: Post = { ...post, media: [{ asset: 'v', file: 'assets/v/out/video.mp4', kind: 'video', alt: 'Motion poster' }] };
+  const result = () => runGates(mediaPost, pack, [video], brief, config, dir).find(g => g.id === 'accessibility')!;
+  try {
+    process.env.PATH = dir;
+    assert.match(result().message, /Missing captions/);
+    const probe = join(dir, 'ffprobe');
+    writeFileSync(probe, '#!/bin/sh\nprintf \'{"streams":[]}\'\n');
+    chmodSync(probe, 0o755);
+    assert.equal(result().pass, true);
+    writeFileSync(probe, '#!/bin/sh\nprintf \'{"streams":[{"index":1}]}\'\n');
+    assert.match(result().message, /Missing captions/);
+    writeFileSync(probe, '#!/bin/sh\nprintf invalid\n');
+    assert.match(result().message, /Missing captions/);
+  } finally {
+    if (oldPath === undefined) delete process.env.PATH; else process.env.PATH = oldPath;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 test('weighted scoring excludes N/A and verdict observes gates', () => {
   const scores: ScoreResult[] = [{ criterion: 'a', score: 2, evidence: 'e', fix: 'f' }, { criterion: 'b', score: null, evidence: 'e', fix: 'f' }];
