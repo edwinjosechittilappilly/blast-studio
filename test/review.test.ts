@@ -307,12 +307,13 @@ test('specs detect changed sources for used and planned assets while legacy outp
     writeFileSync(join(assetDir, 'source.html'), 'original');
     writeFileSync(join(assetDir, 'source/nested/style.css'), 'original');
     writeFileSync(join(assetDir, 'slides/01.html'), 'original');
+    writeFileSync(join(assetDir, 'demo.tape'), 'original');
     const hash = sourceHash(assetDir);
     const asset: AssetMeta = { ...image, outputs: [{ ...image.outputs[0], sourceHash: hash }, { file: 'other.png', bytes: 4, sourceHash: hash }] };
     const draft: Post = { ...post, media: [{ asset: 'a', file: 'assets/a/image.png', alt: 'Image', kind: 'image' }] };
     const check = (p: Post, a: AssetMeta = asset) => runGates(p, { ...pack, formats: ['image'], media: [{ kind: 'image' }] }, [a], brief, config, dir);
     assert.equal(check(draft).find(g => g.id === 'specs')!.pass, true);
-    for (const path of ['source.html', 'source/nested/style.css', 'slides/01.html']) {
+    for (const path of ['source.html', 'source/nested/style.css', 'slides/01.html', 'demo.tape']) {
       writeFileSync(join(assetDir, path), 'changed');
       const specs = check(draft).find(g => g.id === 'specs')!;
       assert.equal(specs.pass, false);

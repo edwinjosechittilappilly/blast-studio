@@ -24,7 +24,7 @@ export function sourceHash(assetDir: string): string {
     }
   };
   for (const entry of readdirSync(assetDir, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name.startsWith('source.')) files.push({ path: entry.name, content: readFileSync(join(assetDir, entry.name)) });
+    if (entry.isFile() && (entry.name.startsWith('source.') || entry.name === 'demo.tape')) files.push({ path: entry.name, content: readFileSync(join(assetDir, entry.name)) });
     else if (entry.isDirectory() && (entry.name === 'source' || entry.name === 'slides')) collect(join(assetDir, entry.name), entry.name);
   }
   files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
