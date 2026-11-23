@@ -72,6 +72,32 @@ test('dashboard review freshness follows post and media changes', () => {
   assert.equal(stale(), true);
 });
 
+test('accept and export reject reviews invalidated by relevant blocker resolutions', async () => {
+  const f = fixture(), config = loadConfig(f.io);
+  const reviewFile = join(f.project, 'reviews/bluesky.json');
+  const original = JSON.parse(readFileSync(reviewFile, 'utf8'));
+  const saveAt = (at: string) => writeFileSync(reviewFile, JSON.stringify({ ...original, at }));
+  const resolution = (target: string, at: string) => writeFileSync(join(f.project, 'resolutions.yml'), `- target: ${target}\n  text: Issue\n  reason: Fixed\n  resolvedAt: "${at}"\n  by: owner\n`);
+  writeFileSync(join(f.project, 'assets/a/asset.yml'), 'id: a\nkind: card\nprovider: template\naiGenerated: false\noutputs:\n  - { file: out/image.png, bytes: 5 }\nembeds: [logo]\n');
+  mkdirSync(join(f.project, 'assets/logo'));
+  writeFileSync(join(f.project, 'assets/logo/asset.yml'), 'id: logo\nkind: card\nprovider: template\naiGenerated: false\noutputs: []\n');
+  saveAt('2025-01-01T00:00:00.000Z');
+  for (const target of ['post:bluesky', 'asset:a', 'asset:logo']) {
+    resolution(target, '2025-01-02T00:00:00.000Z');
+    assert.equal(projectReview(config, 'acme/demo').reviews[0].stale, true);
+    await assert.rejects(accept(['acme/demo', 'bluesky', '--reason', 'Reviewed'], f.io), /stale/);
+    await assert.rejects(exportCommand(['acme/demo', '--local'], f.io), /stale/);
+  }
+  resolution('asset:unrelated', '2025-01-02T00:00:00.000Z');
+  assert.equal(projectReview(config, 'acme/demo').reviews[0].stale, false);
+  await exportCommand(['acme/demo', '--local'], f.io);
+  resolution('asset:logo', '2025-01-02T00:00:00.000Z');
+  saveAt('2025-01-02T00:00:00.000Z');
+  assert.equal(projectReview(config, 'acme/demo').reviews[0].stale, false);
+  await accept(['acme/demo', 'bluesky', '--reason', 'Reviewed'], f.io);
+  await exportCommand(['acme/demo', '--local'], f.io);
+});
+
 test('refuses nonpassing, failed gates and stale reviews', async () => {
   const f = fixture();
   for (const verdict of ['revise', 'blocked']) { f.review.verdict = verdict; f.save(); await assert.rejects(exportCommand(['acme/demo'], f.io), /bluesky.*review/); }

@@ -2,7 +2,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { StudioConfig } from '../types.ts';
 import { UserError } from '../types.ts';
 import { buildOperation, campaignRef, operationRequiresTTY, operations } from '../jobs/registry.ts';
-import { cancelJob, findJob, JobConflict, JobNotFound, JobNotRunning, JobSignalDenied, jobLog, listJobs, startJob } from '../jobs/runner.ts';
+import { listBlockers } from '../blockers.ts';
+import { campaignDirectory, cancelJob, findJob, JobConflict, JobNotFound, JobNotRunning, JobSignalDenied, jobLog, listJobs, startJob } from '../jobs/runner.ts';
 import { saveSecret } from '../jobs/secrets.ts';
 
 export interface JobsApiOptions { config: StudioConfig; port: number; sessionCheck: (req: IncomingMessage) => boolean; allowedHosts?: string[]; cwd?: string; env?: NodeJS.ProcessEnv }
@@ -38,10 +39,16 @@ export async function handleJobsApi(req: IncomingMessage, res: ServerResponse, o
     if (raw === '/api/jobs' && req.method === 'POST') {
       const data = await body(req);
       if (Object.keys(data).some(key => !['op', 'campaign', 'args'].includes(key)) || typeof data.op !== 'string' || !data.args || typeof data.args !== 'object' || Array.isArray(data.args) || (data.campaign !== undefined && typeof data.campaign !== 'string')) throw new UserError('Invalid job request');
-      const args = { ...data.args as Record<string, unknown>, ...(data.campaign !== undefined ? { campaign: data.campaign } : {}) };
+      const args: Record<string, unknown> = { ...data.args as Record<string, unknown>, ...(data.campaign !== undefined ? { campaign: data.campaign } : {}) };
       const runnerOptions = { imageProvider: options.config.images.provider, root: options.config.root, cwd: options.cwd, env: options.env };
       const built = buildOperation(data.op, args, runnerOptions);
       if (built.requiresTTY) { send(res, 422, { error: 'This operation requires a terminal', command: built.command }); return true; }
+      if (data.op === 'blockers resolve') {
+        const blockers = listBlockers(campaignDirectory(options.config.root, built.campaign!));
+        if (!blockers.some(blocker => blocker.target === args.target && blocker.index === Number(args.index) && blocker.text === args.text)) {
+          send(res, 409, { error: 'This blocker list changed — refresh' }); return true;
+        }
+      }
       send(res, 202, startJob(options.config.root, data.op, args, runnerOptions)); return true;
     }
     if (raw === '/api/secrets' && req.method === 'POST') {

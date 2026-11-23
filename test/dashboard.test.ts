@@ -12,6 +12,8 @@ import { loadLibrary, latestSources } from '../src/library.ts';
 import { startDashboard } from '../src/dashboard/server.ts';
 import { startCliJob } from '../src/jobs/runner.ts';
 import { run as status } from '../src/commands/status.ts';
+import { loadPosts } from '../src/posts.ts';
+import { mediaContentHash, reviewHash } from '../src/review-hash.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 function fixture() {
@@ -274,6 +276,128 @@ test('project review payload includes rubric, threshold and maker review', async
   assert.ok(result.rubric.linkedin.some((criterion: { question: string }) => criterion.question));
   assert.equal(result.posts[0].selfReview.summary, 'Ready');
 });
+
+test('project reviews remain stale after reload only for destinations affected by later resolutions', async t => {
+  const { root, io } = fixture(), dir = join(root, 'projects/acme/campaigns/launch');
+  writeFileSync(join(dir, 'assets/card/image.png'), 'image');
+  mkdirSync(join(dir, 'assets/a'));
+  writeFileSync(join(dir, 'assets/a/asset.yml'), 'id: a\nkind: card\noutputs: []\n');
+  writeFileSync(join(dir, 'assets/a/image.png'), 'other image');
+  writeFileSync(join(dir, 'assets/card/asset.yml'), 'id: card\nkind: card\noutputs: []\nembeds: [logo]\n');
+  writeFileSync(join(dir, 'posts/linkedin.md'), '---\nplatform: linkedin\nevidence: []\nmedia: [{asset: a, file: assets/a/image.png, alt: Other, kind: image}, {asset: card, file: assets/card/image.png, alt: Card, kind: image}]\n---\nHello');
+  writeFileSync(join(dir, 'posts/x.md'), '---\nplatform: x\nevidence: []\nmedia: []\n---\nHello');
+  const posts = loadPosts(dir);
+  const saveReview = (platform: 'linkedin' | 'x', at: string) => {
+    const post = posts.get(platform)!;
+    writeFileSync(join(dir, `reviews/${platform}.json`), JSON.stringify({
+      platform, at, verdict: 'pass', total: 90, scores: [],
+      postHash: reviewHash({ ...post, media: post.media.map(item => ({ path: item.file, alt: item.alt })) }),
+      mediaHash: mediaContentHash(dir, post.media),
+    }));
+  };
+  saveReview('linkedin', '2025-01-01T00:00:00.000Z');
+  saveReview('x', '2025-01-01T00:00:00.000Z');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const project = async () => (await (await fetch(`http://127.0.0.1:${started.port}/api/project/acme%2Flaunch`, { headers: { cookie } })).json()).reviews as { platform: string; stale: boolean }[];
+  const stale = async () => Object.fromEntries((await project()).map(review => [review.platform, review.stale]));
+  const next = async () => {
+    const statusIO = fakeIO({ cwd: root, env: io.env });
+    await status(['acme/launch'], statusIO);
+    return statusIO.text();
+  };
+  assert.deepEqual(await stale(), { linkedin: false, x: false });
+  writeFileSync(join(dir, 'resolutions.yml'), '- target: asset:unrelated\n  text: Confirm rights\n  reason: Verified\n  resolvedAt: "2025-01-02T00:00:00.000Z"\n  by: owner\n');
+  assert.deepEqual(await stale(), { linkedin: false, x: false });
+  assert.doesNotMatch(await next(), /next: run bstudio review/);
+  writeFileSync(join(dir, 'resolutions.yml'), '- target: asset:logo\n  text: Confirm rights\n  reason: Verified\n  resolvedAt: "2025-01-02T00:00:00.000Z"\n  by: owner\n');
+  assert.deepEqual(await stale(), { linkedin: true, x: false });
+  assert.match(await next(), /next: run bstudio review acme\/launch/);
+  assert.deepEqual(await stale(), { linkedin: true, x: false });
+  saveReview('linkedin', '2025-01-03T00:00:00.000Z');
+  assert.deepEqual(await stale(), { linkedin: false, x: false });
+  assert.doesNotMatch(await next(), /next: run bstudio review/);
+  writeFileSync(join(dir, 'resolutions.yml'), '- target: post:x\n  text: Confirm claim\n  reason: Verified\n  resolvedAt: "2025-01-04T00:00:00.000Z"\n  by: owner\n');
+  assert.deepEqual(await stale(), { linkedin: false, x: true });
+  saveReview('x', '2025-01-04T00:00:00.000Z');
+  assert.deepEqual(await stale(), { linkedin: false, x: false });
+  assert.doesNotMatch(await next(), /next: run bstudio review/);
+  writeFileSync(join(dir, 'posts/x.md'), '---\nplatform: x\nevidence: []\nmedia: []\n---\nChanged');
+  assert.deepEqual(await stale(), { linkedin: false, x: true });
+  assert.match(await next(), /next: run bstudio review acme\/launch/);
+});
+
+test('blocker endpoint exposes active blockers and resolution history to authenticated sessions', async t => {
+  const { root, io } = fixture(), dir = join(root, 'projects/acme/campaigns/launch');
+  writeFileSync(join(dir, 'posts/linkedin.md'), '---\nplatform: linkedin\nevidence: []\nmedia: []\nblockers: [Verify claim, Confirm source]\n---\nHello');
+  writeFileSync(join(dir, 'assets/card/asset.yml'), 'id: card\nkind: card\noutputs: []\nblockers: [Confirm rights]\n');
+  writeFileSync(join(dir, 'resolutions.yml'), '- target: post:linkedin\n  text: Earlier blocker\n  reason: Verified\n  resolvedAt: "2025-01-01T00:00:00.000Z"\n  by: owner\n');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const endpoint = `http://127.0.0.1:${started.port}/api/campaigns/acme/launch/blockers`;
+  assert.equal((await fetch(endpoint)).status, 401);
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const response = await fetch(endpoint, { headers: { cookie } });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.deepEqual(data.blockers.sort((a: { target: string; index: number }, b: { target: string; index: number }) => a.target.localeCompare(b.target) || a.index - b.index), [
+    { target: 'asset:card', index: 0, text: 'Confirm rights' },
+    { target: 'post:linkedin', index: 0, text: 'Verify claim' },
+    { target: 'post:linkedin', index: 1, text: 'Confirm source' },
+  ]);
+  assert.deepEqual(data.resolutions, [{ target: 'post:linkedin', text: 'Earlier blocker', reason: 'Verified', resolvedAt: '2025-01-01T00:00:00.000Z', by: 'owner' }]);
+  assert.equal((await fetch(`http://127.0.0.1:${started.port}/api/campaigns/acme/missing/blockers`, { headers: { cookie } })).status, 404);
+  unlinkSync(join(dir, 'resolutions.yml'));
+  assert.deepEqual((await (await fetch(endpoint, { headers: { cookie } })).json()).resolutions, []);
+});
+test('blocker resolution rejects stale text without starting a job or changing the campaign', async t => {
+  const { root, io } = fixture(), dir = join(root, 'projects/acme/campaigns/launch');
+  const postFile = join(dir, 'posts/linkedin.md');
+  const post = '---\nplatform: linkedin\nevidence: []\nmedia: []\nblockers: [Confirm source]\n---\nHello';
+  writeFileSync(postFile, post);
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const base = `http://127.0.0.1:${started.port}`;
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const headers = { cookie, origin: base, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
+  for (const args of [
+    { target: 'post:linkedin', index: '0', text: 'Verify claim', reason: 'Fixed' },
+    { target: 'post:linkedin', index: '1', text: 'Confirm source', reason: 'Fixed' },
+  ]) {
+    const response = await fetch(`${base}/api/jobs`, { method: 'POST', headers, body: JSON.stringify({ op: 'blockers resolve', campaign: 'acme/launch', args }) });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: 'This blocker list changed — refresh' });
+  }
+  assert.equal(readFileSync(postFile, 'utf8'), post);
+  assert.equal(fs.existsSync(join(dir, 'resolutions.yml')), false);
+  assert.deepEqual(await (await fetch(`${base}/api/jobs?campaign=acme%2Flaunch`, { headers })).json(), []);
+});
+
+test('blocker resolution job target remains available in the job list', { timeout: 15000 }, async t => {
+  const { root, io } = fixture(), dir = join(root, 'projects/acme/campaigns/launch');
+  writeFileSync(join(dir, 'posts/linkedin.md'), '---\nplatform: linkedin\nevidence: []\nmedia: []\nblockers: [Confirm source]\n---\nHello');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const base = `http://127.0.0.1:${started.port}`;
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const headers = { cookie, origin: base, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
+  const response = await fetch(`${base}/api/jobs`, { method: 'POST', headers, body: JSON.stringify({
+    op: 'blockers resolve', campaign: 'acme/launch', args: { target: 'post:linkedin', index: '0', text: 'Confirm source', reason: 'Verified' },
+  }) });
+  assert.equal(response.status, 202);
+  const job = await response.json() as { id: string; target?: string };
+  assert.equal(job.target, 'post:linkedin');
+  const finished = Promise.withResolvers<void>();
+  const check = async () => {
+    try {
+      const jobs = await (await fetch(`${base}/api/jobs?campaign=acme%2Flaunch`, { headers })).json() as Array<{ id: string; state: string; target?: string }>;
+      const current = jobs.find(item => item.id === job.id);
+      assert.equal(current?.target, 'post:linkedin');
+      if (current?.state === 'succeeded') finished.resolve();
+      else if (current?.state === 'failed' || current?.state === 'cancelled') finished.reject(new Error(`Resolution ${current.state}`));
+    } catch (error) { finished.reject(error); }
+  };
+  const watcher = watch(join(dir, 'logs/jobs'), () => { void check(); });
+  try { await check(); await finished.promise; } finally { watcher.close(); }
+});
+
 
 test('dashboard sessions survive restarts and reject tampering and expiration', async t => {
   const { root, io } = fixture();

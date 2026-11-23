@@ -29,6 +29,23 @@ test('registry validates campaign addresses and constructs an argument vector', 
   assert.throws(() => buildOperation('export', { campaign: 'acme/launch', local: true, mb: '/tmp' }), /Local export/);
 });
 
+test('blocker resolution jobs validate arguments and preserve command order', () => {
+  const args = { campaign: 'acme/launch', target: 'post:linkedin', index: '0', text: '  - Missing source  ', reason: '- approved by owner' };
+  const job = buildOperation('blockers resolve', args);
+  assert.deepEqual(job.args, ['blockers', 'acme/launch', 'resolve', 'post:linkedin', '0', '--text=  - Missing source  ', '--reason=- approved by owner']);
+  assert.equal(job.campaign, 'acme/launch');
+  assert.equal(job.operation.paid, false);
+  assert.deepEqual(buildOperation('blockers resolve', { ...args, target: 'asset:hero-card', index: '12' }).args, ['blockers', 'acme/launch', 'resolve', 'asset:hero-card', '12', '--text=  - Missing source  ', '--reason=- approved by owner']);
+  for (const target of ['post:../x', 'asset:', 'post:-x', 'other:card', 'post:linkedin/other']) assert.throws(() => buildOperation('blockers resolve', { ...args, target }));
+  for (const index of ['-1', '1.5', '01', '9007199254740992', '', 0]) assert.throws(() => buildOperation('blockers resolve', { ...args, index }));
+  for (const reason of ['', '  ']) assert.throws(() => buildOperation('blockers resolve', { ...args, reason }));
+  for (const text of ['', '  ']) assert.throws(() => buildOperation('blockers resolve', { ...args, text }));
+  const { text: _text, ...withoutText } = args;
+  assert.throws(() => buildOperation('blockers resolve', withoutText), /Missing text/);
+  assert.throws(() => buildOperation('blockers resolve', { ...args, extra: true }));
+  assert.throws(() => buildOperation('blockers resolve', { campaign: args.campaign, target: args.target, index: args.index }));
+});
+
 test('project operations use global structured arguments', () => {
   const job = buildOperation('project new', { project: 'acme', repo: 'org/repo', url: ['https://example.com/a', 'https://example.com/b'], note: ['- first', 'second'] });
   assert.equal(job.campaign, undefined);

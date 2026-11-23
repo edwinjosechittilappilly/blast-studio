@@ -16,6 +16,7 @@ import { containedPath, listProjects, readProject, validateId } from '../campaig
 import { parseBrief } from '../brief.ts';
 import { historyEntries } from '../history.ts';
 import { loadEnvWithSources } from '../env.ts';
+import { listBlockers, readResolutions } from '../blockers.ts';
 
 const staticDir = join(dirname(fileURLToPath(import.meta.url)), 'static');
 const buildDir = join(dirname(fileURLToPath(import.meta.url)), 'build');
@@ -126,6 +127,12 @@ export async function startDashboard(io: IO, options: { port?: number; host?: st
         }
       }
       if (req.method === 'GET') {
+        const blockersApi = /^\/api\/campaigns\/([^/]+)\/([^/]+)\/blockers$/.exec(pathname);
+        if (blockersApi) {
+          const dir = campaignDir(config, { project: decodeURIComponent(blockersApi[1]), campaign: decodeURIComponent(blockersApi[2]) });
+          if (!existsSync(dir)) { send(res, 404, { error: 'Campaign not found' }); return; }
+          send(res, 200, { blockers: listBlockers(dir), resolutions: readResolutions(dir) }); return;
+        }
         const historyApi = /^\/api\/campaigns\/([^/]+)\/([^/]+)\/history$/.exec(pathname);
         if (historyApi) {
           const dir = campaignDir(config, { project: decodeURIComponent(historyApi[1]), campaign: decodeURIComponent(historyApi[2]) });

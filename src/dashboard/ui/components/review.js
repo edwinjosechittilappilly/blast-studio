@@ -75,7 +75,9 @@ export function gateList(gates) {
   const list = el('ul', null, 'gates');
   for (const gate of [...(gates || [])].sort((a, b) => Number(a.pass) - Number(b.pass))) {
     const li = el('li', null, gate.pass ? 'status-pass' : 'status-fail');
-    li.append(statusIcon(gate.pass), el('strong', gate.pass ? 'Pass' : 'Fail'), document.createTextNode(` · ${gate.id}${gate.message ? ` — ${gate.message}` : ''}`)); list.append(li);
+    li.append(statusIcon(gate.pass), el('strong', gate.pass ? 'Pass' : 'Fail'), document.createTextNode(` · ${gate.id}${gate.message ? ` — ${gate.message}` : ''}`));
+    if (gate.blockerCount) { const link = el('a', 'see Blockers'); link.href = '#blockers'; link.addEventListener('click', event => { event.preventDefault(); document.getElementById('blockers')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }); li.append(document.createTextNode(' — '), link); }
+    list.append(li);
   }
   return list;
 }

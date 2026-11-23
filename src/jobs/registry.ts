@@ -3,7 +3,7 @@ import { containedPath, parseCampaignRef } from '../campaigns.ts';
 import { readPlan } from '../plan.ts';
 import { UserError } from '../types.ts';
 
-type Kind = 'id' | 'campaign' | 'ids' | 'text' | 'url' | 'path' | 'number' | 'bool' | 'repo' | 'sha';
+type Kind = 'id' | 'campaign' | 'ids' | 'text' | 'url' | 'path' | 'number' | 'bool' | 'repo' | 'sha' | 'blockerTarget' | 'index';
 type Field = { kind: Kind; required?: boolean; positional?: boolean; flag?: string; multiple?: boolean };
 export type Operation = { fields: Record<string, Field>; campaign: boolean; paid: boolean; step: string; requiresTTY: boolean };
 const campaign: Field = { kind: 'campaign', required: true, positional: true };
@@ -43,6 +43,7 @@ export const operations: Readonly<Record<string, Operation>> = {
   'feedback list': operation('feedback', { campaign }, false, false),
   'feedback add': operation('feedback', { campaign, note: { ...inputs.note, required: true }, asset: option('id', '--asset'), platform: option('id', '--platform') }),
   'feedback rm': operation('feedback', { campaign, id: id(true) }),
+  'blockers resolve': operation('blockers', { campaign, target: { kind: 'blockerTarget', required: true, positional: true }, index: { kind: 'index', required: true, positional: true }, text: { ...option('text', '--text'), required: true }, reason: { ...option('text', '--reason'), required: true } }),
 };
 export function operationRequiresTTY(name: string, operation: Operation, imageProvider?: string, root?: string, ref?: string): boolean {
   if (operation.requiresTTY || (name === 'new' && imageProvider === 'omp')) return true;
@@ -65,6 +66,9 @@ function validate(value: unknown, kind: Kind, key: string): string | boolean {
   if (kind === 'campaign') return campaignRef(value);
   if (kind === 'id' && !slug.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'ids' && !value.split(',').every(s => slug.test(s))) throw new UserError(`Invalid ${key}`);
+  if (kind === 'blockerTarget' && !/^(?:post|asset):[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)) throw new UserError(`Invalid ${key}`);
+  if (kind === 'index' && (!/^(?:0|[1-9]\d*)$/.test(value) || !Number.isSafeInteger(Number(value)))) throw new UserError(`Invalid ${key}`);
+  if ((key === 'reason' || key === 'text') && !value.trim()) throw new UserError(`Invalid ${key}`);
   if (kind === 'number' && !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) throw new UserError(`Invalid ${key}`);
   if ((key === 'pr' || key === 'version') && !/^\d+$/.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'sha' && !/^[a-f\d]{4,64}$/i.test(value)) throw new UserError(`Invalid ${key}`);
@@ -97,8 +101,8 @@ export function buildOperation(name: string, raw: unknown, options: { imageProvi
       }
     }
   }
-  // Feedback syntax places the action after its campaign.
-  const args = cmd === 'feedback' ? [cmd, ...positional.slice(0, 1), ...sub, ...positional.slice(1), ...flags] : [cmd, ...sub, ...positional, ...flags];
+  // Feedback and blockers syntax place the action after the campaign.
+  const args = cmd === 'feedback' || cmd === 'blockers' ? [cmd, ...positional.slice(0, 1), ...sub, ...positional.slice(1), ...flags] : [cmd, ...sub, ...positional, ...flags];
   const quote = (s: string) => /^[a-zA-Z0-9_./:=,-]+$/.test(s) ? s : `'${s.replaceAll("'", "'\\''")}'`;
   return { operation: op, args, campaign: ref, command: ['bstudio', ...args].map(quote).join(' '), requiresTTY: operationRequiresTTY(name, op, options.imageProvider, options.root, ref) };
 }

@@ -5,7 +5,7 @@
 .beads-credential-key
 .beads/proxieddb/
 *.gate.lock*
-node_modules/
+node_modules
 dist/
 src/dashboard/build/
 site/

@@ -10,7 +10,7 @@ import { buildOperation } from './registry.ts';
 import { exactProcess, linuxStat, processAlive, processStarted, sameProcess } from './process.ts';
 
 export type JobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
-export interface Job { id: string; operation: string; campaign?: string; state: JobState; createdAt: string; updatedAt: string; pid?: number; processStarted?: string; childStarted?: Record<string, string>; exitCode?: number | null; completed?: boolean; findings?: boolean; command: string; cancelRequested?: boolean; processGroup?: boolean; childPids?: number[] }
+export interface Job { id: string; operation: string; campaign?: string; target?: string; state: JobState; createdAt: string; updatedAt: string; pid?: number; processStarted?: string; childStarted?: Record<string, string>; exitCode?: number | null; completed?: boolean; findings?: boolean; command: string; cancelRequested?: boolean; processGroup?: boolean; childPids?: number[] }
 export class JobConflict extends Error { owner: string; constructor(owner: string) { super(`Campaign is locked by ${owner}`); this.owner = owner; } }
 export class JobNotFound extends UserError { constructor() { super('Job not found'); } }
 export class JobNotRunning extends UserError { constructor() { super('Job is not running'); } }
@@ -181,7 +181,7 @@ export function startJob(root: string, name: string, values: unknown, options: {
   if (built.campaign && (name === 'new' || name === 'brief')) campaignDirectory(root, built.campaign, true);
   const id = randomUUID(), dir = logDir(root, built.campaign), release = built.campaign && built.operation.campaign ? acquireCampaignLock(root, built.campaign, id) : () => {};
   const now = new Date().toISOString();
-  const job: Job = { id, operation: name, campaign: built.campaign, state: 'queued', createdAt: now, updatedAt: now, command: built.command };
+  const job: Job = { id, operation: name, campaign: built.campaign, ...(name === 'blockers resolve' ? { target: (values as Record<string, string>).target } : {}), state: 'queued', createdAt: now, updatedAt: now, command: built.command };
   try {
     writeJob(dir, job);
     const fd = openSync(join(dir, `${id}.log`), 'a', 0o600);
