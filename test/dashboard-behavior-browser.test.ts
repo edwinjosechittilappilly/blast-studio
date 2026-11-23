@@ -485,3 +485,61 @@ test('saved review gate paths are shown relative to the campaign', async t => {
   await page.getByText('Fail · source — See posts/linkedin.md').waitFor();
   assert.equal(await page.getByText('/old/home', { exact: false }).count(), 0);
 });
+
+test('stale destination review survives reload and opens review for that platform', async t => {
+  const { page, url } = await dashboard(t);
+  let stale = true;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.reviews = [{ platform: 'linkedin', verdict: 'blocked', stale, gates: [], scores: [] }];
+    await route.fulfill({ response, json: project });
+  });
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  await page.getByRole('link', { name: 'Run review' }).waitFor();
+  await page.reload();
+  await page.getByRole('link', { name: 'Run review' }).click();
+  const modal = page.locator('cds-modal');
+  await modal.getByText('Review', { exact: true }).first().waitFor();
+  await modal.locator('cds-select').waitFor();
+  assert.equal(await modal.locator('cds-select').evaluate(node => (node as HTMLElement & { value: string }).value), 'linkedin');
+  await modal.getByRole('button', { name: 'Cancel' }).click();
+  stale = false;
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  await page.getByRole('heading', { name: 'Independent review' }).waitFor();
+  assert.equal(await page.getByRole('link', { name: 'Run review' }).count(), 0);
+});
+
+test('assets refresh blocker counts after resolution and keep long self-reviews in View', async t => {
+  const { page, url } = await dashboard(t);
+  let resolved = false;
+  const summary = 'A detailed self-review '.repeat(30);
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.assets = [{ id: 'card', kind: 'image', outputs: [], blockers: resolved ? [] : ['Missing source'], selfReview: { summary, checks: [] } }];
+    await route.fulfill({ response, json: project });
+  });
+  await page.route('**/api/campaigns/acme/launch/blockers', route => route.fulfill({ json: { blockers: resolved ? [] : [{ target: 'asset:card', index: 0, text: 'Missing source' }], resolutions: [] } }));
+  await page.route('**/api/jobs?*', route => route.fulfill({ json: resolved ? [{ id: 'resolve-asset', operation: 'blockers resolve', target: 'asset:card', state: 'succeeded' }] : [] }));
+  await page.route('**/api/jobs/resolve-asset/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.route('**/api/jobs', route => { resolved = true; return route.fulfill({ json: { id: 'resolve-asset' } }); });
+  await page.goto(`${url}#/p/acme/launch/assets`);
+  const row = page.locator('cds-table-row').filter({ hasText: 'card' });
+  await row.getByRole('button', { name: 'View' }).click();
+  await page.locator('cds-modal').getByText(summary, { exact: true }).waitFor();
+  await page.locator('cds-modal').getByRole('button', { name: 'Close' }).click();
+  assert.equal(await row.locator('.asset-review-summary').evaluate(node => node.scrollWidth > node.clientWidth), true);
+  assert.equal(await row.locator('cds-table-cell').nth(6).innerText(), '1');
+  await page.getByRole('button', { name: 'Resolve assets/card/asset.yml blocker 1' }).click();
+  await page.locator('cds-modal textarea').fill('Source added');
+  await page.locator('cds-modal').getByRole('button', { name: 'Resolve', exact: true }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('cds-table-row')].some(row => row.textContent?.includes('card') && row.querySelectorAll('cds-table-cell')[6]?.textContent === '0'));
+});
+
+test('actions hide the job status card when there are no jobs', async t => {
+  const { page, url } = await dashboard(t);
+  await page.route('**/api/jobs?*', route => route.fulfill({ json: [] }));
+  await page.goto(`${url}#/p/acme/launch/actions`);
+  await page.getByRole('heading', { name: 'Campaign actions' }).waitFor();
+  assert.equal(await page.getByRole('heading', { name: 'Job status' }).count(), 0);
+  assert.equal(await page.locator('.actions-job').getByText('No jobs yet.').isVisible(), false);
+});

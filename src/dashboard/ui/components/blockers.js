@@ -48,7 +48,7 @@ export function renderBlockers(project, target = null, onResolved = () => {}) {
       content.replaceChildren(el('p', `Could not load blockers: ${error.message}`, 'form-error'), retry);
     }
   }
-  const run = jobRegion(section, { project }, { operation: 'blockers resolve', ownOnly: true, matches: job => !target || (target === 'asset:' ? job.target?.startsWith(target) : job.target === target), onConflict: async error => { if (error.message !== 'This blocker list changed — refresh') return false; await load(); conflict.textContent = error.message; return true; }, onComplete: async job => { await load(); if (job.state === 'succeeded') { const updated = await api(`/api/project/${encodeURIComponent(project.slug)}`); project.reviews = updated.reviews; onResolved(job.target || resolvingTarget); } } });
+  const run = jobRegion(section, { project }, { operation: 'blockers resolve', ownOnly: true, matches: job => !target || (target === 'asset:' ? job.target?.startsWith(target) : job.target === target), onConflict: async error => { if (error.message !== 'This blocker list changed — refresh') return false; await load(); conflict.textContent = error.message; return true; }, onComplete: async job => { await load(); if (job.state === 'succeeded') { const updated = await api(`/api/project/${encodeURIComponent(project.slug)}`); project.reviews = updated.reviews; project.assets = updated.assets; onResolved(job.target || resolvingTarget); } } });
   content.append(el('p', 'Loading blockers…', 'muted')); setTimeout(load, 0);
   return section;
 }

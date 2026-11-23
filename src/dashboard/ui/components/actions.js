@@ -24,7 +24,7 @@ function terminalCommand(op, schema, campaign, args) {
 
 export function jobRegion(container, ctx, options = {}) {
   const region = el('section', null, 'surface job-status actions-job'), status = el('div'), startError = el('div'), cancelError = el('div'), details = el('details'), log = el('pre', null, 'job-log actions-log'), cancel = button('Cancel job', 'secondary');
-  details.append(el('summary', 'Job log'), log); cancel.hidden = true; region.hidden = !!options.ownOnly; region.append(el('h2', 'Job status'), startError, status, cancelError, cancel, details); container.append(region);
+  details.append(el('summary', 'Job log'), log); cancel.hidden = true; region.hidden = true; region.append(el('h2', 'Job status'), startError, status, cancelError, cancel, details); container.append(region);
   let current, timer, lastState, generation = 0, lockConflict = false;
   async function refresh() {
     if (!region.isConnected) { clearTimeout(timer); return; }
@@ -37,7 +37,7 @@ export function jobRegion(container, ctx, options = {}) {
       const jobs = allJobs.filter(job => (!options.operation || job.operation === options.operation) && (!options.matches || options.matches(job)));
       const job = current ? jobs.find(item => item.id === current) : options.ownOnly ? jobs.find(item => item.state === 'queued' || item.state === 'running') : jobs[0];
       if (!job) { status.replaceChildren(el('p', 'No jobs yet.', 'muted')); details.hidden = true; cancel.hidden = true; if (lockConflict) timer = setTimeout(refresh, 2000); return; }
-      current = job.id; if (options.ownOnly) region.hidden = false;
+      current = job.id; region.hidden = false;
       const result = await api(`/api/jobs/${encodeURIComponent(job.id)}/log?tail=200`), lines = (result.log || '').trim().split('\n').filter(Boolean);
       if (request !== generation || current !== job.id || !region.isConnected) return;
       log.textContent = result.log || 'No log output yet.'; details.hidden = false;
@@ -51,7 +51,7 @@ export function jobRegion(container, ctx, options = {}) {
       if (request === generation && (running || lockConflict)) timer = setTimeout(refresh, 2000);
     } catch (error) {
       if (request !== generation || !region.isConnected) return;
-      const retry = button('Retry status', 'secondary'); retry.addEventListener('click', refresh);
+      region.hidden = false; const retry = button('Retry status', 'secondary'); retry.addEventListener('click', refresh);
       status.replaceChildren(notice(error.message), retry);
     }
   }
@@ -64,7 +64,7 @@ export function jobRegion(container, ctx, options = {}) {
         try { const jobs = await api(`/api/jobs?campaign=${encodeURIComponent(slugOf(ctx))}`); const running = jobs.find(job => job.state === 'running' || job.state === 'queued'); message = `Another job${running ? ` (${running.operation})` : ''} is running on this campaign. Wait for it or cancel it.`; } catch { message = 'Another job is running on this campaign. Wait for it or cancel it.'; }
       }
       if (error.status === 409 && await options.onConflict?.(error)) return true;
-      const n = el('cds-inline-notification'); n.setAttribute('kind', 'error'); n.setAttribute('title', message); startError.replaceChildren(n); if (error.command) startError.append(el('code', error.command), copyButton('Copy command', error.command)); reportError(message); if (lockConflict) { clearTimeout(timer); timer = setTimeout(refresh, 2000); } return false;
+      region.hidden = false; const n = el('cds-inline-notification'); n.setAttribute('kind', 'error'); n.setAttribute('title', message); startError.replaceChildren(n); if (error.command) startError.append(el('code', error.command), copyButton('Copy command', error.command)); reportError(message); if (lockConflict) { clearTimeout(timer); timer = setTimeout(refresh, 2000); } return false;
     }
   }
   setTimeout(refresh, 0); return run;
@@ -109,7 +109,7 @@ export function renderActions(container, ctx) {
     if (new URLSearchParams(location.hash.split('?')[1] || '').get('start') === op) setTimeout(() => { b.focus(); b.click(); }, 0);
     b.addEventListener('click', () => {
       const fields = [];
-      if (schema.fields.platforms) fields.push(select('platforms', 'Platform', platforms()));
+      if (schema.fields.platforms) { const platform = select('platforms', 'Platform', platforms()), requested = new URLSearchParams(location.hash.split('?')[1] || '').get('platform'); if (op === 'review' && platforms().includes(requested)) platform.node.value = requested; fields.push(platform); }
       if (schema.fields.assets) fields.push(select('assets', 'Asset', assets()));
       if (op === 'accept') fields.push(select('platform', 'Platform', project.reviews.filter(review => review.verdict === 'revise' && Array.isArray(review.gates) && review.gates.length && review.gates.every(gate => gate?.pass === true) && project.posts.some(post => post.platform === review.platform)).map(review => review.platform), true), input('reason', 'Reason', true, 'cds-textarea'));
       if (op === 'confirm') fields.push(select('asset', 'Asset', assets(), true), check('trademarkChecked', 'Trademark checked'), input('license', 'License'));
@@ -131,7 +131,8 @@ export function renderAssetsTable(container, ctx) {
   const table = el('cds-table'), head = el('cds-table-head'), hr = el('cds-table-header-row'); for (const label of ['Asset', 'Kind', 'Outputs', 'AI generated', 'Cost', 'Self-review', 'Blockers', '']) hr.append(el('cds-table-header-cell', label)); head.append(hr); const body = el('cds-table-body');
   for (const asset of project.assets) {
     const row = el('cds-table-row'), idCell = el('cds-table-cell'), link = button(asset.id, 'ghost'); idCell.append(link); row.append(idCell);
-    for (const value of [asset.kind, String((asset.outputs || []).length), asset.aiGenerated ? 'Yes' : 'No', asset.costUsd == null ? '—' : `$${Number(asset.costUsd).toFixed(2)}`, asset.selfReview?.summary || (asset.selfReview ? 'Available' : '—'), String((asset.blockers || []).length)]) row.append(el('cds-table-cell', value));
+    for (const value of [asset.kind, String((asset.outputs || []).length), asset.aiGenerated ? 'Yes' : 'No', asset.costUsd == null ? '—' : `$${Number(asset.costUsd).toFixed(2)}`]) row.append(el('cds-table-cell', value));
+    const reviewCell = el('cds-table-cell'), summary = el('span', asset.selfReview?.summary || (asset.selfReview ? 'Available' : '—'), 'asset-review-summary'); reviewCell.append(summary); row.append(reviewCell, el('cds-table-cell', String((asset.blockers || []).length)));
     const cell = el('cds-table-cell'), view = button('View', 'ghost'); cell.append(view); row.append(cell); body.append(row);
     const show = () => { const modal = el('cds-modal'); modal.setAttribute('open', ''); const header = el('cds-modal-header'), x = el('cds-modal-close-button'); header.append(el('cds-modal-heading', asset.id), x); const content = el('cds-modal-body', null, 'actions-modal-body'); const items = (asset.outputs || []).map(output => ({ ...output, file: `assets/${asset.id}/${output.file}`, alt: '' })); content.append(ctx.mediaGallery(project.slug, items, project.captions), ctx.selfReview(asset.selfReview)); if (asset.blockers?.length) { const block = notice('This asset has blockers. Resolve these before exporting.'); block.setAttribute('subtitle', asset.blockers.map(item => typeof item === 'string' ? item : JSON.stringify(item)).join('; ')); content.append(block); } content.append(ctx.feedbackForm(project, { asset: asset.id })); const footer = el('cds-modal-footer'), close = button('Close', 'secondary'); footer.append(close); modal.append(header, content, footer); document.body.append(modal); close.addEventListener('click', () => modal.remove()); x.addEventListener('click', () => modal.remove()); modal.addEventListener('cds-modal-closed', () => modal.remove()); };
     view.addEventListener('click', show); link.addEventListener('click', show);
