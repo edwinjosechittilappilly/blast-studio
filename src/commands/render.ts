@@ -10,6 +10,7 @@ import { loadPosts, serializePost } from '../posts.ts';
 import { closeBrowser, renderDiagram, renderHtml, renderSvg } from '../render/stills.ts';
 import { renderVideo } from '../render/video.ts';
 import { combinedZone } from '../render/metrics.ts';
+import { sourceHash } from '../render/source-hash.ts';
 import { generateImage } from '../providers/images.ts';
 import { generateVoice } from '../providers/voice.ts';
 import { UserError } from '../types.ts';
@@ -55,6 +56,7 @@ async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<nu
       if (!existsSync(metaPath)) throw new UserError(`Missing ${metaPath}`);
       const raw = parse(readFileSync(metaPath, 'utf8')) as AssetMeta & { size?: { width: number; height: number }; width?: number; height?: number };
       if (!raw || raw.id !== asset.id || raw.kind !== asset.kind) throw new UserError(`Invalid metadata for ${asset.id}`);
+      const renderedSourceHash = sourceHash(dir);
       const out = join(dir, 'out'); mkdirSync(out, { recursive: true });
       const outputs: AssetMeta['outputs'] = [], metrics: NonNullable<AssetMeta['metrics']> = [];
       const add = (file: string, width?: number, height?: number) => outputs.push({ file: `out/${basename(file)}`, bytes: statSync(file).size, ...(width ? { width } : {}), ...(height ? { height } : {}) });
@@ -138,6 +140,7 @@ async function render(args: string[], io: IO, saveSnapshot: boolean): Promise<nu
         selections.set(asset.id, chosen);
       }
       else throw new UserError(`Unsupported asset kind: ${asset.kind}`);
+      for (const output of outputs) output.sourceHash = renderedSourceHash;
       if (outputs.length) delete raw.skipped;
       raw.outputs = outputs; raw.metrics = metrics; metadata.set(asset.id, { dir, meta: raw });
     }

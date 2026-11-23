@@ -196,7 +196,7 @@ export interface AssetMeta {
   selfReview?: AssetSelfReview;
   promptHash?: string;
   costUsd?: number | null;
-  outputs: { file: string; width?: number; height?: number; seconds?: number; bytes: number; aspect?: string; audio?: boolean; audioHash?: string }[];
+  outputs: { file: string; width?: number; height?: number; seconds?: number; bytes: number; aspect?: string; audio?: boolean; audioHash?: string; sourceHash?: string }[];
   license: string | null;
   aiGenerated: boolean;
   voiceGenerated?: boolean;

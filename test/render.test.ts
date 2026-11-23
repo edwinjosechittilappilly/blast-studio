@@ -1,12 +1,15 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { closeBrowser, renderDiagram, renderHtml, renderSvg } from '../src/render/stills.ts';
 import { fillTemplate } from '../src/render/template.ts';
 import { combinedZone } from '../src/render/metrics.ts';
 import { loadPack } from '../src/packs.ts';
+import { parse, stringify } from 'yaml';
+import { run as render } from '../src/commands/render.ts';
+import { fakeIO, tempStudio } from './helpers.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'bstudio-test-render-'));
 after(async () => { await closeBrowser(); rmSync(dir, { recursive: true, force: true }); });
@@ -99,4 +102,19 @@ test('D2 renders SVG and PNG', { timeout: 20000 }, async () => {
   const output = await renderDiagram(input, join(dir, 'diagram.svg'));
   assert.match(readFileSync(output.svg, 'utf8'), /<svg/);
   assert.ok(readFileSync(output.png).length > 100);
+});
+
+test('render records source fingerprints for every carousel output', { timeout: 20000 }, async () => {
+  const root = tempStudio(), project = join(root, 'projects/demo/campaigns/launch');
+  const asset = join(project, 'assets/slides');
+  mkdirSync(join(asset, 'source'), { recursive: true });
+  writeFileSync(join(project, 'plan.yml'), stringify([{ platform: 'x', type: 'carousel', angle: 'Explain', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'slides', kind: 'carousel', brief: 'Explain' }] }]));
+  writeFileSync(join(asset, 'asset.yml'), stringify({ id: 'slides', kind: 'carousel', provider: 'template', outputs: [], license: null, aiGenerated: false, size: { width: 160, height: 160 } }));
+  writeFileSync(join(asset, 'source/01.html'), '<html><body>First</body></html>');
+  writeFileSync(join(asset, 'source/02.html'), '<html><body>Second</body></html>');
+  await render(['demo/launch'], fakeIO({ cwd: root, env: { BSTUDIO_CONFIG: join(root, 'studio.yml'), BSTUDIO_HOME: root } }));
+  const meta = parse(readFileSync(join(asset, 'asset.yml'), 'utf8'));
+  assert.equal(meta.outputs.length, 3);
+  for (const output of meta.outputs) assert.match(output.sourceHash, /^[a-f0-9]{64}$/);
+  assert.equal(new Set(meta.outputs.map((output: { sourceHash: string }) => output.sourceHash)).size, 1);
 });

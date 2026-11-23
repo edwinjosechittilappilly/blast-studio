@@ -4,6 +4,7 @@ import { closeSync, openSync, readFileSync, readSync, realpathSync, statSync } f
 import { join, relative, isAbsolute } from 'node:path';
 import { readPlan } from '../plan.ts';
 import { blockerTexts } from '../blockers.ts';
+import { sourceHash } from '../render/source-hash.ts';
 
 import type { AssetMeta, BriefSection, GateResult, PlatformPack, Post, StudioConfig } from '../types.ts';
 
@@ -71,6 +72,15 @@ export function runGates(post: Post, pack: PlatformPack, assets: AssetMeta[], br
   blockers((post as Post & { blockers?: unknown }).blockers, post.path);
   const planned = projectDir && campaignFile(projectDir, 'plan.yml') ? readPlan(projectDir).find(entry => entry.platform === post.platform)?.assets.map(asset => asset.id) ?? [] : [];
   for (const asset of assets) if (used.has(asset.id) || planned.includes(asset.id)) blockers((asset as AssetMeta & { blockers?: unknown }).blockers, `asset ${asset.id}`);
+  if (projectDir) for (const asset of assets) {
+    if ((!used.has(asset.id) && !planned.includes(asset.id)) || !asset.outputs.length) continue;
+    if (asset.outputs.some(output => !output.sourceHash)) warnings.push(`assets/${asset.id}: rendered output has no source hash; run render`);
+    if (asset.outputs.some(output => output.sourceHash)) {
+      let current: string | undefined;
+      try { current = sourceHash(join(projectDir, 'assets', asset.id)); } catch { /* Missing or unreadable sources cannot match a render. */ }
+      if (asset.outputs.some(output => output.sourceHash && output.sourceHash !== current)) add('specs', `assets/${asset.id}: rendered output is out of date; run render`);
+    }
+  }
   // Post prose gets every marker, with Markdown code exempt (snippets legitimately hold `${{ secrets.X }}`, TODO
   // comments or `xxx` values). Rendered text and captions carry no backticks to mark code, so they only get the
   // markers no real snippet contains.
