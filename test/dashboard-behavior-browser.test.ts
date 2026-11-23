@@ -398,3 +398,30 @@ test('Escape closes the jobs panel and restores focus to its toggle', async t =>
   assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
   assert.equal(await toggle.evaluate(element => element === document.activeElement), true);
 });
+
+test('blockers can be resolved with a reason and appear in history', async t => {
+  const { page, url } = await dashboard(t, { width: 390, height: 844 });
+  let submitted: unknown;
+  await page.route('**/api/campaigns/acme/launch/blockers', route => route.fulfill({ json: submitted
+    ? { blockers: [], resolutions: [{ target: 'post:linkedin', text: 'Missing source', reason: 'Source added', resolvedAt: '2026-01-01T00:00:00Z', by: 'owner' }] }
+    : { blockers: [{ target: 'post:linkedin', index: 0, text: 'Missing source' }], resolutions: [] } }));
+  await page.route('**/api/jobs?*', route => route.fulfill({ json: submitted ? [{ id: 'resolve-1', operation: 'blockers resolve', state: 'succeeded' }] : [] }));
+  await page.route('**/api/jobs/resolve-1/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.route('**/api/jobs', route => {
+    submitted = route.request().postDataJSON();
+    return route.fulfill({ json: { id: 'resolve-1' } });
+  });
+  await page.goto(`${url}#/p/acme/launch/overview`);
+  await page.getByText('posts/linkedin.md').waitFor();
+  await page.getByRole('button', { name: 'Resolve blocker for post:linkedin: Missing source' }).click();
+  const modal = page.locator('cds-modal');
+  await modal.getByRole('button', { name: 'Resolve', exact: true }).click();
+  assert.equal(await modal.locator('cds-textarea').getAttribute('invalid'), '');
+  await modal.locator('cds-textarea').locator('textarea').fill('Source added');
+  await modal.getByRole('button', { name: 'Resolve', exact: true }).click();
+  await page.getByText('No open blockers.').waitFor();
+  assert.deepEqual(submitted, { op: 'blockers resolve', campaign: 'acme/launch', args: { target: 'post:linkedin', index: '0', reason: 'Source added' } });
+  await page.getByText('Resolved history (1)').click();
+  await page.getByText('Reason: Source added').waitFor();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+});
