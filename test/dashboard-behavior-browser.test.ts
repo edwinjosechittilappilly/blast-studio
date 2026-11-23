@@ -405,27 +405,72 @@ test('blockers can be resolved with a reason and appear in history', async t => 
   await page.route('**/api/campaigns/acme/launch/blockers', route => route.fulfill({ json: submitted
     ? { blockers: [], resolutions: [{ target: 'post:linkedin', text: 'Missing source', reason: 'Source added', resolvedAt: '2026-01-01T00:00:00Z', by: 'owner' }] }
     : { blockers: [{ target: 'post:linkedin', index: 0, text: 'Missing source' }], resolutions: [] } }));
-  await page.route('**/api/jobs?*', route => route.fulfill({ json: submitted ? [{ id: 'resolve-1', operation: 'blockers resolve', state: 'succeeded' }] : [] }));
+  await page.route('**/api/jobs?*', route => route.fulfill({ json: submitted ? [{ id: 'resolve-1', operation: 'blockers resolve', target: 'post:linkedin', state: 'succeeded' }] : [] }));
   await page.route('**/api/jobs/resolve-1/log?*', route => route.fulfill({ json: { log: '' } }));
   await page.route('**/api/jobs', route => {
     submitted = route.request().postDataJSON();
     return route.fulfill({ json: { id: 'resolve-1' } });
   });
   await page.goto(`${url}#/p/acme/launch/linkedin`);
-  await page.getByText('posts/linkedin.md', { exact: true }).waitFor();
+  await page.getByText('posts/linkedin.md · Blocker 1', { exact: true }).waitFor();
   const resolve = page.getByRole('button', { name: 'Resolve posts/linkedin.md blocker 1' });
   assert.equal(await page.locator('cds-button').filter({ hasText: 'Resolve posts/linkedin.md blocker 1' }).evaluate(node => node.firstChild?.textContent), 'Resolve');
   await resolve.click();
   const modal = page.locator('cds-modal');
   await modal.getByRole('button', { name: 'Resolve', exact: true }).click();
   assert.equal(await modal.locator('cds-textarea').getAttribute('invalid'), '');
+  assert.equal(await modal.locator('cds-textarea').getAttribute('invalid-text'), 'Enter a reason.');
+  await modal.getByText(/audit history.*snapshot.*review/i).waitFor();
   await modal.locator('cds-textarea').locator('textarea').fill('Source added');
   await modal.getByRole('button', { name: 'Resolve', exact: true }).click();
   await page.getByText('No open blockers.').waitFor();
-  assert.deepEqual(submitted, { op: 'blockers resolve', campaign: 'acme/launch', args: { target: 'post:linkedin', index: '0', reason: 'Source added' } });
+  assert.deepEqual(submitted, { op: 'blockers resolve', campaign: 'acme/launch', args: { target: 'post:linkedin', index: '0', text: 'Missing source', reason: 'Source added' } });
   await page.getByText('Resolved history (1)').click();
   await page.getByText('Reason: Source added').waitFor();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+});
+
+test('stale blocker conflicts refresh the list without starting a job', async t => {
+  const { page, url } = await dashboard(t);
+  let changed = false;
+  await page.route('**/api/campaigns/acme/launch/blockers', route => route.fulfill({ json: { blockers: [{ target: 'post:linkedin', index: 0, text: changed ? 'New blocker' : 'Old blocker' }], resolutions: [] } }));
+  await page.route('**/api/jobs', route => { changed = true; return route.fulfill({ status: 409, json: { error: 'This blocker list changed — refresh' } }); });
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  await page.getByRole('button', { name: 'Resolve posts/linkedin.md blocker 1' }).click();
+  const modal = page.locator('cds-modal');
+  await modal.locator('cds-textarea').locator('textarea').fill('Fixed');
+  await modal.getByRole('button', { name: 'Resolve', exact: true }).click();
+  await modal.getByText('This blocker list changed — refresh').waitFor();
+  await page.getByText('New blocker').waitFor();
+});
+
+test('blocker gate summaries link to the list and assets show only asset blockers', async t => {
+  const { page, url } = await dashboard(t);
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.reviews = [{ platform: 'linkedin', verdict: 'blocked', stale: true, gates: [{ id: 'specs', pass: false, message: 'Blocker in posts/linkedin.md: First; Blocker in posts/linkedin.md: Second; Blocker in posts/linkedin.md: Third' }], scores: [] }];
+    await route.fulfill({ json: project });
+  });
+  await page.route('**/api/campaigns/acme/launch/blockers', route => route.fulfill({ json: { blockers: [
+    { target: 'post:linkedin', index: 0, text: 'First' }, { target: 'post:linkedin', index: 1, text: 'Second' }, { target: 'post:linkedin', index: 2, text: 'Third' },
+    { target: 'asset:card', index: 0, text: 'Asset problem' },
+  ], resolutions: [] } }));
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  await page.getByText('posts/linkedin.md · Blocker 3').waitFor();
+  assert.equal(await page.getByText('First', { exact: true }).count(), 1);
+  assert.equal(await page.getByRole('link', { name: 'see Blockers' }).count(), 2);
+  await page.getByRole('link', { name: 'Run review' }).waitFor();
+  await page.getByRole('tab', { name: 'Assets' }).click();
+  await page.getByText('Asset problem').waitFor();
+  assert.equal(await page.getByText('First', { exact: true }).count(), 0);
+});
+
+test('another target’s resolution job is not shown in the destination blocker section', async t => {
+  const { page, url } = await dashboard(t);
+  await page.route('**/api/jobs?*', route => route.fulfill({ json: [{ id: 'other', operation: 'blockers resolve', target: 'post:x', state: 'running', createdAt: '2026-01-01T00:00:00Z' }] }));
+  await page.goto(`${url}#/p/acme/launch/linkedin`);
+  await page.getByText('No open blockers.').waitFor();
+  assert.equal(await page.getByRole('heading', { name: 'Job status' }).count(), 0);
 });
 
 test('saved review gate paths are shown relative to the campaign', async t => {

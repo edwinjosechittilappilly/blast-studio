@@ -24,7 +24,7 @@ function terminalCommand(op, schema, campaign, args) {
 
 export function jobRegion(container, ctx, options = {}) {
   const region = el('section', null, 'surface job-status actions-job'), status = el('div'), startError = el('div'), cancelError = el('div'), details = el('details'), log = el('pre', null, 'job-log actions-log'), cancel = button('Cancel job', 'secondary');
-  details.append(el('summary', 'Job log'), log); cancel.hidden = true; region.append(el('h2', 'Job status'), startError, status, cancelError, cancel, details); container.append(region);
+  details.append(el('summary', 'Job log'), log); cancel.hidden = true; region.hidden = !!options.ownOnly; region.append(el('h2', 'Job status'), startError, status, cancelError, cancel, details); container.append(region);
   let current, timer, lastState, generation = 0, lockConflict = false;
   async function refresh() {
     if (!region.isConnected) { clearTimeout(timer); return; }
@@ -34,10 +34,10 @@ export function jobRegion(container, ctx, options = {}) {
       const allJobs = await api(`/api/jobs?campaign=${encodeURIComponent(slugOf(ctx))}`);
       if (request !== generation || !region.isConnected) return;
       if (lockConflict && !allJobs.some(job => job.state === 'queued' || job.state === 'running')) { startError.replaceChildren(); lockConflict = false; }
-      const jobs = allJobs.filter(job => !options.operation || job.operation === options.operation);
-      const job = current ? jobs.find(item => item.id === current) : jobs[0];
+      const jobs = allJobs.filter(job => (!options.operation || job.operation === options.operation) && (!options.matches || options.matches(job)));
+      const job = current ? jobs.find(item => item.id === current) : options.ownOnly ? jobs.find(item => item.state === 'queued' || item.state === 'running') : jobs[0];
       if (!job) { status.replaceChildren(el('p', 'No jobs yet.', 'muted')); details.hidden = true; cancel.hidden = true; if (lockConflict) timer = setTimeout(refresh, 2000); return; }
-      current = job.id;
+      current = job.id; if (options.ownOnly) region.hidden = false;
       const result = await api(`/api/jobs/${encodeURIComponent(job.id)}/log?tail=200`), lines = (result.log || '').trim().split('\n').filter(Boolean);
       if (request !== generation || current !== job.id || !region.isConnected) return;
       log.textContent = result.log || 'No log output yet.'; details.hidden = false;
@@ -57,12 +57,13 @@ export function jobRegion(container, ctx, options = {}) {
   }
   cancel.addEventListener('click', async () => { cancel.disabled = true; try { await api(`/api/jobs/${encodeURIComponent(current)}/cancel`, { method: 'POST', headers }); cancelError.replaceChildren(); await refresh(); } catch (error) { cancelError.replaceChildren(notice(error.message)); cancel.disabled = false; } });
   async function run(op, args = {}, reportError = () => {}) {
-    try { const job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op, campaign: slugOf(ctx), args }) }); generation++; current = job.id; lastState = 'queued'; lockConflict = false; startError.replaceChildren(); clearTimeout(timer); await refresh(); return true; }
+    try { const job = await api('/api/jobs', { method: 'POST', headers, body: JSON.stringify({ op, campaign: slugOf(ctx), args }) }); generation++; current = job.id; region.hidden = false; lastState = 'queued'; lockConflict = false; startError.replaceChildren(); clearTimeout(timer); await refresh(); return true; }
     catch (error) {
       let message = error.message; lockConflict = /campaign is locked/i.test(message);
       if (lockConflict) {
         try { const jobs = await api(`/api/jobs?campaign=${encodeURIComponent(slugOf(ctx))}`); const running = jobs.find(job => job.state === 'running' || job.state === 'queued'); message = `Another job${running ? ` (${running.operation})` : ''} is running on this campaign. Wait for it or cancel it.`; } catch { message = 'Another job is running on this campaign. Wait for it or cancel it.'; }
       }
+      if (error.status === 409) await options.onConflict?.(error);
       const n = el('cds-inline-notification'); n.setAttribute('kind', 'error'); n.setAttribute('title', message); startError.replaceChildren(n); if (error.command) startError.append(el('code', error.command), copyButton('Copy command', error.command)); reportError(message); if (lockConflict) { clearTimeout(timer); timer = setTimeout(refresh, 2000); } return false;
     }
   }
@@ -76,7 +77,7 @@ export function openForm(title, description, fields, submitLabel, onSubmit, kind
   const footer = el('cds-modal-footer'), close = button('Cancel', 'secondary'), submit = button(submitLabel, kind); footer.append(close, submit); modal.append(header, body, footer); document.body.append(modal);
   const dismiss = () => modal.remove(); close.addEventListener('click', dismiss); x.addEventListener('click', dismiss); modal.addEventListener('cds-modal-closed', dismiss);
   for (const item of fields) item.node.addEventListener('change', () => item.node.removeAttribute('invalid'));
-  submit.addEventListener('click', async () => { const args = {}; for (const item of fields) { const raw = item.bool ? item.node.checked : item.node.value?.trim(), value = raw === '__none' ? '' : raw; if (item.required && !value) { item.node.setAttribute('invalid', ''); item.node.setAttribute('invalid-text', `Choose or enter ${item.label.toLowerCase()}.`); item.node.focus(); return; } if (value) args[item.key] = value; } if (args.platform && args.asset && title === 'Add feedback') { error.textContent = 'Choose either a platform or an asset, not both.'; return; } error.textContent = ''; submit.disabled = true; try { if (await onSubmit(args, message => { error.textContent = message; }) === false) { if (!error.textContent) error.textContent = 'Could not start the job.'; submit.disabled = false; } else dismiss(); } catch (failure) { error.textContent = failure.message; submit.disabled = false; } });
+  submit.addEventListener('click', async () => { const args = {}; for (const item of fields) { const raw = item.bool ? item.node.checked : item.node.value?.trim(), value = raw === '__none' ? '' : raw; if (item.required && !value) { item.node.setAttribute('invalid', ''); item.node.setAttribute('invalid-text', item.invalidText || `Choose or enter ${item.label.toLowerCase()}.`); item.node.focus(); return; } if (value) args[item.key] = value; } if (args.platform && args.asset && title === 'Add feedback') { error.textContent = 'Choose either a platform or an asset, not both.'; return; } error.textContent = ''; submit.disabled = true; try { if (await onSubmit(args, message => { error.textContent = message; }) === false) { if (!error.textContent) error.textContent = 'Could not start the job.'; submit.disabled = false; } else dismiss(); } catch (failure) { error.textContent = failure.message; submit.disabled = false; } });
 }
 const input = (key, label, required = false, tag = 'cds-text-input') => ({ key, label, required, node: field(label, tag) });
 const check = (key, label) => { const node = el('cds-checkbox'); node.setAttribute('label-text', label); return { key, label, node, bool: true }; };

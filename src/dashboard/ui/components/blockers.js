@@ -4,16 +4,18 @@ import { jobRegion, openForm } from './actions.js';
 const targetPath = target => target.startsWith('post:') ? `posts/${target.slice(5)}.md` : target.startsWith('asset:') ? `assets/${target.slice(6)}/asset.yml` : target;
 
 
-export function renderBlockers(project, target = null) {
+export function renderBlockers(project, target = null, onResolved = () => {}) {
   const section = el('section', null, 'asset-blockers'), content = el('div');
-  section.append(el('h3', 'Blockers'), content);
+  section.id = 'blockers'; section.append(el('h3', 'Blockers'), content);
   const path = `/api/campaigns/${project.slug.split('/').map(encodeURIComponent).join('/')}/blockers`;
+  let resolvingTarget;
   async function load() {
     try {
       const data = await api(path);
       if (!section.isConnected) return;
-      const blockers = target ? data.blockers.filter(item => item.target === target) : data.blockers;
-      const resolutions = target ? data.resolutions.filter(item => item.target === target) : data.resolutions;
+      const matches = item => !target || (target === 'asset:' ? item.target.startsWith(target) : item.target === target);
+      const blockers = data.blockers.filter(matches);
+      const resolutions = data.resolutions.filter(matches);
       content.replaceChildren();
       if (!blockers.length) content.append(el('p', 'No open blockers.', 'muted'));
       else {
@@ -21,10 +23,10 @@ export function renderBlockers(project, target = null) {
         for (const blocker of blockers) {
           const item = el('li'), detail = el('div'), resolve = button('Resolve', 'secondary');
           resolve.append(el('span', ` ${targetPath(blocker.target)} blocker ${blocker.index + 1}`, 'visually-hidden'));
-          detail.append(el('strong', targetPath(blocker.target)), el('p', blocker.text));
+          detail.append(el('strong', `${targetPath(blocker.target)} · Blocker ${blocker.index + 1}`), el('p', blocker.text));
           resolve.addEventListener('click', () => {
             const reason = el('cds-textarea'), label = el('span', 'Reason'); label.slot = 'label-text'; reason.append(label);
-            openForm('Resolve blocker', `${targetPath(blocker.target)}: ${blocker.text}`, [{ key: 'reason', label: 'Reason', required: true, node: reason }], 'Resolve', (args, reportError) => run('blockers resolve', { target: blocker.target, index: String(blocker.index), reason: args.reason }, reportError));
+            openForm('Resolve blocker', `${targetPath(blocker.target)}: ${blocker.text}. Resolving removes this blocker, records your reason in the audit history, and creates a snapshot. Run review again to update the review.`, [{ key: 'reason', label: 'Reason', required: true, invalidText: 'Enter a reason.', node: reason }], 'Resolve', (args, reportError) => { resolvingTarget = blocker.target; return run('blockers resolve', { target: blocker.target, index: String(blocker.index), text: blocker.text, reason: args.reason }, reportError); });
           });
           item.append(detail, resolve); list.append(item);
         }
@@ -46,7 +48,7 @@ export function renderBlockers(project, target = null) {
       content.replaceChildren(el('p', `Could not load blockers: ${error.message}`, 'form-error'), retry);
     }
   }
-  const run = jobRegion(section, { project }, { operation: 'blockers resolve', onComplete: async job => { if (job.state === 'succeeded') await load(); } });
+  const run = jobRegion(section, { project }, { operation: 'blockers resolve', ownOnly: true, matches: job => !target || (target === 'asset:' ? job.target?.startsWith(target) : job.target === target), onConflict: load, onComplete: async job => { await load(); if (job.state === 'succeeded') { const updated = await api(`/api/project/${encodeURIComponent(project.slug)}`); project.reviews = updated.reviews; onResolved(job.target || resolvingTarget); } } });
   content.append(el('p', 'Loading blockers…', 'muted')); setTimeout(load, 0);
   return section;
 }
