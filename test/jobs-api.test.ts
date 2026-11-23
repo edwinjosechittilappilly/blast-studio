@@ -167,9 +167,18 @@ test('dashboard starts, polls, reads and cancels a job over HTTP', { timeout: 15
     assert.ok((await matching.json() as { id: string }[]).some(item => item.id === id));
     const other = await fetch(`${base}/api/jobs?campaign=demo%2Fother`, { headers });
     assert.deepEqual(await other.json(), []);
-    const log = await fetch(`${base}/api/jobs/${id}/log`, { headers });
-    assert.equal(log.status, 200);
-    assert.match((await log.json() as { log: string }).log, /job output ready/);
+    const outputReady = Promise.withResolvers<void>();
+    const checkLog = async () => {
+      try {
+        const log = await fetch(`${base}/api/jobs/${id}/log`, { headers });
+        assert.equal(log.status, 200);
+        if (/job output ready/.test((await log.json() as { log: string }).log)) outputReady.resolve();
+      } catch (error) { outputReady.reject(error); }
+    };
+    watcher = watch(join(root, 'projects/demo/campaigns/launch/logs/jobs'), () => { void checkLog(); });
+    await checkLog();
+    await outputReady.promise;
+    watcher.close(); watcher = undefined;
     const emptyTail = await fetch(`${base}/api/jobs/${id}/log?tail=0`, { headers });
     assert.equal((await emptyTail.json() as { log: string }).log, '');
     assert.equal((await fetch(`${base}/api/jobs/${id}/log?tail=-1`, { headers })).status, 400);
