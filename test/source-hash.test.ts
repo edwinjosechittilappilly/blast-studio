@@ -1,6 +1,6 @@
 import { after, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse, stringify } from 'yaml';
 import { sourceHash } from '../src/render/source-hash.ts';
@@ -30,6 +30,17 @@ test('fingerprints binary resources and render metadata, but not review metadata
   assert.equal(sourceHash(asset), initial);
   writeFileSync(join(asset, 'slides/image.png'), Buffer.from([0, 3, 2, 2]));
   assert.notEqual(sourceHash(asset), initial);
+});
+
+test('fingerprinting rejects traversal and symlinks escaping assets', () => {
+  const root = tempStudio(), assets = join(root, 'assets'), parent = join(assets, 'parent'), outside = join(root, 'outside');
+  mkdirSync(parent, { recursive: true }); mkdirSync(outside, { recursive: true });
+  writeFileSync(join(outside, 'asset.yml'), stringify({ id: 'outside', kind: 'card' }));
+  writeFileSync(join(parent, 'asset.yml'), stringify({ id: 'parent', kind: 'card', embeds: ['../../x'] }));
+  assert.throws(() => sourceHash(parent), /Invalid embedded asset ID/);
+  symlinkSync(outside, join(assets, 'linked'));
+  writeFileSync(join(parent, 'asset.yml'), stringify({ id: 'parent', kind: 'card', embeds: ['linked'] }));
+  assert.throws(() => sourceHash(parent), /escapes assets directory/);
 });
 
 test('re-rendering an embedded asset makes its composite fingerprint stale', { timeout: 20000 }, async () => {

@@ -78,6 +78,18 @@ test('workspace rejects malformed metadata mappings and mismatched asset identit
   }
 });
 
+test('workspace rejects traversal and malformed embed IDs before write-back', async () => {
+  for (const id of ['../../x', 'Upper', 'a--b', '-a', 'a-', 'a/b', '']) {
+    const root = tempStudio(), project = join(root, 'projects/demo/campaigns/launch'); mkdirSync(project, { recursive: true });
+    const io = fakeIO({ cwd: root, env: { BSTUDIO_HOME: root, BSTUDIO_CONFIG: join(root, 'studio.yml') }, run: async (_cmd, _args, opts) => {
+      const dir = join(opts!.cwd!, 'assets/card'); mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'asset.yml'), stringify({ id: 'card', kind: 'card', embeds: [id] })); return '';
+    } });
+    await assert.rejects(runAgentInWorkspace({ config: loadConfig(io), io, projectDir: project, files: {}, allowOut: [/^assets\/card\/asset\.yml$/], prompt: 'write', timeoutMs: 1000 }), /embeds.*asset ID slugs/);
+    assert.equal(existsSync(join(project, 'assets/card/asset.yml')), false);
+  }
+});
+
 test('workspace accepts required metadata for each kind and rejects invalid video aspect lists', async () => {
   const root = tempStudio(), project = join(root, 'projects/demo/campaigns/launch'); mkdirSync(project, { recursive: true });
   const kinds = ['card', 'poster', 'carousel', 'logo', 'diagram', 'video', 'terminal-demo', 'illustration', 'voiceover'];

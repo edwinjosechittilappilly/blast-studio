@@ -54,7 +54,7 @@ function validateAssetMetadata(rel: string, value: unknown, workspace: string, p
       if (burn !== undefined && typeof burn !== 'boolean') problem('captions.burn', burn, 'must be a boolean');
     }
   }
-  if (meta.embeds !== undefined && (!Array.isArray(meta.embeds) || meta.embeds.some(id => typeof id !== 'string' || !id.trim()))) problem('embeds', meta.embeds, 'must be an array of nonempty asset IDs');
+  if (meta.embeds !== undefined && (!Array.isArray(meta.embeds) || meta.embeds.some(id => typeof id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id)))) problem('embeds', meta.embeds, 'must be an array of asset ID slugs');
   if (meta.voiceover !== undefined && (typeof meta.voiceover !== 'string' || !meta.voiceover.trim())) problem('voiceover', meta.voiceover, 'must be a nonempty asset ID');
   const dimension = (field: string, value: unknown) => {
     if (value !== undefined && (!Number.isSafeInteger(value) || (value as number) <= 0)) problem(field, value, 'must be a positive integer');
