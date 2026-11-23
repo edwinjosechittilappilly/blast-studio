@@ -91,13 +91,12 @@ test('terminal-only campaign actions prepare a copyable command without starting
   assert.equal(submitted, false);
 });
 
-test('review findings can be revised with optional scope', async t => {
+test('review findings start an unscoped revision', async t => {
   const { page, url } = await dashboard(t);
   let submitted: unknown;
   await page.route('**/api/project/acme%2Flaunch', async route => {
     const response = await route.fetch(), project = await response.json();
     project.reviews = [{ platform: 'linkedin', verdict: 'revise', stale: false, gates: [] }];
-    project.assets = [{ id: 'hero-card', outputs: [] }];
     await route.fulfill({ json: project });
   });
   await page.route('**/api/jobs?*', route => route.fulfill({ json: submitted ? [job('running')] : [] }));
@@ -106,11 +105,9 @@ test('review findings can be revised with optional scope', async t => {
   await page.goto(`${url}#/p/acme/launch/overview`);
   await page.getByRole('button', { name: 'Revise', exact: true }).click();
   const modal = page.locator('cds-modal');
-  await modal.locator('cds-select').nth(0).locator('select').selectOption('linkedin');
-  await modal.locator('cds-select').nth(1).locator('select').selectOption('hero-card');
   await modal.getByRole('button', { name: 'Revise', exact: true }).click();
   await page.getByRole('button', { name: 'Cancel revision' }).waitFor();
-  assert.deepEqual(submitted, { op: 'revise', campaign: 'acme/launch', args: { platform: 'linkedin', asset: 'hero-card' } });
+  assert.deepEqual(submitted, { op: 'revise', campaign: 'acme/launch', args: {} });
 });
 
 test('terminal-only review revision prepares a command without starting a job', async t => {
@@ -139,8 +136,40 @@ test('pending feedback takes precedence and stale findings cannot trigger revisi
   assert.equal(await page.getByRole('button', { name: 'Revise', exact: true }).count(), 0);
   pending = false;
   await page.reload();
-  await page.getByText('No pending feedback', { exact: true }).waitFor();
-  assert.equal(await page.getByRole('button', { name: 'Revise', exact: true }).count(), 0);
+  await page.getByText('Run review first', { exact: true }).waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Revise', exact: true }).isDisabled(), true);
+});
+
+test('blocked rights and blocker-only findings disable revision', async t => {
+  const { page, url } = await dashboard(t);
+  let blockerOnly = false;
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.reviews = blockerOnly
+      ? [{ platform: 'linkedin', verdict: 'revise', gates: [{ id: 'specs', pass: false, message: 'Blocker in post linkedin: needs approval' }], scores: [] }]
+      : [{ platform: 'linkedin', verdict: 'revise', gates: [] }, { platform: 'x', verdict: 'blocked', gates: [] }];
+    await route.fulfill({ json: project });
+  });
+  await page.goto(`${url}#/p/acme/launch/overview`);
+  await page.getByText('Resolve blocked rights before revision').waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Revise', exact: true }).isDisabled(), true);
+  blockerOnly = true; await page.reload();
+  await page.getByText('Resolve blockers and run review before revision').waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Revise', exact: true }).isDisabled(), true);
+});
+
+test('running revision status follows the job command rather than the header action', async t => {
+  const { page, url } = await dashboard(t);
+  await page.route('**/api/project/acme%2Flaunch', async route => {
+    const response = await route.fetch(), project = await response.json();
+    project.reviews = [{ platform: 'linkedin', verdict: 'revise', gates: [] }];
+    await route.fulfill({ json: project });
+  });
+  await page.route('**/api/jobs?*', route => route.fulfill({ json: [{ ...job('running'), command: 'bstudio revise acme/launch --feedback-only' }] }));
+  await page.route('**/api/jobs/revision-1/log?*', route => route.fulfill({ json: { log: '' } }));
+  await page.goto(`${url}#/p/acme/launch/overview`);
+  await page.locator('cds-inline-notification[title="Applying feedback…"]').waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Revise', exact: true }).isDisabled(), true);
 });
 
 test('accept offers only revised destinations with passing gates', async t => {

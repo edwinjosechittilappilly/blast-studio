@@ -12,7 +12,7 @@ const field = (label, tag = 'cds-text-input') => { const input = el(tag); input.
 const notice = (text, kind = 'error') => { const n = el('cds-inline-notification'); n.setAttribute('kind', kind); n.setAttribute('hide-close-button', ''); n.setAttribute('title', text); return n; };
 const slugOf = ctx => ctx.project.slug;
 const quote = value => /^[a-zA-Z0-9_./:=,-]+$/.test(String(value)) ? String(value) : `'${String(value).replaceAll("'", "'\\''")}'`;
-function terminalCommand(op, schema, campaign, args) {
+export function terminalCommand(op, schema, campaign, args) {
   const positional = [], flags = [];
   for (const [key, spec] of Object.entries(schema.fields)) {
     const value = key === 'campaign' ? campaign : args[key]; if (value == null || value === '' || value === false) continue;

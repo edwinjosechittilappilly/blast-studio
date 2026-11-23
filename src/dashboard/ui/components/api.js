@@ -18,5 +18,5 @@ export async function feedbackJobStatus(campaign) {
   const job = jobs.filter(item => item.operation === 'revise').sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
   if (!job) return { running: false, exitCode: null, lines: [] };
   const { log } = await api(`/api/jobs/${encodeURIComponent(job.id)}/log?tail=100`);
-  return { id: job.id, state: job.state, cancelling: job.cancelRequested && (job.state === 'running' || job.state === 'queued'), running: job.state === 'running' || job.state === 'queued', exitCode: job.state === 'succeeded' ? 0 : job.state === 'failed' || job.state === 'cancelled' ? job.exitCode ?? 1 : null, lines: log ? log.split('\n') : [] };
+  return { id: job.id, state: job.state, feedbackOnly: /(?:^|\s)--feedback-only(?:\s|$)/.test(job.command || ''), cancelling: job.cancelRequested && (job.state === 'running' || job.state === 'queued'), running: job.state === 'running' || job.state === 'queued', exitCode: job.state === 'succeeded' ? 0 : job.state === 'failed' || job.state === 'cancelled' ? job.exitCode ?? 1 : null, lines: log ? log.split('\n') : [] };
 }

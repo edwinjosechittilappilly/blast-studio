@@ -16,7 +16,7 @@ import { mediaGallery } from './components/media.js';
 import { api, headers, campaignPath, startFeedbackJob, cancelFeedbackJob, feedbackJobStatus } from './components/api.js';
 import { setupShell } from './components/shell.js';
 import { renderNewProject, renderNewCampaign } from './components/create.js';
-import { renderActions, renderAssetsTable, openForm } from './components/actions.js';
+import { renderActions, renderAssetsTable, openForm, terminalCommand } from './components/actions.js';
 import { renderExport } from './components/export.js';
 import { renderBlockers } from './components/blockers.js';
 import { renderFeedbackHistory } from './components/feedback.js';
@@ -121,7 +121,7 @@ async function jobStatus(project, region, apply) {
   region.dataset.statusKnown = 'yes'; apply.disabled = status.running || apply.dataset.available !== 'yes';
   if (status.running) {
     region.dataset.running = 'yes'; if (!region.pendingIds) region.pendingIds = project.feedback.filter(e => e.status === 'pending').map(e => e.id);
-    const label = status.cancelling ? 'Cancelling revision…' : apply.dataset.mode === 'revise' ? 'Revising campaign…' : 'Applying feedback…';
+    const label = status.cancelling ? 'Cancelling revision…' : status.feedbackOnly ? 'Applying feedback…' : 'Revising campaign…';
     if (region.dataset.state !== label) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'info'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', label); announcement.replaceChildren(notice); region.dataset.state = label; }
     scheduleStatus(project, region, apply);
   } else if (region.dataset.running === 'yes') {
@@ -132,7 +132,7 @@ async function jobStatus(project, region, apply) {
     const focus = document.activeElement, inProject = $('#project').contains(focus), selector = inProject && focus.id ? `#${CSS.escape(focus.id)}` : null, tag = inProject && !selector ? focus.tagName : null, index = tag ? [...$('#project').querySelectorAll(tag)].indexOf(focus) : -1, y = window.scrollY, tab = activeTab;
     await openProject(project.slug, tab); if (activeProject !== project.slug || $('#project').hidden) return;
     window.scrollTo(0, y); const restored = selector ? document.querySelector(selector) : tag ? $('#project').querySelectorAll(tag)[index] : focus; restored?.focus?.({ preventScroll: true });
-    if (status.state !== 'failed') toast(status.state === 'succeeded' ? 'Revision completed. Review the updated campaign.' : `Revision cancelled. ${applied} applied before cancellation; ${count} pending.`, status.state === 'cancelled' ? 'info' : 'success');
+    if (status.state !== 'failed') toast(status.state === 'succeeded' ? 'Revision completed. Review the updated campaign.' : status.feedbackOnly ? `Revision cancelled. ${applied} applied before cancellation; ${count} pending.` : 'Revision cancelled. Review the campaign before retrying.', status.state === 'cancelled' ? 'info' : 'success');
   } else if (status.state === 'failed' && !dismissedJobFailures.has(status.id)) {
     const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'error'); notice.setAttribute('title', `Revision failed (${status.exitCode}). Review the log and retry.`); notice.addEventListener('cds-notification-closed', () => { dismissedJobFailures.add(status.id); sessionStorage.setItem('dismissedJobFailures', JSON.stringify([...dismissedJobFailures])); announcement.replaceChildren(); });
     const view = button('View log', 'ghost'); view.addEventListener('click', () => { log.parentElement.hidden = false; log.parentElement.open = true; log.parentElement.scrollIntoView({ block: 'nearest' }); });
@@ -217,13 +217,16 @@ async function openProject(slug, requested = 'overview') {
   const top = el('div', null, 'page-heading'), title = el('div'), actions = el('div');
   title.append(el('h1', slug.split('/')[1]), el('p', project.inputs.join(' · ') || `Campaign in ${slug.split('/')[0]}`));
   const count = project.feedback.filter(e => e.status === 'pending').length;
-  const revise = !count && project.reviews.some(review => review.verdict === 'revise' && !review.stale);
+  const revise = !count && project.reviews.some(review => review.verdict === 'revise');
+  const failing = project.reviews.filter(review => review.verdict !== 'pass' && review.verdict !== 'accepted');
+  const blockerOnly = failing.some(review => (review.gates || []).some(gate => !gate.pass && gate.id === 'specs' && (gate.message || '').includes('Blocker in '))) && failing.every(review => (review.gates || []).every(gate => gate.pass || gate.id === 'specs' && !(gate.message || '').split('; ').some(message => !message.startsWith('Blocker in '))) && !(review.scores || []).some(score => score.score !== null && score.score < 2));
+  const disabledReason = failing.some(review => review.stale) ? 'Run review first' : project.reviews.some(review => review.verdict === 'blocked') ? 'Resolve blocked rights before revision' : blockerOnly ? 'Resolve blockers and run review before revision' : '';
   const needsReview = project.reviews.some(review => review.stale) || project.reviews.length < project.posts.length;
   const apply = button(revise ? 'Revise' : count ? `Apply ${count} feedback ${count === 1 ? 'item' : 'items'}` : 'Apply feedback', revise && needsReview ? 'secondary' : 'primary');
-  const reason = el('p', count || revise ? '' : 'No pending feedback', 'muted');
-  apply.id = revise ? 'revise-findings' : 'apply-feedback'; apply.dataset.mode = revise ? 'revise' : 'feedback'; apply.dataset.available = count || revise ? 'yes' : 'no';
+  const reason = el('p', revise ? disabledReason : count ? '' : 'No pending feedback', 'muted');
+  apply.id = revise ? 'revise-findings' : 'apply-feedback'; apply.dataset.mode = revise ? 'revise' : 'feedback'; apply.dataset.available = count || revise && !disabledReason ? 'yes' : 'no';
   reason.id = 'apply-reason'; apply.setAttribute('aria-describedby', 'apply-reason'); apply.disabled = true;
-  if (operations.revise.requiresTTY && !revise) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'info'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', 'Apply feedback from the terminal'); actions.append(notice, commandSnippet(`bstudio revise ${slug} --feedback-only`)); } else actions.append(apply, reason);
+  if (operations.revise.requiresTTY && !revise) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'info'); notice.setAttribute('hide-close-button', ''); notice.setAttribute('title', 'Apply feedback from the terminal'); actions.append(notice, commandSnippet(terminalCommand('revise', operations.revise, slug, { feedbackOnly: true }))); } else actions.append(apply, reason);
   top.append(title, actions); container.append(top);
   const job = el('div', null, 'job-status'), announcement = el('div', null, 'job-announcement'), cancelError = el('div'), logDetails = el('details'), log = el('pre', null, 'job-log'), cancel = button('Cancel revision', 'secondary');
   cancel.className = 'cancel-job'; cancel.hidden = true; cancel.addEventListener('click', async () => { cancel.disabled = true; try { await cancelFeedbackJob(cancel.dataset.jobId); cancelError.replaceChildren(); await jobStatus(project, job, apply); } catch (error) { const notice = el('cds-inline-notification'); notice.setAttribute('kind', 'error'); notice.setAttribute('title', error.message); cancelError.replaceChildren(notice); cancel.disabled = false; } });
@@ -234,13 +237,11 @@ async function openProject(slug, requested = 'overview') {
     catch (error) { announcement.replaceChildren(el('p', error.message)); if (error.command) announcement.append(commandSnippet(error.command)); if (job.dataset.running === 'yes') scheduleStatus(project, job, apply); else { job.dataset.statusKnown = 'yes'; apply.disabled = false; } }
   }
   apply.addEventListener('click', () => {
-    if (apply.dataset.mode === 'feedback') { if (operations.revise.requiresTTY) announcement.replaceChildren(commandSnippet(`bstudio revise ${slug} --feedback-only`)); else start({ feedbackOnly: true }); return; }
-    const scope = (key, label, values) => { const node = el('cds-select'); node.setAttribute('label-text', label); node.setAttribute('placeholder', 'All'); const blank = el('cds-select-item', 'All'); blank.setAttribute('value', '__none'); node.append(blank); for (const value of values) { const item = el('cds-select-item', value); item.setAttribute('value', value); node.append(item); } return { key, label, node }; };
-    const fields = [scope('platform', 'Platform', [...new Set([...project.plan.map(item => item.platform), ...project.posts.map(item => item.platform)])]), scope('asset', 'Asset', project.assets.map(asset => asset.id))];
+    if (apply.dataset.mode === 'feedback') { if (operations.revise.requiresTTY) announcement.replaceChildren(commandSnippet(terminalCommand('revise', operations.revise, slug, { feedbackOnly: true }))); else start({ feedbackOnly: true }); return; }
     const tty = operations.revise.requiresTTY;
-    openForm('Revise', tty ? 'This operation requires an interactive terminal. Prepare a command to run there.' : 'This step can incur provider charges. Check Settings for budget details.', fields, tty ? 'Prepare command' : 'Revise', args => {
-      if (tty) { const command = `bstudio revise ${slug}${args.platform ? ` --platform=${args.platform}` : ''}${args.asset ? ` --asset=${args.asset}` : ''}`; announcement.replaceChildren(commandSnippet(command)); }
-      else start(args);
+    openForm('Revise', tty ? 'This operation requires an interactive terminal. Prepare a command to run there.' : 'This step can incur provider charges. Check Settings for budget details.', [], tty ? 'Prepare command' : 'Revise', () => {
+      if (tty) announcement.replaceChildren(commandSnippet(terminalCommand('revise', operations.revise, slug, {})));
+      else start({});
     });
   });
   const tabs = el('cds-tabs'); tabs.setAttribute('type', 'contained'); const panel = el('div', null, 'tab-content'), options = ['overview', ...orderedPosts(project).map(p => p.platform), 'assets', 'actions', 'export']; activeTab = options.includes(requested) ? requested : 'overview';

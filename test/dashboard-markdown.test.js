@@ -189,8 +189,19 @@ test('completed revision refreshes current tab and announces cancellation counts
   const announcement = new Node('announcement'), log = new Node('log'); log.parentElement = {};
   const region = new Node('region'); region.dataset.running = 'yes'; region.pendingIds = ['1'];
   region.nodes = { '.job-announcement': announcement, '.job-log': log, '.cancel-job': new Node('button') };
-  context.activeTab = 'linkedin'; context.statusRequest = async () => ({ state: 'cancelled', running: false, lines: [] });
+  context.activeTab = 'linkedin'; context.statusRequest = async () => ({ state: 'cancelled', feedbackOnly: true, running: false, lines: [] });
   context.request = async () => ({ feedback: [{ id: '1', status: 'applied' }, { id: '2', status: 'pending' }] });
   await context.jobStatus(project, region, new Node('button'));
   assert.deepEqual(calls, [['a', 'linkedin']]); assert.match(toasts[0][0], /1 applied before cancellation; 1 pending/); assert.equal(toasts[0][1], 'info');
+});
+
+test('cancelled findings revision does not report feedback counts', async () => {
+  const { context, toasts, Node } = dashboardHarness(), project = { slug: 'a', feedback: [] };
+  const announcement = new Node('announcement'), log = new Node('log'); log.parentElement = {};
+  const region = new Node('region'); region.dataset.running = 'yes'; region.pendingIds = [];
+  region.nodes = { '.job-announcement': announcement, '.job-log': log, '.cancel-job': new Node('button') };
+  context.statusRequest = async () => ({ state: 'cancelled', feedbackOnly: false, running: false, lines: [] });
+  context.request = async () => ({ feedback: [] });
+  await context.jobStatus(project, region, new Node('button'));
+  assert.equal(toasts[0][0], 'Revision cancelled. Review the campaign before retrying.');
 });
