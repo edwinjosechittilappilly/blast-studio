@@ -275,6 +275,29 @@ test('project review payload includes rubric, threshold and maker review', async
   assert.equal(result.posts[0].selfReview.summary, 'Ready');
 });
 
+test('blocker endpoint exposes active blockers and resolution history to authenticated sessions', async t => {
+  const { root, io } = fixture(), dir = join(root, 'projects/acme/campaigns/launch');
+  writeFileSync(join(dir, 'posts/linkedin.md'), '---\nplatform: linkedin\nevidence: []\nmedia: []\nblockers: [Verify claim, Confirm source]\n---\nHello');
+  writeFileSync(join(dir, 'assets/card/asset.yml'), 'id: card\nkind: card\noutputs: []\nblockers: [Confirm rights]\n');
+  writeFileSync(join(dir, 'resolutions.yml'), '- target: post:linkedin\n  text: Earlier blocker\n  reason: Verified\n  resolvedAt: "2025-01-01T00:00:00.000Z"\n  by: owner\n');
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const endpoint = `http://127.0.0.1:${started.port}/api/campaigns/acme/launch/blockers`;
+  assert.equal((await fetch(endpoint)).status, 401);
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const response = await fetch(endpoint, { headers: { cookie } });
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.deepEqual(data.blockers.sort((a: { target: string; index: number }, b: { target: string; index: number }) => a.target.localeCompare(b.target) || a.index - b.index), [
+    { target: 'asset:card', index: 0, text: 'Confirm rights' },
+    { target: 'post:linkedin', index: 0, text: 'Verify claim' },
+    { target: 'post:linkedin', index: 1, text: 'Confirm source' },
+  ]);
+  assert.deepEqual(data.resolutions, [{ target: 'post:linkedin', text: 'Earlier blocker', reason: 'Verified', resolvedAt: '2025-01-01T00:00:00.000Z', by: 'owner' }]);
+  assert.equal((await fetch(`http://127.0.0.1:${started.port}/api/campaigns/acme/missing/blockers`, { headers: { cookie } })).status, 404);
+  unlinkSync(join(dir, 'resolutions.yml'));
+  assert.deepEqual((await (await fetch(endpoint, { headers: { cookie } })).json()).resolutions, []);
+});
+
 test('dashboard sessions survive restarts and reject tampering and expiration', async t => {
   const { root, io } = fixture();
   const first = await startDashboard(io, { port: 0 }); t.after(() => first.server.close());
