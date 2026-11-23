@@ -297,6 +297,28 @@ test('blocker endpoint exposes active blockers and resolution history to authent
   unlinkSync(join(dir, 'resolutions.yml'));
   assert.deepEqual((await (await fetch(endpoint, { headers: { cookie } })).json()).resolutions, []);
 });
+test('blocker resolution rejects stale text without starting a job or changing the campaign', async t => {
+  const { root, io } = fixture(), dir = join(root, 'projects/acme/campaigns/launch');
+  const postFile = join(dir, 'posts/linkedin.md');
+  const post = '---\nplatform: linkedin\nevidence: []\nmedia: []\nblockers: [Confirm source]\n---\nHello';
+  writeFileSync(postFile, post);
+  const started = await startDashboard(io, { port: 0 }); t.after(() => started.server.close());
+  const base = `http://127.0.0.1:${started.port}`;
+  const cookie = (await fetch(started.url, { redirect: 'manual' })).headers.get('set-cookie')!;
+  const headers = { cookie, origin: base, 'X-Requested-With': 'bstudio', 'Content-Type': 'application/json' };
+  for (const args of [
+    { target: 'post:linkedin', index: '0', text: 'Verify claim', reason: 'Fixed' },
+    { target: 'post:linkedin', index: '1', text: 'Confirm source', reason: 'Fixed' },
+  ]) {
+    const response = await fetch(`${base}/api/jobs`, { method: 'POST', headers, body: JSON.stringify({ op: 'blockers resolve', campaign: 'acme/launch', args }) });
+    assert.equal(response.status, 409);
+    assert.deepEqual(await response.json(), { error: 'This blocker list changed — refresh' });
+  }
+  assert.equal(readFileSync(postFile, 'utf8'), post);
+  assert.equal(fs.existsSync(join(dir, 'resolutions.yml')), false);
+  assert.deepEqual(await (await fetch(`${base}/api/jobs?campaign=acme%2Flaunch`, { headers })).json(), []);
+});
+
 
 test('dashboard sessions survive restarts and reject tampering and expiration', async t => {
   const { root, io } = fixture();

@@ -43,7 +43,7 @@ export const operations: Readonly<Record<string, Operation>> = {
   'feedback list': operation('feedback', { campaign }, false, false),
   'feedback add': operation('feedback', { campaign, note: { ...inputs.note, required: true }, asset: option('id', '--asset'), platform: option('id', '--platform') }),
   'feedback rm': operation('feedback', { campaign, id: id(true) }),
-  'blockers resolve': operation('blockers', { campaign, target: { kind: 'blockerTarget', required: true, positional: true }, index: { kind: 'index', required: true, positional: true }, reason: { ...option('text', '--reason'), required: true } }),
+  'blockers resolve': operation('blockers', { campaign, target: { kind: 'blockerTarget', required: true, positional: true }, index: { kind: 'index', required: true, positional: true }, text: { ...option('text', '--text'), required: true }, reason: { ...option('text', '--reason'), required: true } }),
 };
 export function operationRequiresTTY(name: string, operation: Operation, imageProvider?: string, root?: string, ref?: string): boolean {
   if (operation.requiresTTY || (name === 'new' && imageProvider === 'omp')) return true;
@@ -68,7 +68,7 @@ function validate(value: unknown, kind: Kind, key: string): string | boolean {
   if (kind === 'ids' && !value.split(',').every(s => slug.test(s))) throw new UserError(`Invalid ${key}`);
   if (kind === 'blockerTarget' && !/^(?:post|asset):[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'index' && (!/^(?:0|[1-9]\d*)$/.test(value) || !Number.isSafeInteger(Number(value)))) throw new UserError(`Invalid ${key}`);
-  if (key === 'reason' && !value.trim()) throw new UserError(`Invalid ${key}`);
+  if ((key === 'reason' || key === 'text') && !value.trim()) throw new UserError(`Invalid ${key}`);
   if (kind === 'number' && !/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(value)) throw new UserError(`Invalid ${key}`);
   if ((key === 'pr' || key === 'version') && !/^\d+$/.test(value)) throw new UserError(`Invalid ${key}`);
   if (kind === 'sha' && !/^[a-f\d]{4,64}$/i.test(value)) throw new UserError(`Invalid ${key}`);
