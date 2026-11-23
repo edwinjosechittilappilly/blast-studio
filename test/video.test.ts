@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -48,10 +49,12 @@ test("voiceover is muxed into a video", { skip: mediaMissing.length ? `missing b
   try {
     const video = join(dir, "input.mp4"), voice = join(dir, "voice.wav"), output = join(dir, "output.mp4");
     await io.run("ffmpeg", ["-y", "-f", "lavfi", "-i", "color=c=black:s=64x64:d=1", "-c:v", "libx264", video]);
+    assert.equal((await probeMedia(video, io)).audio, false);
     await io.run("ffmpeg", ["-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1", voice]);
     await encodeVideo(video, output, io, { voiceover: voice });
     const probe = JSON.parse(await io.run("ffprobe", ["-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_name", "-of", "json", output]));
     assert.equal(probe.streams[0].codec_name, "aac");
+    assert.equal((await probeMedia(output, io)).audio, true);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -87,6 +90,9 @@ for (const mode of ["off", "on"] as const) test(`renders a two-second portrait c
     assert.ok(video.seconds && Math.abs(video.seconds - 2) < 0.15);
     const probe = JSON.parse(await io.run("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,pix_fmt", "-of", "json", join(dir, video.file)]));
     assert.equal(probe.streams[0].codec_name, "h264"); assert.equal(probe.streams[0].pix_fmt, "yuv420p");
+    const audio = JSON.parse(await io.run("ffprobe", ["-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "json", join(dir, video.file)]));
+    assert.equal(video.audio, audio.streams.length > 0);
+    assert.equal(video.audioHash, createHash("sha256").update(readFileSync(join(dir, video.file))).digest("hex"));
     for (const i of [1, 2, 3]) assert.ok(existsSync(join(dir, `out/frames/9x16-${i}.png`)));
     assert.equal(readFileSync(join(dir, "out/captions.vtt"), "utf8"), readFileSync(join(fixtures, "captions.vtt"), "utf8"));
     const browser = await chromium.launch({ headless: true });

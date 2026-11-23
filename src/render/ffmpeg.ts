@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { agentEnv, sandboxCommand } from "../agent-env.ts";
@@ -53,15 +54,15 @@ export async function runTool(io: IO, name: keyof typeof guidance, command: stri
   }
 }
 
-export interface MediaProbe { width: number; height: number; seconds: number; bytes: number }
+export interface MediaProbe { width: number; height: number; seconds: number; bytes: number; audio: boolean; audioHash: string }
 
 export async function probeMedia(file: string, io: IO): Promise<MediaProbe> {
-  const text = await runTool(io, "ffprobe", "ffprobe", ["-v", "error", "-show_entries", "stream=width,height:format=duration", "-of", "json", file]);
-  const data = JSON.parse(text) as { streams?: { width?: number; height?: number }[]; format?: { duration?: string } };
-  const video = data.streams?.find(s => s.width && s.height);
+  const text = await runTool(io, "ffprobe", "ffprobe", ["-v", "error", "-show_entries", "stream=codec_type,width,height:format=duration", "-of", "json", file]);
+  const data = JSON.parse(text) as { streams?: { codec_type?: string; width?: number; height?: number }[]; format?: { duration?: string } };
+  const video = data.streams?.find(s => s.codec_type === "video" && s.width && s.height);
   const seconds = Number(data.format?.duration);
-  if (!video?.width || !video.height || !Number.isFinite(seconds) || seconds <= 0) throw new UserError(`ffprobe could not determine video dimensions and duration: ${file}`);
-  return { width: video.width, height: video.height, seconds, bytes: statSync(file).size };
+  if (!video?.width || !video.height || !Number.isFinite(seconds) || seconds <= 0 || data.streams?.some(s => typeof s.codec_type !== "string")) throw new UserError(`ffprobe could not determine video dimensions, duration and streams: ${file}`);
+  return { width: video.width, height: video.height, seconds, bytes: statSync(file).size, audio: data.streams!.some(s => s.codec_type === "audio"), audioHash: createHash("sha256").update(readFileSync(file)).digest("hex") };
 }
 
 /** FFmpeg's filter parser has its own escaping, independent of shell quoting. */
