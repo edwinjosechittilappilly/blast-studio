@@ -302,6 +302,55 @@ test('asset feedback copies video aspect edits and rerenders successfully', asyn
   assert.equal(loadFeedback(f.project)[0].status, 'applied');
 });
 
+for (const tape of ['demo.tape', 'source/demo.tape']) {
+  test(`asset feedback supplies ${tape} as read-only context`, async () => {
+    const f = fixture(0);
+    writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'motion', kind: 'video', brief: 'Motion' }] }]));
+    mkdirSync(join(f.project, 'assets/motion/source'), { recursive: true });
+    writeFileSync(join(f.project, 'assets/motion/asset.yml'), 'id: motion\nkind: video\nprovider: hyperframes\naiGenerated: false\noutputs: []\n');
+    writeFileSync(join(f.project, 'assets/motion', tape), 'Type "hello"\n');
+    f.io.run = async (_cmd, _args, opts) => {
+      assert.equal(readFileSync(join(opts!.cwd!, 'assets/motion', tape), 'utf8'), 'Type "hello"\n');
+      const meta = join(opts!.cwd!, 'assets/motion/asset.yml');
+      writeFileSync(meta, `${readFileSync(meta, 'utf8')}description: Updated\n`);
+      return '';
+    };
+    await createRevise(async () => 0)(['demo/launch', '--note', 'Update description', '--asset', 'motion'], f.io);
+    assert.match(readFileSync(join(f.project, 'assets/motion/asset.yml'), 'utf8'), /description: Updated/);
+    assert.equal(readFileSync(join(f.project, 'assets/motion', tape), 'utf8'), 'Type "hello"\n');
+    assert.equal(loadFeedback(f.project)[0].status, 'applied');
+  });
+}
+
+test('attempted changes to read-only tape remain pending', async () => {
+  const f = fixture(0);
+  writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'motion', kind: 'video', brief: 'Motion' }] }]));
+  mkdirSync(join(f.project, 'assets/motion/source'), { recursive: true });
+  writeFileSync(join(f.project, 'assets/motion/asset.yml'), 'id: motion\nkind: video\nprovider: hyperframes\naiGenerated: false\noutputs: []\n');
+  const tape = 'assets/motion/source/demo.tape';
+  writeFileSync(join(f.project, tape), 'original');
+  f.io.run = async (_cmd, _args, opts) => { writeFileSync(join(opts!.cwd!, tape), 'changed'); return ''; };
+  await assert.rejects(createRevise(async () => 0)(['demo/launch', '--note', 'Revise motion', '--asset', 'motion'], f.io), /Feedback remains pending.*source\/demo\.tape/);
+  assert.equal(readFileSync(join(f.project, tape), 'utf8'), 'original');
+  assert.equal(loadFeedback(f.project)[0].status, 'pending');
+});
+
+test('automatic review revisions also receive existing tape context', async () => {
+  const f = fixture(1);
+  writeFileSync(join(f.project, 'plan.yml'), stringify([{ platform: 'bluesky', type: 'text', angle: 'Useful', hooks: ['One', 'Two', 'Three'], assets: [{ id: 'motion', kind: 'video', brief: 'Motion' }] }]));
+  mkdirSync(join(f.project, 'assets/motion/source'), { recursive: true });
+  writeFileSync(join(f.project, 'assets/motion/asset.yml'), 'id: motion\nkind: video\nprovider: hyperframes\naiGenerated: false\noutputs: []\n');
+  writeFileSync(join(f.project, 'assets/motion/source/demo.tape'), 'Type "hello"\n');
+  writeFileSync(join(f.project, 'posts/bluesky.md'), '---\nplatform: bluesky\nevidence: [E1]\nmedia:\n  - { asset: motion, file: assets/motion/out/video.mp4, kind: video, alt: Demo }\n---\nOriginal\n');
+  let sawTape = false;
+  f.io.run = async (_cmd, _args, opts) => {
+    sawTape = readFileSync(join(opts!.cwd!, 'assets/motion/source/demo.tape'), 'utf8') === 'Type "hello"\n';
+    throw new Error('stop after inspecting workspace');
+  };
+  await assert.rejects(revise(['demo/launch'], f.io), /stop after inspecting workspace/);
+  assert.equal(sawTape, true);
+});
+
 test('stale feedback is rejected without blocking other feedback', async () => {
   const f = fixture(0);
   writeFileSync(join(f.project, 'reviews/bluesky.json'), JSON.stringify({ platform: 'bluesky', verdict: 'pass', gates: [] }));

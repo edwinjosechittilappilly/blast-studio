@@ -61,7 +61,7 @@ async function applyFeedback(dir: string, slug: string, pending: FeedbackEntry[]
     for (const entry of readdirSync(path, { withFileTypes: true })) {
       const rel = `${relative}/${entry.name}`;
       if (entry.isDirectory()) collect(rel);
-      else if (entry.isFile() && (editablePosts.has(rel) || /^assets\/[^/]+\/(?:asset\.yml|source\.(?:html|css|js|json|svg|vtt|txt|mmd|d2)|source\/.*\.(?:html|css|js|json|svg|vtt|txt)|slides\/[^/]+\.html)$/.test(rel) && editableAssets.has(rel.split('/')[1]))) files[rel] = readFileSync(join(dir, rel), 'utf8');
+      else if (entry.isFile() && (editablePosts.has(rel) || /^assets\/[^/]+\/(?:asset\.yml|demo\.tape|source\/demo\.tape|source\.(?:html|css|js|json|svg|vtt|txt|mmd|d2)|source\/.*\.(?:html|css|js|json|svg|vtt|txt)|slides\/[^/]+\.html)$/.test(rel) && editableAssets.has(rel.split('/')[1]))) files[rel] = readFileSync(join(dir, rel), 'utf8');
     }
   };
   collect('posts'); collect('assets');
@@ -158,7 +158,7 @@ export const createRevise = (render: Command): Command => async (args, io) => {
       for (const entry of readdirSync(path, { withFileTypes: true })) {
         const rel = `${relative}/${entry.name}`;
         if (entry.isDirectory()) collect(rel);
-        else if (entry.isFile() && (editablePosts.has(rel) || /^assets\/[^/]+\/(?:asset\.yml|source\.(?:html|css|js|json|svg|vtt|txt|mmd|d2)|source\/.*\.(?:html|css|js|json|svg|vtt|txt)|slides\/[^/]+\.html)$/.test(rel) && editableAssets.has(rel.split('/')[1]))) files[rel] = readFileSync(join(dir, rel), 'utf8');
+        else if (entry.isFile() && (editablePosts.has(rel) || /^assets\/[^/]+\/(?:asset\.yml|demo\.tape|source\/demo\.tape|source\.(?:html|css|js|json|svg|vtt|txt|mmd|d2)|source\/.*\.(?:html|css|js|json|svg|vtt|txt)|slides\/[^/]+\.html)$/.test(rel) && editableAssets.has(rel.split('/')[1]))) files[rel] = readFileSync(join(dir, rel), 'utf8');
       }
     };
     collect('posts'); collect('assets');
