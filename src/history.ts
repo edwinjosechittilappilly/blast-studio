@@ -23,7 +23,7 @@ function sameFile(a: string, b: string): boolean {
       const x = Buffer.allocUnsafe(length), y = Buffer.allocUnsafe(length);
       for (let offset = 0; offset < as.size;) {
         const count = readSync(left, x, 0, length, offset);
-        if (!count || readSync(right, y, 0, count, offset) !== count || Buffer.compare(x, y, 0, count, 0, count) !== 0) return false;
+        if (!count || readSync(right, y, 0, count, offset) !== count || x.compare(y, 0, count, 0, count) !== 0) return false;
         offset += count;
       }
       return true;
