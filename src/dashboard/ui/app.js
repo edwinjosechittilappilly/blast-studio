@@ -235,7 +235,7 @@ async function openProject(slug, requested = 'overview') {
   }
   apply.addEventListener('click', () => {
     if (apply.dataset.mode === 'feedback') { if (operations.revise.requiresTTY) announcement.replaceChildren(commandSnippet(`bstudio revise ${slug} --feedback-only`)); else start({ feedbackOnly: true }); return; }
-    const scope = (key, label, values) => { const node = el('cds-select'); node.setAttribute('label-text', label); const blank = el('cds-select-item', 'All'); blank.setAttribute('value', '__none'); node.append(blank); for (const value of values) { const item = el('cds-select-item', value); item.setAttribute('value', value); node.append(item); } return { key, label, node }; };
+    const scope = (key, label, values) => { const node = el('cds-select'); node.setAttribute('label-text', label); node.setAttribute('placeholder', 'All'); const blank = el('cds-select-item', 'All'); blank.setAttribute('value', '__none'); node.append(blank); for (const value of values) { const item = el('cds-select-item', value); item.setAttribute('value', value); node.append(item); } return { key, label, node }; };
     const fields = [scope('platform', 'Platform', [...new Set([...project.plan.map(item => item.platform), ...project.posts.map(item => item.platform)])]), scope('asset', 'Asset', project.assets.map(asset => asset.id))];
     const tty = operations.revise.requiresTTY;
     openForm('Revise', tty ? 'This operation requires an interactive terminal. Prepare a command to run there.' : 'This step can incur provider charges. Check Settings for budget details.', fields, tty ? 'Prepare command' : 'Revise', args => {
