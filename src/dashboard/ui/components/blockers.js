@@ -19,7 +19,8 @@ export function renderBlockers(project, target = null) {
       else {
         const list = el('ul', null, 'blocker-list');
         for (const blocker of blockers) {
-          const item = el('li'), detail = el('div'), resolve = button(`Resolve ${targetPath(blocker.target)} blocker ${blocker.index + 1}`, 'secondary');
+          const item = el('li'), detail = el('div'), resolve = button('Resolve', 'secondary');
+          resolve.append(el('span', ` ${targetPath(blocker.target)} blocker ${blocker.index + 1}`, 'visually-hidden'));
           detail.append(el('strong', targetPath(blocker.target)), el('p', blocker.text));
           resolve.addEventListener('click', () => {
             const reason = el('cds-textarea'), label = el('span', 'Reason'); label.slot = 'label-text'; reason.append(label);

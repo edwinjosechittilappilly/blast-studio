@@ -413,7 +413,9 @@ test('blockers can be resolved with a reason and appear in history', async t => 
   });
   await page.goto(`${url}#/p/acme/launch/linkedin`);
   await page.getByText('posts/linkedin.md', { exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Resolve posts/linkedin.md blocker 1' }).click();
+  const resolve = page.getByRole('button', { name: 'Resolve posts/linkedin.md blocker 1' });
+  assert.equal(await page.locator('cds-button').filter({ hasText: 'Resolve posts/linkedin.md blocker 1' }).evaluate(node => node.firstChild?.textContent), 'Resolve');
+  await resolve.click();
   const modal = page.locator('cds-modal');
   await modal.getByRole('button', { name: 'Resolve', exact: true }).click();
   assert.equal(await modal.locator('cds-textarea').getAttribute('invalid'), '');
