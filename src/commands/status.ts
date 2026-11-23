@@ -1,9 +1,9 @@
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { loadConfig, campaignDir } from '../config.ts';
 import { compositeSlug, parseCampaignRef } from '../campaigns.ts';
-import { listExports, loadLibrary, latestSources } from '../library.ts';
+import { listExports, projectDetails, latestSources } from '../library.ts';
 import { monthToDate } from '../budget/ledger.ts';
 import type { Command } from '../io.ts';
 import { UserError } from '../types.ts';
@@ -19,13 +19,26 @@ export const run: Command = async (args, io) => {
   if (positional.length > 1 || positional.some(arg => arg.startsWith('-'))) throw new UserError(usage);
   const config = loadConfig(io), slug = positional[0];
   if (slug) campaignDir(config, slug);
-  const projects = loadLibrary(config).filter(p => !slug || p.slug === slug);
-  if (slug && !projects.length) throw new UserError(`Campaign not found: ${slug}`);
+  const dirs = (path: string) => existsSync(path) ? readdirSync(path, { withFileTypes: true }).filter(entry => entry.isDirectory() && /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(entry.name)).map(entry => entry.name).sort() : [];
+  const root = join(config.root, 'projects');
+  const addresses = dirs(root).filter(name => !existsSync(join(root, name, 'brief.md')) && !existsSync(join(root, name, '.bstudio-migration.json'))).flatMap(name => dirs(join(root, name, 'campaigns')).map(campaign => `${name}/${campaign}`)).filter(address => !slug || address === slug);
+  if (slug && !addresses.length) throw new UserError(`Campaign not found: ${slug}`);
   let heading = '';
-  for (const project of projects) {
-    const [name, campaign] = project.slug.split('/');
+  for (const address of addresses) {
+    const [name, campaign] = address.split('/');
     if (name !== heading) { heading = name; io.out(`Project: ${name}`); }
     io.out(`  ${campaign}`);
+    let project;
+    let blocker = false, lastResolution = 0;
+    try {
+      const dir = campaignDir(config, address);
+      blocker = listBlockers(dir).length > 0;
+      lastResolution = Math.max(0, ...readResolutions(dir).map(item => Date.parse(item.resolvedAt) || 0));
+      project = projectDetails(config, address);
+    } catch (error) {
+      io.out(`  next: fix invalid blockers or campaign data in file: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
     const exportDir = join(campaignDir(config, project.slug), 'export');
     const exportFiles = [join(exportDir, 'manifest.json'), join(exportDir, `${compositeSlug(parseCampaignRef(project.slug))}.campaign.zip`)].filter(existsSync);
     const latestExport = listExports(config, project.slug)[0];
@@ -39,8 +52,6 @@ export const run: Command = async (args, io) => {
     }
     const gates = project.reviews.flatMap(review => (review.gates ?? []).filter(gate => !gate.pass));
     const dir = campaignDir(config, project.slug);
-    const blocker = listBlockers(dir).length > 0;
-    const lastResolution = Math.max(0, ...readResolutions(dir).map(item => Date.parse(item.resolvedAt) || 0));
     const staleReview = lastResolution > 0 && project.posts.some(post => {
       const review = project.reviews.find(item => item.platform === post.platform);
       return review && (Date.parse(review.at ?? '') || 0) <= lastResolution;

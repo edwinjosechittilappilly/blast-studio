@@ -54,7 +54,7 @@ const COMMANDS: Record<string, { summary: string; run: Command }> = {
   review: { summary: "gates + platform reviewer scores: review [<project>/<campaign>] [--calibrate] [--platforms=id,...]", run: review },
   revise: { summary: "apply findings or feedback: revise <project>/<campaign> [--note text] [--asset id] [--platform id] [--feedback-only]", run: revise },
   feedback: { summary: "queue and manage feedback: feedback <project>/<campaign> list|add|rm", run: feedback },
-  blockers: { summary: "list or resolve blockers: blockers <project>/<campaign> [list|resolve <target> <index> --reason <text>]", run: blockers },
+  blockers: { summary: "list or resolve blockers: blockers <project>/<campaign> [list|resolve <target> <index> --text <original text> --reason <text>]", run: blockers },
   history: { summary: "list snapshots: history <project>/<campaign>", run: history },
   restore: { summary: "restore a snapshot: restore <project>/<campaign> <n>", run: restore },
   accept: { summary: "human override of scores (never gates): accept <project>/<campaign> <platform> --reason <reason>", run: accept },

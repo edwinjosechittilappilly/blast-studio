@@ -51,8 +51,9 @@ export function snapshot(dir: string, step: string, preserve?: string): string |
     for (const item of roots) if (existsSync(join(dir, item))) copySnapshot(join(dir, item), join(temp, item), join(root, entries[0] ?? '', item));
     renameSync(temp, join(root, name));
   } finally { rmSync(temp, { recursive: true, force: true }); }
-  const old = historyEntries(dir).filter(item => item !== preserve);
-  for (const item of old.slice(preserve ? 19 : 20)) rmSync(join(root, item), { recursive: true, force: true });
+  const old = historyEntries(dir).filter(item => item !== preserve && !/^\d+-blockers-/.test(item));
+  const preserveCounts = preserve && !/^\d+-blockers-/.test(preserve);
+  for (const item of old.slice(preserveCounts ? 19 : 20)) rmSync(join(root, item), { recursive: true, force: true });
   return name;
 }
 

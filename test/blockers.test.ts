@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { main } from '../src/cli.ts';
 import { acquireCampaignLock } from '../src/jobs/runner.ts';
 import { listBlockers, readResolutions } from '../src/blockers.ts';
+import { historyEntries, snapshot } from '../src/history.ts';
 import { fakeIO, tempStudio } from './helpers.ts';
 
 function fixture() {
@@ -21,7 +22,7 @@ test('lists and resolves individual post and asset blockers with audit and snaps
   assert.equal(await main(['blockers', 'p/c', 'list'], io), 0);
   assert.match(io.text(), /post:x 1: Second/);
   assert.match(io.text(), /asset:a 0: Asset issue/);
-  assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--reason', '  Fixed evidence  '], io), 0);
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'First', '--reason', '  Fixed evidence  '], io), 0);
   assert.deepEqual(listBlockers(dir), [{ target: 'post:x', index: 0, text: 'Second' }, { target: 'asset:a', index: 0, text: 'Asset issue' }]);
   assert.match(readFileSync(join(dir, 'posts/x.md'), 'utf8'), /Keep this body\./);
   const [entry] = readResolutions(dir);
@@ -29,7 +30,7 @@ test('lists and resolves individual post and asset blockers with audit and snaps
   assert.ok(Number.isFinite(Date.parse(entry.resolvedAt)));
   const snapshot = readdirSync(join(dir, 'history')).find(name => name.includes('-blockers-'))!;
   assert.match(readFileSync(join(dir, 'history', snapshot, 'posts/x.md'), 'utf8'), /First/);
-  assert.equal(await main(['blockers', 'p/c', 'resolve', 'asset:a', '0', '--reason', 'Supplied'], io), 0);
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'asset:a', '0', '--text', 'Asset issue', '--reason', 'Supplied'], io), 0);
   assert.deepEqual(readResolutions(dir).map(item => item.text), ['First', 'Asset issue']);
 });
 
@@ -37,8 +38,9 @@ test('rejects invalid targets, indexes and reasons without changing artifacts', 
   const { dir, io } = fixture();
   const before = readFileSync(join(dir, 'posts/x.md'), 'utf8');
   for (const args of [
-    ['post:x', '-1', '--reason', 'ok'], ['post:x', '2', '--reason', 'ok'],
-    ['asset:../x', '0', '--reason', 'ok'], ['post:x', '0', '--reason', '  '],
+    ['post:x', '-1', '--text', 'First', '--reason', 'ok'], ['post:x', '2', '--text', 'First', '--reason', 'ok'],
+    ['asset:../x', '0', '--text', 'First', '--reason', 'ok'], ['post:x', '0', '--text', 'First', '--reason', '  '],
+    ['post:x', '0', '--reason', 'ok'],
   ]) assert.equal(await main(['blockers', 'p/c', 'resolve', ...args], io), 1);
   assert.equal(readFileSync(join(dir, 'posts/x.md'), 'utf8'), before);
   assert.deepEqual(readResolutions(dir), []);
@@ -49,7 +51,7 @@ test('resolution participates in campaign locking while listing remains availabl
   const release = acquireCampaignLock(io.env.BSTUDIO_HOME!, 'p/c');
   try {
     assert.equal(await main(['blockers', 'p/c', 'list'], io), 0);
-    assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--reason', 'Fixed'], io), 1);
+    assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'First', '--reason', 'Fixed'], io), 1);
     assert.equal(listBlockers(dir).length, 3);
   } finally { release(); }
 });
@@ -60,8 +62,64 @@ test('status suggests resolution first and a fresh review after the final blocke
   writeFileSync(join(dir, 'reviews/x.json'), JSON.stringify({ platform: 'x', at: '2020-01-01T00:00:00.000Z', verdict: 'blocked', gates: [{ id: 'specs', pass: false, message: 'Blocker in post' }] }));
   assert.equal(await main(['status', 'p/c'], io), 0);
   assert.match(io.text(), /next: resolve blockers: bstudio blockers p\/c/);
-  for (const target of ['post:x', 'post:x', 'asset:a']) assert.equal(await main(['blockers', 'p/c', 'resolve', target, '0', '--reason', 'Addressed'], io), 0);
+  for (const [target, text] of [['post:x', 'First'], ['post:x', 'Second'], ['asset:a', 'Asset issue']]) assert.equal(await main(['blockers', 'p/c', 'resolve', target, '0', '--text', text, '--reason', 'Addressed'], io), 0);
   io.stdout.length = 0;
   assert.equal(await main(['status', 'p/c'], io), 0);
   assert.match(io.text(), /next: run bstudio review p\/c/);
+});
+
+test('stale index is rejected without modifying artifacts', async () => {
+  const { dir, io } = fixture();
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'First', '--reason', 'Done'], io), 0);
+  const before = readFileSync(join(dir, 'posts/x.md'), 'utf8');
+  const log = readFileSync(join(dir, 'resolutions.yml'), 'utf8');
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'First', '--reason', 'Stale'], io), 1);
+  assert.match(io.text(), /This blocker list changed — refresh/);
+  assert.equal(readFileSync(join(dir, 'posts/x.md'), 'utf8'), before);
+  assert.equal(readFileSync(join(dir, 'resolutions.yml'), 'utf8'), log);
+});
+
+test('preserves unrelated YAML and post body including CRLF', async () => {
+  const { dir, io } = fixture();
+  const file = join(dir, 'posts/x.md');
+  const before = '---\r\nplatform: x\r\nevidence: []\r\nmedia: []\r\n# keep comment\r\nblockers: [First, Second]\r\ntitle: A long title that should not be wrapped across multiple lines even when it exceeds the normal YAML line width used by the serializer\r\n---\r\n\r\nBody stays.\r\n';
+  writeFileSync(file, before);
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'First', '--reason', 'Done'], io), 0);
+  assert.equal(readFileSync(file, 'utf8'), before.replace('[First, Second]', '[Second]'));
+});
+
+test('blocker text beginning with a dash is passed as text', async () => {
+  const { dir, io } = fixture();
+  const file = join(dir, 'assets/a/asset.yml');
+  writeFileSync(file, 'id: a\nkind: card\nblockers: ["--reason"]\n');
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'asset:a', '0', '--text=--reason', '--reason', 'Done'], io), 0);
+  assert.equal(readResolutions(dir)[0].text, '--reason');
+});
+
+test('status reports malformed campaign blockers and continues to other campaigns', async () => {
+  const { dir, io } = fixture();
+  writeFileSync(join(dir, 'assets/a/asset.yml'), 'id: a\nblockers: [broken\n');
+  mkdirSync(join(dir, '..', 'other'), { recursive: true });
+  assert.equal(await main(['status'], io), 0);
+  assert.match(io.text(), /fix invalid blockers.*asset\.yml/);
+  assert.match(io.text(), /  other/);
+});
+
+test('blocker snapshots do not evict workflow snapshots', async () => {
+  const { dir, io } = fixture();
+  const plan = join(dir, 'plan.yml');
+  for (let n = 0; n < 20; n++) {
+    writeFileSync(plan, `version: ${n}\n`);
+    snapshot(dir, 'make');
+  }
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'First', '--reason', 'Done'], io), 0);
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', 'Second', '--reason', 'Done'], io), 0);
+  assert.equal(historyEntries(dir).filter(name => name.includes('-make-')).length, 20);
+});
+
+test('parse errors explain ambiguous option values', async () => {
+  const { io } = fixture();
+  assert.equal(await main(['blockers', 'p/c', 'resolve', 'post:x', '0', '--text', '--reason', 'Done'], io), 1);
+  assert.match(io.text(), /--text/);
+  assert.match(io.text(), /usage:/);
 });
