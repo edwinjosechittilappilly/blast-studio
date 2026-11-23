@@ -466,6 +466,7 @@ test('export readiness identifies stale reviews and formats small exports', asyn
   assert.match(await page.getByText('Export is unavailable for:', { exact: false }).innerText(), /LinkedIn/);
   await page.getByRole('link', { name: 're-run review' }).click();
   await page.getByRole('button', { name: 'Review', exact: true }).waitFor();
+  await page.unrouteAll({ behavior: 'wait' });
 });
 
 test('export shows delivery routes and summarizes manual handoffs after success', async t => {
